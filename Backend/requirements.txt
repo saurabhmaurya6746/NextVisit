@@ -1,0 +1,17 @@
+# Core framework
+fastapi
+uvicorn[standard]
+
+# Database
+sqlalchemy
+alembic
+psycopg2-binary
+
+# Config / validation
+pydantic[email]
+pydantic-settings
+python-dotenv
+
+# Auth — bcrypt used directly (passlib 1.7.4 is incompatible with bcrypt >= 4.0.0)
+bcrypt
+python-jose[cryptography]
