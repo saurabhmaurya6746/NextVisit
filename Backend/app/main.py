@@ -5,6 +5,7 @@ from sqlalchemy import text
 
 from app.db.database import engine
 from app.api.v1.auth.router import router as auth_router
+from app.api.v1.business.router import router as business_router
 from app.api.v1.business_types.router import router as business_type_router
 
 logging.basicConfig(
@@ -16,6 +17,11 @@ app = FastAPI(title="NextVisit API")
 
 app.include_router(
     auth_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    business_router,
     prefix="/api/v1",
 )
 
