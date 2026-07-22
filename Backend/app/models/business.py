@@ -59,7 +59,12 @@ class Business(BaseModel):
     
     business_type = relationship("BusinessType")
     users = relationship(
-    "User",
-    back_populates="business",
-    cascade="all, delete-orphan",
+        "User",
+        back_populates="business",
+        cascade="all, delete-orphan",
+    )
+    customers = relationship(
+        "Customer",
+        back_populates="business",
+        cascade="all, delete-orphan",
     )
