@@ -78,3 +78,9 @@ class Customer(BaseModel):
         back_populates="customer",
         cascade="all, delete-orphan",
     )
+    loyalty = relationship(
+        "CustomerLoyalty",
+        back_populates="customer",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )

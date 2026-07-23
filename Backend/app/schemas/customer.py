@@ -46,3 +46,32 @@ class CustomerResponse(BaseModel):
     last_visit_at: datetime | None
     is_active: bool
     created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Customer Segmentation Schemas
+# ---------------------------------------------------------------------------
+
+class SegmentCustomerResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    phone: str
+    last_visit_at: datetime | None
+    visit_count: int
+    total_spent: float
+
+
+class CustomerSegmentsResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    new_customers: list[SegmentCustomerResponse]
+    inactive_15_days: list[SegmentCustomerResponse]
+    inactive_30_days: list[SegmentCustomerResponse]
+    inactive_60_days: list[SegmentCustomerResponse]
+    inactive_90_days: list[SegmentCustomerResponse]
+    birthday_today: list[SegmentCustomerResponse]
+    anniversary_today: list[SegmentCustomerResponse]
+    vip_customers: list[SegmentCustomerResponse]
+

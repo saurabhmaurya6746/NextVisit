@@ -78,3 +78,30 @@ class Business(BaseModel):
         back_populates="business",
         cascade="all, delete-orphan",
     )
+    loyalty_settings = relationship(
+        "LoyaltySettings",
+        back_populates="business",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    campaigns = relationship(
+        "Campaign",
+        back_populates="business",
+        cascade="all, delete-orphan",
+    )
+    automation_rules = relationship(
+        "AutomationRule",
+        back_populates="business",
+        cascade="all, delete-orphan",
+    )
+    message_templates = relationship(
+        "MessageTemplate",
+        back_populates="business",
+        cascade="all, delete-orphan",
+    )
+    settings = relationship(
+        "BusinessSettings",
+        back_populates="business",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )

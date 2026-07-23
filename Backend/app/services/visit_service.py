@@ -1,10 +1,12 @@
 import logging
+import math
 from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.models.loyalty import CustomerLoyalty
 from app.models.user import User
 from app.models.visit import (
     PaymentStatus,
@@ -13,6 +15,7 @@ from app.models.visit import (
     VisitStatus,
 )
 from app.repositories.customer_repository import CustomerRepository
+from app.repositories.loyalty_repository import LoyaltyRepository
 from app.repositories.service_repository import ServiceRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.visit_repository import VisitRepository
@@ -210,14 +213,49 @@ class VisitService:
             customer.last_visit_at = now_ts
             self.customer_repo.update(customer)
 
+        # Loyalty points calculation & CustomerLoyalty update
+        earned_points = 0
+        loyalty_repo = LoyaltyRepository(self.db)
+        loyalty_settings = loyalty_repo.get_settings(visit.business_id)
+
+        if (
+            loyalty_settings
+            and loyalty_settings.is_active
+            and loyalty_settings.amount_required > 0
+        ):
+            ratio = visit.total_amount / loyalty_settings.amount_required
+            earned_points = int(
+                math.floor(ratio) * loyalty_settings.points_per_amount
+            )
+
+            if earned_points > 0:
+                customer_loyalty = loyalty_repo.get_customer_loyalty(
+                    visit.customer_id
+                )
+                if not customer_loyalty:
+                    customer_loyalty = CustomerLoyalty(
+                        customer_id=visit.customer_id,
+                        current_points=0,
+                        lifetime_points=0,
+                        redeemed_points=0,
+                    )
+                    loyalty_repo.create_customer_loyalty(customer_loyalty)
+
+                customer_loyalty.current_points += earned_points
+                customer_loyalty.lifetime_points += earned_points
+                loyalty_repo.update_customer_loyalty(customer_loyalty)
+
         self.repo.update(visit)
         self.db.commit()
         self.db.refresh(visit)
 
+        setattr(visit, "earned_points", earned_points)
+
         logger.info(
-            "Visit completed successfully | visit_id=%s customer_id=%s total_spent_added=%.2f",
+            "Visit completed successfully | visit_id=%s customer_id=%s total_spent_added=%.2f earned_points=%s",
             visit.id,
             visit.customer_id,
             visit.total_amount,
+            earned_points,
         )
         return visit

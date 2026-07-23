@@ -54,4 +54,5 @@ class VisitResponse(BaseModel):
     completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    earned_points: int = 0
     services: list[VisitServiceResponse] = []

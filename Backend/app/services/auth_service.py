@@ -103,7 +103,15 @@ class AuthService:
             user = self.user_repo.create(user)
             logger.info("User flushed | user_id=%s", user.id)
 
-            # 5. Atomic commit — both Business and User in one transaction
+            # 5. Initialize default automation rules, message templates, and business settings
+            from app.services.automation_service import AutomationService
+            from app.services.business_settings_service import BusinessSettingsService
+            from app.services.message_template_service import MessageTemplateService
+            AutomationService(self.db).init_default_rules_for_business(business.id)
+            MessageTemplateService(self.db).init_default_templates_for_business(business.id)
+            BusinessSettingsService(self.db).init_default_settings_for_business(business.id)
+
+            # 6. Atomic commit — Business, User, and default configs in one transaction
             self.db.commit()
             self.db.refresh(user)
             self.db.refresh(business)

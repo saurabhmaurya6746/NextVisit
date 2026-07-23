@@ -10,8 +10,10 @@ from app.models.user import User
 from app.schemas.customer import (
     CustomerCreate,
     CustomerResponse,
+    CustomerSegmentsResponse,
     CustomerUpdate,
 )
+from app.services.customer_segmentation_service import CustomerSegmentationService
 from app.services.customer_service import CustomerService
 
 logger = logging.getLogger(__name__)
@@ -36,6 +38,22 @@ def list_customers(
     Requires a valid Bearer JWT.
     """
     return CustomerService(db).list_customers(current_user)
+
+
+@router.get(
+    "/segments",
+    response_model=CustomerSegmentsResponse,
+    summary="Get customer segmentations for the authenticated business",
+)
+def get_customer_segments(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns customer segments (new, inactive 15/30/60/90 days, birthday/anniversary today, top 20 VIPs).
+    Requires a valid Bearer JWT.
+    """
+    return CustomerSegmentationService(db).get_customer_segments(current_user)
 
 
 @router.get(

@@ -1,17 +1,26 @@
 import logging
+import os
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
-from app.db.database import engine
 from app.api.v1.auth.router import router as auth_router
+from app.api.v1.automation.router import router as automation_router
 from app.api.v1.business.router import router as business_router
+from app.api.v1.business_settings.router import router as business_settings_router
 from app.api.v1.business_types.router import router as business_type_router
+from app.api.v1.campaign_logs.router import router as campaign_logs_router
+from app.api.v1.campaigns.router import router as campaigns_router
 from app.api.v1.customers.router import router as customers_router
 from app.api.v1.dashboard.router import router as dashboard_router
+from app.api.v1.loyalty.router import router as loyalty_router
+from app.api.v1.message_templates.router import router as message_templates_router
 from app.api.v1.services.router import router as services_router
 from app.api.v1.staff.router import router as staff_router
+from app.api.v1.uploads.router import router as uploads_router
 from app.api.v1.visits.router import router as visits_router
+from app.db.database import engine
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,8 +29,16 @@ logging.basicConfig(
 
 app = FastAPI(title="NextVisit API")
 
+os.makedirs("uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
 app.include_router(
     auth_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    automation_router,
     prefix="/api/v1",
 )
 
@@ -31,7 +48,22 @@ app.include_router(
 )
 
 app.include_router(
+    business_settings_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
     business_type_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    campaign_logs_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    campaigns_router,
     prefix="/api/v1",
 )
 
@@ -46,12 +78,27 @@ app.include_router(
 )
 
 app.include_router(
+    loyalty_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    message_templates_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
     services_router,
     prefix="/api/v1",
 )
 
 app.include_router(
     staff_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    uploads_router,
     prefix="/api/v1",
 )
 
