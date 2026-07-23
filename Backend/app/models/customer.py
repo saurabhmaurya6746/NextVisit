@@ -73,3 +73,8 @@ class Customer(BaseModel):
         "Business",
         back_populates="customers",
     )
+    visits = relationship(
+        "Visit",
+        back_populates="customer",
+        cascade="all, delete-orphan",
+    )

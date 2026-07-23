@@ -68,3 +68,13 @@ class Business(BaseModel):
         back_populates="business",
         cascade="all, delete-orphan",
     )
+    services = relationship(
+        "Service",
+        back_populates="business",
+        cascade="all, delete-orphan",
+    )
+    visits = relationship(
+        "Visit",
+        back_populates="business",
+        cascade="all, delete-orphan",
+    )

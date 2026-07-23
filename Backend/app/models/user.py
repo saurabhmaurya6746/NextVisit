@@ -41,3 +41,7 @@ class User(BaseModel):
         "Business",
         back_populates="users",
     )
+    visits = relationship(
+        "Visit",
+        back_populates="staff",
+    )
