@@ -9,7 +9,7 @@ from app.models.user import User
 from app.models.visit import (
     PaymentStatus,
     Visit,
-    VisitService,
+    VisitService as VisitServiceModel,
     VisitStatus,
 )
 from app.repositories.customer_repository import CustomerRepository
@@ -148,7 +148,7 @@ class VisitService:
 
         # 6. Create VisitService records
         for service, item, unit_price, total_price in valid_service_items:
-            vs = VisitService(
+            vs = VisitServiceModel(
                 service_id=service.id,
                 quantity=item.quantity,
                 unit_price=unit_price,
