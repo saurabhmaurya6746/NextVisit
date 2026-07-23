@@ -125,8 +125,8 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                       {order.customerPhone && <p className="text-muted-foreground">{order.customerPhone}</p>}
                       {order.customerId && (
                         <Link
-                          to="/app/customers/$id"
-                          params={{ id: order.customerId }}
+                          to={"/app/customers/$id" as any}
+                          params={{ id: order.customerId } as any}
                           className="mt-1 inline-block text-xs text-primary hover:underline"
                           onClick={() => onOpenChange(false)}
                         >

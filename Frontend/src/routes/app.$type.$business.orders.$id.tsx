@@ -39,7 +39,7 @@ function OrderDetail() {
     return (
       <PageTransition>
         <PageHeader title="Order not found" description="It may have been removed or the link is invalid." />
-        <Button variant="outline" className="rounded-full" onClick={() => navigate({ to: "/app/orders" })}><ArrowLeft className="mr-1.5 h-4 w-4" /> Back to orders</Button>
+        <Button variant="outline" className="rounded-full" onClick={() => navigate({ to: "/app/orders" as any })}><ArrowLeft className="mr-1.5 h-4 w-4" /> Back to orders</Button>
       </PageTransition>
     );
   }

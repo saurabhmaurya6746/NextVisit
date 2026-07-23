@@ -7,8 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BrandLogo } from "@/components/brand-logo";
 import { toast } from "sonner";
-import { listPending } from "@/lib/pending-clients-store";
-import { setSession } from "@/lib/auth";
+import { loginApi, setSession } from "@/lib/auth";
 import { setBusinessType } from "@/lib/business-type";
 import { readProfile } from "@/lib/business-profile";
 import { slugify } from "@/lib/app-nav";
@@ -20,30 +19,39 @@ export function LoginShell({ role, target, tagline, quote, author }: { role: "Bu
   const demoPass = isAdmin ? "Admin@123" : "Demo@123";
   const [email, setEmail] = useState(demoEmail);
   const [password, setPassword] = useState(demoPass);
-  const submit = (e: FormEvent) => {
+
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!isAdmin) {
-      const match = listPending().find((p) => p.email.toLowerCase() === email.toLowerCase());
-      if (match) {
-        if (match.status === "pending") { toast.warning("Your account is waiting for approval."); return; }
-        if (match.status === "rejected") { toast.error(`Your registration was rejected${match.rejectionReason ? `: ${match.rejectionReason}` : ""}. Please contact support.`); return; }
-      }
-    }
+    console.log("[LOGIN] Continue button clicked! Form submit triggered with:", { email, password });
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+
+    try {
       if (isAdmin) {
+        console.log("[LOGIN] Super Admin bypass setting admin session");
         setSession({ role: "admin", email });
+        toast.success(`Welcome back — signing you into the ${role} panel`);
+        window.location.href = target;
       } else {
+        console.log("[LOGIN] Invoking loginApi() for business user...");
+        const session = await loginApi(email, password);
+        console.log("[LOGIN] loginApi() returned session successfully:", session);
         const type: "restaurant" | "salon" = email.toLowerCase().includes("salon") ? "salon" : "restaurant";
         setBusinessType(type);
-        const p = readProfile(type) as { name?: string };
-        const slug = slugify(p?.name || type);
-        setSession({ role: "business", email, businessType: type, businessSlug: slug, businessName: p?.name || type });
+        const slug = slugify(session.businessName || type);
+        setSession({
+          ...session,
+          businessType: type,
+          businessSlug: slug,
+        });
+        toast.success(`Welcome back — signing you into NextVisit`);
+        window.location.href = `/app/${type}/${slug}/dashboard`;
       }
-      toast.success(`Welcome back — signing you into the ${role} panel`);
-      window.location.href = target;
-    }, 700);
+    } catch (err: any) {
+      console.error("[LOGIN] submit error caught:", err);
+      toast.error(err.message || "Login failed. Please check your credentials.");
+    } finally {
+      setLoading(false);
+    }
   };
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
@@ -97,12 +105,24 @@ export function LoginShell({ role, target, tagline, quote, author }: { role: "Bu
             <Button variant="outline" className="rounded-full" onClick={() => { setSession({ role: "admin", email: "admin@growthos.com" }); window.location.href = "/admin"; }}>
               <Crown className="mr-1.5 h-4 w-4" /> Super Admin
             </Button>
-            <Button variant="outline" className="rounded-full" onClick={() => {
-              setBusinessType("restaurant");
-              const p = readProfile("restaurant") as { name?: string };
-              const slug = slugify(p?.name || "restaurant");
-              setSession({ role: "business", email: "demo@restaurant.com", businessType: "restaurant", businessSlug: slug, businessName: p?.name || "restaurant" });
-              window.location.href = "/app";
+            <Button variant="outline" className="rounded-full" onClick={async () => {
+              console.log("[LOGIN] Demo Restaurant Owner button clicked!");
+              setEmail("demo@restaurant.com");
+              setPassword("Demo@123");
+              try {
+                const session = await loginApi("demo@restaurant.com", "Demo@123");
+                const type = "restaurant";
+                const slug = slugify(session.businessName || type);
+                setBusinessType(type);
+                setSession({
+                  ...session,
+                  businessType: type,
+                  businessSlug: slug,
+                });
+                window.location.href = `/app/${type}/${slug}/dashboard`;
+              } catch (err: any) {
+                toast.error(err.message || "Demo login failed");
+              }
             }}>
               <Store className="mr-1.5 h-4 w-4" /> Restaurant Owner
             </Button>

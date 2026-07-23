@@ -60,7 +60,7 @@ export function NewOrderDialog({ open, onOpenChange, presetTable }: Props) {
       ? `Added to active session on ${table}`
       : `Order ${order.id.slice(-6)} saved · attached to ${table}`);
     close();
-    navigate({ to: "/app/orders/$id", params: { id: order.id } });
+    navigate({ to: "/app/orders/$id" as any, params: { id: order.id } as any });
   }
 
   return (

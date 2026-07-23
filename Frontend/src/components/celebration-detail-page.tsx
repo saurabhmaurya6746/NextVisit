@@ -71,7 +71,7 @@ export function CelebrationDetailPage({ kind, bucket }: Props) {
         description={descMap[bucket]}
         actions={
           <Button asChild variant="outline" size="sm" className="rounded-full">
-            <Link to={backHref}>← Back to campaigns</Link>
+            <Link to={backHref as any}>← Back to campaigns</Link>
           </Button>
         }
       />

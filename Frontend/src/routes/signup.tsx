@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { CheckCircle2, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,8 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BrandLogo } from "@/components/brand-logo";
-import { addPending, type BusinessKind } from "@/lib/pending-clients-store";
 import { toast } from "sonner";
+import { getBusinessTypesApi, registerApi } from "@/lib/auth";
 
 export const Route = createFileRoute("/signup")({
   head: () => ({ meta: [{ title: "Create account — NextVisit" }] }),
@@ -18,10 +18,14 @@ export const Route = createFileRoute("/signup")({
 function SignupPage() {
   const navigate = useNavigate();
   const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [businessTypes, setBusinessTypes] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedTypeId, setSelectedTypeId] = useState<string>("");
+
   const [form, setForm] = useState({
     business: "",
     owner: "",
-    type: "Restaurant" as BusinessKind,
+    type: "Restaurant",
     phone: "",
     email: "",
     password: "",
@@ -30,23 +34,57 @@ function SignupPage() {
     city: "",
     terms: false,
   });
+
+  useEffect(() => {
+    getBusinessTypesApi().then((types) => {
+      if (Array.isArray(types) && types.length > 0) {
+        setBusinessTypes(types);
+        setSelectedTypeId(types[0].id);
+      }
+    }).catch(() => {});
+  }, []);
+
   const set = (k: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (form.password !== form.confirm) return toast.error("Passwords don't match");
     if (form.password.length < 6) return toast.error("Password must be at least 6 characters");
     if (!form.terms) return toast.error("Please accept the Terms to continue");
-    addPending({
-      business: form.business,
-      owner: form.owner,
-      email: form.email,
-      phone: form.phone,
-      type: form.type,
-      country: form.country,
-      city: form.city,
-    });
-    setSubmitted(true);
+
+    setLoading(true);
+
+    try {
+      const typeId = selectedTypeId || businessTypes.find(t => t.name.toLowerCase() === form.type.toLowerCase())?.id || businessTypes[0]?.id;
+      if (!typeId) {
+        toast.error("Invalid business type. Please refresh and try again.");
+        return;
+      }
+
+      await registerApi({
+        business: {
+          business_type_id: typeId,
+          business_name: form.business,
+          phone: form.phone,
+          country: form.country,
+          currency: "INR",
+          timezone: "Asia/Kolkata",
+          address: form.city || "Default Address",
+        },
+        owner: {
+          owner_name: form.owner,
+          owner_email: form.email,
+          password: form.password,
+        },
+      });
+
+      toast.success("Account created successfully!");
+      setSubmitted(true);
+    } catch (err: any) {
+      toast.error(err.message || "Registration failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -90,13 +128,28 @@ function SignupPage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label>Business type</Label>
-                  <Select value={form.type} onValueChange={(v) => set("type")(v)}>
+                  <Select
+                    value={form.type}
+                    onValueChange={(v) => {
+                      set("type")(v);
+                      const matched = businessTypes.find((bt) => bt.name.toLowerCase() === v.toLowerCase());
+                      if (matched) setSelectedTypeId(matched.id);
+                    }}
+                  >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Restaurant">Restaurant</SelectItem>
-                      <SelectItem value="Salon">Salon</SelectItem>
-                      <SelectItem value="Spa">Spa</SelectItem>
-                      <SelectItem value="Cafe">Cafe</SelectItem>
+                      {businessTypes.length > 0 ? (
+                        businessTypes.map((bt) => (
+                          <SelectItem key={bt.id} value={bt.name}>{bt.name}</SelectItem>
+                        ))
+                      ) : (
+                        <>
+                          <SelectItem value="Restaurant">Restaurant</SelectItem>
+                          <SelectItem value="Salon">Salon</SelectItem>
+                          <SelectItem value="Spa">Spa</SelectItem>
+                          <SelectItem value="Cafe">Cafe</SelectItem>
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>

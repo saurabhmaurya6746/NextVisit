@@ -1,4 +1,4 @@
-import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect, useParams } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { BusinessSidebar } from "@/components/business-sidebar";
@@ -28,7 +28,8 @@ export const Route = createFileRoute("/app/$type/$business")({
 });
 
 function AppLayout() {
-  const { type: urlType } = Route.useParams() as { type: string; business: string };
+  const params = useParams({ strict: false }) as { type?: string; business?: string };
+  const urlType = params.type || "restaurant";
   const normalizedType: BusinessType = urlType === "salon" ? "salon" : "restaurant";
   const storedType = useBusinessType();
   useEffect(() => {

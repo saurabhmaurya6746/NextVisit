@@ -1,7 +1,7 @@
 import { AppLink } from "@/lib/app-nav";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, MessageCircle, Phone, Edit, FileText, ChevronDown, ChevronRight, Gift, Crown } from "lucide-react";
-import { useEffect, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { ArrowLeft, MessageCircle, Phone, Edit, FileText, ChevronDown, ChevronRight, Gift, Crown, AlertTriangle, UserX } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,21 +11,26 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { PageTransition } from "@/components/page-transition";
 import { EmptyState } from "@/components/empty-state";
+import { SkeletonRows, SkeletonCustomerCards } from "@/components/skeletons";
 import { useWhatsAppHistory, logWhatsApp } from "@/lib/whatsapp-history";
 import { useOrders, custId, orderCode, useExtraCustomers } from "@/lib/orders-store";
 import { useAppointments, apptCode } from "@/lib/appointments-store";
 import { useBusinessType } from "@/lib/business-type";
 import { fmt } from "@/lib/currency";
 import { openWhatsApp } from "@/lib/celebration-utils";
-import { customers, coupons, reviews } from "@/lib/sample-data";
+import { customers as seedCustomers, coupons, reviews } from "@/lib/sample-data";
 import { toast } from "sonner";
 import { useBalance, calcPointsForAmount } from "@/lib/loyalty-store";
 import { Sparkles } from "lucide-react";
+
+import { getCustomerByIdApi, type CustomerModel } from "@/lib/customers-api";
 
 export const Route = createFileRoute("/app/$type/$business/customers/$id")({
   loader: ({ params }) => ({ id: params.id }),
   component: CustomerProfile,
 });
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const timeline = [
   { at: "2026-07-14 19:24", text: "Placed order · $84 (3 items)" },
@@ -45,14 +50,193 @@ const kindMeta: Record<string, { label: string; tone: string }> = {
 };
 
 function CustomerProfile() {
+  // =========================================================================
+  // 1. ALL HOOKS CALLED UNCONDITIONALLY AT THE TOP LEVEL OF THE COMPONENT
+  // =========================================================================
   const { id } = Route.useLoaderData();
   const allOrders = useOrders();
   const allAppts = useAppointments();
   const extras = useExtraCustomers();
   const type = useBusinessType();
   const wa = useWhatsAppHistory(id);
-  const c = resolveCustomer(id, allOrders, allAppts, extras);
-  const balance = useBalance(c.id);
+
+  const [customer, setCustomer] = useState<CustomerModel | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isInvalidUuid, setIsInvalidUuid] = useState(false);
+
+  // Always call custom hooks unconditionally
+  const balance = useBalance(id);
+  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+
+  const isSeedId = id.startsWith("c") || id.startsWith("cu") || id.startsWith("guest");
+  const isValidUuidFormat = UUID_REGEX.test(id);
+
+  const fetchCustomer = useCallback(async () => {
+    setLoading(true);
+    setErrorStatus(null);
+    setErrorMessage(null);
+    setIsInvalidUuid(false);
+
+    if (!isValidUuidFormat && !isSeedId) {
+      console.error(`❌ Error loading customer: Invalid customer ID format (${id})`);
+      setIsInvalidUuid(true);
+      setLoading(false);
+      return;
+    }
+
+    console.log(`🟢 Fetching customer: ${id}`);
+
+    try {
+      const data = await getCustomerByIdApi(id);
+      console.log(`✅ Customer data loaded: ${data.name}`);
+      setCustomer(data);
+    } catch (err: any) {
+      console.error(`❌ Error loading customer: ${err.message || err}`);
+      const status = err.status || 500;
+      setErrorStatus(status);
+      setErrorMessage(err.message || "Failed to load customer profile");
+
+      // Check if seed customer exists as fallback for local demo IDs
+      const fallback = resolveCustomer(id, allOrders, allAppts, extras);
+      if (fallback && isSeedId) {
+        console.log(`ℹ️ Restored demo customer fallback for seed ID ${id}`);
+        setCustomer(fallback);
+        setErrorStatus(null);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [id, isValidUuidFormat, isSeedId, allOrders, allAppts, extras]);
+
+  useEffect(() => {
+    fetchCustomer();
+  }, [fetchCustomer]);
+
+  useEffect(() => {
+    const noteKey = `growthos:note:${id}`;
+    setNote(localStorage.getItem(noteKey) || "");
+  }, [id]);
+
+  // =========================================================================
+  // 2. CONDITIONAL RENDERING (SAFE AFTER ALL HOOKS HAVE BEEN EXECUTED)
+  // =========================================================================
+
+  // Loading view
+  if (loading) {
+    return (
+      <PageTransition>
+        <AppLink path="customers" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-3.5 w-3.5" /> All customers
+        </AppLink>
+        <div className="space-y-4">
+          <div className="h-12 w-64 rounded-xl bg-muted/60 animate-pulse" />
+          <div className="grid gap-4 lg:grid-cols-3">
+            <SkeletonCustomerCards count={1} />
+            <div className="lg:col-span-2">
+              <SkeletonRows rows={6} cols={4} />
+            </div>
+          </div>
+        </div>
+      </PageTransition>
+    );
+  }
+
+  // Invalid UUID error view
+  if (isInvalidUuid) {
+    return (
+      <PageTransition>
+        <AppLink path="customers" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-3.5 w-3.5" /> All customers
+        </AppLink>
+        <EmptyState
+          title="Invalid customer ID"
+          description={`The requested customer ID "${id}" is not a valid format.`}
+          icon={<AlertTriangle className="h-8 w-8 text-warning" />}
+          action={
+            <AppLink path="customers">
+              <Button variant="outline" className="rounded-full">Back to customers</Button>
+            </AppLink>
+          }
+        />
+      </PageTransition>
+    );
+  }
+
+  // 404 Not Found view
+  if (errorStatus === 404) {
+    return (
+      <PageTransition>
+        <AppLink path="customers" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-3.5 w-3.5" /> All customers
+        </AppLink>
+        <EmptyState
+          title="Customer not found"
+          description="The customer profile you are looking for does not exist or has been removed."
+          icon={<UserX className="h-8 w-8 text-muted-foreground" />}
+          action={
+            <AppLink path="customers">
+              <Button variant="outline" className="rounded-full">Back to customers</Button>
+            </AppLink>
+          }
+        />
+      </PageTransition>
+    );
+  }
+
+  // 500 or Server Error view
+  if (errorStatus && errorStatus >= 500) {
+    return (
+      <PageTransition>
+        <AppLink path="customers" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-3.5 w-3.5" /> All customers
+        </AppLink>
+        <EmptyState
+          title="Something went wrong. Please try again."
+          description={errorMessage || "Failed to communicate with the server."}
+          icon={<AlertTriangle className="h-8 w-8 text-destructive" />}
+          action={
+            <Button variant="outline" className="rounded-full" onClick={fetchCustomer}>
+              Retry
+            </Button>
+          }
+        />
+      </PageTransition>
+    );
+  }
+
+  // Generic error fallback
+  if (errorStatus || !customer) {
+    return (
+      <PageTransition>
+        <AppLink path="customers" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-3.5 w-3.5" /> All customers
+        </AppLink>
+        <EmptyState
+          title="Failed to load customer profile"
+          description={errorMessage || "An error occurred while fetching customer details."}
+          icon={<AlertTriangle className="h-8 w-8 text-warning" />}
+          action={
+            <div className="flex gap-2">
+              <Button variant="outline" className="rounded-full" onClick={fetchCustomer}>
+                Retry
+              </Button>
+              <AppLink path="customers">
+                <Button variant="secondary" className="rounded-full">Back to customers</Button>
+              </AppLink>
+            </div>
+          }
+        />
+      </PageTransition>
+    );
+  }
+
+  // =========================================================================
+  // 3. MAIN CUSTOMER PROFILE UI
+  // =========================================================================
+  const c = customer;
   const loyaltyPoints = balance || c.points || 0;
   const myAppts = allAppts.filter((a) => a.customerId === c.id).sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
   const myOrders = allOrders.filter((o) => o.customerId === c.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -69,7 +253,6 @@ function CustomerProfile() {
   }));
   const lifetimeEarned = loyaltyLedger.reduce((s, r) => s + r.earned, 0) || loyaltyPoints;
   const lifetimeRedeemed = Math.max(0, lifetimeEarned - loyaltyPoints);
-  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const isVip = /vip/i.test(String(c.status || ""));
   const daysBetween = (a: string, b: string) => Math.abs((new Date(a).getTime() - new Date(b).getTime()) / 86400000);
   const visitDates = [...myOrders.map((o) => o.paidAt || o.createdAt), ...myAppts.map((a) => a.paidAt || a.start)].sort();
@@ -82,49 +265,61 @@ function CustomerProfile() {
   const likelyReturnDate = avgInterval && visitDates.length
     ? new Date(new Date(visitDates[visitDates.length - 1]).getTime() + avgInterval * 86400000).toISOString().slice(0, 10)
     : "—";
+
   const favMap = new Map<string, { name: string; qty: number; revenue: number }>();
-  for (const o of myOrders) for (const it of o.items) {
-    const cur = favMap.get(it.name) || { name: it.name, qty: 0, revenue: 0 };
-    cur.qty += it.qty; cur.revenue += it.qty * it.price;
-    favMap.set(it.name, cur);
+  for (const o of myOrders) {
+    for (const it of o.items || []) {
+      const cur = favMap.get(it.name) || { name: it.name, qty: 0, revenue: 0 };
+      cur.qty += it.qty; cur.revenue += it.qty * it.price;
+      favMap.set(it.name, cur);
+    }
   }
-  for (const f of c.favorites) if (!favMap.has(f)) favMap.set(f, { name: f, qty: 0, revenue: 0 });
+
+  const safeFavorites = c.favorites || [];
+  for (const f of safeFavorites) {
+    if (!favMap.has(f)) favMap.set(f, { name: f, qty: 0, revenue: 0 });
+  }
   const favDishes = Array.from(favMap.values()).sort((a, b) => b.qty - a.qty);
   const topCategory = favDishes[0]?.name || "—";
-  const favDish = favDishes[0]?.name || (c.favorites?.[0] ?? "—");
+  const favDish = favDishes[0]?.name || (safeFavorites[0] ?? "—");
   const recommendedOffer = likelyReturning === "Low" ? "15% comeback discount" : favDish !== "—" ? `Free ${favDish.split(" ")[0]} on next visit` : "Loyalty bonus points";
-  const noteKey = `growthos:note:${c.id}`;
-  const [note, setNote] = useState("");
-  useEffect(() => {
-    setNote(localStorage.getItem(noteKey) || "");
-  }, [noteKey]);
+
   function saveNote() {
+    const noteKey = `growthos:note:${c.id}`;
     localStorage.setItem(noteKey, note);
     toast.success("Note saved");
   }
+
   function handleWhatsApp() {
     const msg = `Hi ${c.name.split(" ")[0]} 👋 — quick note from Aroma Bistro.`;
     openWhatsApp(c.phone, msg);
     logWhatsApp({ customerId: c.id, kind: "manual", message: msg });
     toast.success("WhatsApp opened");
   }
+
   const visits = [
     { date: c.lastVisit, note: "Dinner · 2 guests", amount: 84 },
     { date: "2026-06-22", note: "Lunch · 1 guest", amount: 42 },
     { date: "2026-05-30", note: "Dinner · 4 guests", amount: 168 },
     { date: "2026-05-11", note: "Brunch · 2 guests", amount: 68 },
   ];
+
   return (
     <PageTransition>
-      <AppLink path="customers" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-3.5 w-3.5" /> All customers</AppLink>
-      <PageHeader title={c.name} description={`${custId(c.id)} · ${c.status} · ${c.visits} visits · ${fmt(c.spent)} lifetime`}
+      <AppLink path="customers" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <ArrowLeft className="h-3.5 w-3.5" /> All customers
+      </AppLink>
+      <PageHeader
+        title={c.name}
+        description={`${custId(c.id)} · ${c.status} · ${c.visits} visits · ${fmt(c.spent)} lifetime`}
         actions={
           <>
             <Button variant="outline" size="sm" className="rounded-full" onClick={() => toast(`Calling ${c.phone}`)}><Phone className="mr-1.5 h-4 w-4" /> Call</Button>
             <Button variant="outline" size="sm" className="rounded-full" onClick={handleWhatsApp}><MessageCircle className="mr-1.5 h-4 w-4" /> WhatsApp</Button>
             <Button size="sm" className="rounded-full gradient-brand text-primary-foreground"><Edit className="mr-1.5 h-4 w-4" /> Edit</Button>
           </>
-        } />
+        }
+      />
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="rounded-2xl lg:col-span-1">
           <CardContent className="p-6 text-center">
@@ -139,9 +334,9 @@ function CustomerProfile() {
             <div className="mt-6 space-y-3 text-left text-sm">
               <Row label="Customer ID" value={custId(c.id)} />
               <Row label="Phone" value={c.phone} />
-              <Row label="Email" value={c.email} />
-              <Row label="DOB" value={c.birthday} />
-              <Row label="Anniversary" value={c.anniversary} />
+              <Row label="Email" value={c.email || "—"} />
+              <Row label="DOB" value={c.birthday || "—"} />
+              <Row label="Anniversary" value={c.anniversary || "—"} />
               <Row label="Gender" value={(c as any).gender || "—"} />
               <Row label="Customer since" value={customerSince} />
               <Row label="VIP status" value={isVip ? "VIP" : "—"} />
@@ -150,7 +345,7 @@ function CustomerProfile() {
               <Row label="Loyalty points" value={loyaltyPoints} />
               <Row label="Lifetime earned" value={lifetimeEarned} />
               <Row label="Last visit" value={c.lastVisit} />
-              <Row label="Favorites" value={c.favorites.join(", ") || "—"} />
+              <Row label="Favorites" value={safeFavorites.join(", ") || "—"} />
             </div>
           </CardContent>
         </Card>
@@ -232,7 +427,7 @@ function CustomerProfile() {
                   <EmptyState title="No orders yet" description="Paid orders linked to this customer will appear here." icon={<FileText className="h-7 w-7" />} />
                 ) : myOrders.map((o) => {
                   const open = expandedOrder === o.id;
-                  const qty = o.items.reduce((s, i) => s + i.qty, 0);
+                  const qty = (o.items || []).reduce((s, i) => s + i.qty, 0);
                   return (
                     <div key={o.id} className="rounded-xl border text-sm">
                       <button
@@ -258,7 +453,7 @@ function CustomerProfile() {
                               <tr><th className="text-left font-normal">Item</th><th className="text-right font-normal">Qty</th><th className="text-right font-normal">Price</th><th className="text-right font-normal">Total</th></tr>
                             </thead>
                             <tbody>
-                              {o.items.map((it) => (
+                              {(o.items || []).map((it) => (
                                 <tr key={it.id} className="border-t"><td className="py-1.5">{it.name}</td><td className="py-1.5 text-right">{it.qty}</td><td className="py-1.5 text-right">{fmt(it.price)}</td><td className="py-1.5 text-right">{fmt(it.price * it.qty)}</td></tr>
                               ))}
                             </tbody>
@@ -373,8 +568,8 @@ function Row({ label, value }: { label: string; value: any }) {
 }
 
 function resolveCustomer(id: string, orders: any[], appts: any[], extras: any[]): any {
-  const seed = customers.find((x) => x.id === id);
-  if (seed) return seed;
+  const seed = seedCustomers.find((x) => x.id === id);
+  if (seed) return { ...seed, favorites: seed.favorites || [] };
   const extra = extras.find((x) => x.id === id);
   if (extra) {
     return {

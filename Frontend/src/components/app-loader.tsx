@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BrandLogo } from "@/components/brand-logo";
 
 export function AppLoader({
@@ -17,6 +17,8 @@ export function AppLoader({
 }) {
   const [progress, setProgress] = useState(0);
   const [visible, setVisible] = useState(true);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
 
   useEffect(() => {
     const start = Date.now();
@@ -27,11 +29,11 @@ export function AppLoader({
       if (elapsed >= minDuration) {
         clearInterval(tick);
         setVisible(false);
-        onDone?.();
+        onDoneRef.current?.();
       }
     }, 60);
     return () => clearInterval(tick);
-  }, [minDuration, onDone]);
+  }, [minDuration]);
 
   return (
     <AnimatePresence>

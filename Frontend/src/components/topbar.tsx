@@ -63,7 +63,7 @@ export function Topbar({ userName, userRole, initials }: { userName: string; use
               <div className="space-y-1">
                 {results.customers.length > 0 && <Section label="Customers" icon={<Users className="h-3.5 w-3.5" />} />}
                 {results.customers.map((c) => (
-                  <button key={c.id} onClick={() => { navigate({ to: "/app/customers/$id", params: { id: c.id } }); setOpen(false); setQ(""); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-muted">
+                  <button key={c.id} onClick={() => { navigate({ to: "/app/customers/$id" as any, params: { id: c.id } as any }); setOpen(false); setQ(""); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-muted">
                     <Avatar className="h-6 w-6"><AvatarFallback className="gradient-brand text-primary-foreground text-[10px]">{c.initials}</AvatarFallback></Avatar>
                     <span className="flex-1 truncate">{c.name}</span>
                     <span className="text-xs text-muted-foreground">{c.phone}</span>
@@ -71,7 +71,7 @@ export function Topbar({ userName, userRole, initials }: { userName: string; use
                 ))}
                 {results.orders.length > 0 && <Section label="Orders" icon={<ShoppingBag className="h-3.5 w-3.5" />} />}
                 {results.orders.map((o) => (
-                  <button key={o.id} onClick={() => { navigate({ to: "/app/orders" }); setOpen(false); setQ(""); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-muted">
+                  <button key={o.id} onClick={() => { navigate({ to: "/app/orders" as any }); setOpen(false); setQ(""); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-muted">
                     <span className="font-mono text-xs">{o.id}</span>
                     <span className="flex-1 truncate text-muted-foreground">{o.customer}</span>
                     <span className="text-xs font-medium">${o.total}</span>
@@ -79,7 +79,7 @@ export function Topbar({ userName, userRole, initials }: { userName: string; use
                 ))}
                 {results.coupons.length > 0 && <Section label="Coupons" icon={<Ticket className="h-3.5 w-3.5" />} />}
                 {results.coupons.map((c) => (
-                  <button key={c.code} onClick={() => { navigate({ to: "/app/coupons" }); setOpen(false); setQ(""); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-muted">
+                  <button key={c.code} onClick={() => { navigate({ to: "/app/coupons" as any }); setOpen(false); setQ(""); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-muted">
                     <span className="font-mono text-xs">{c.code}</span>
                     <span className="flex-1 truncate text-muted-foreground">{c.type}</span>
                     <span className="text-xs">{c.discount}</span>
@@ -87,7 +87,7 @@ export function Topbar({ userName, userRole, initials }: { userName: string; use
                 ))}
                 {results.campaigns.length > 0 && <Section label="Campaigns" icon={<Megaphone className="h-3.5 w-3.5" />} />}
                 {results.campaigns.map((c) => (
-                  <button key={c.id} onClick={() => { navigate({ to: "/app/whatsapp" }); setOpen(false); setQ(""); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-muted">
+                  <button key={c.id} onClick={() => { navigate({ to: "/app/whatsapp" as any }); setOpen(false); setQ(""); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-muted">
                     <span className="flex-1 truncate">{c.name}</span>
                     <span className="text-xs text-muted-foreground">{c.channel}</span>
                   </button>
@@ -122,7 +122,7 @@ export function Topbar({ userName, userRole, initials }: { userName: string; use
                       <button key={n.id} onClick={() => {
                         markRead(n.id);
                         setNotifOpen(false);
-                        if (n.orderId) navigate({ to: "/app/orders/$id", params: { id: n.orderId } });
+                        if (n.orderId) navigate({ to: "/app/orders/$id" as any, params: { id: n.orderId } as any });
                       }}
                         className={`flex w-full items-start gap-2 rounded-lg p-2 text-left hover:bg-muted ${!n.read ? "bg-primary/5" : ""}`}>
                         <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg gradient-brand text-primary-foreground"><Icon className="h-4 w-4" /></div>

@@ -6,11 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BrandLogo } from "@/components/brand-logo";
 import { toast } from "sonner";
-import { listPending } from "@/lib/pending-clients-store";
 import { setBusinessType } from "@/lib/business-type";
 import { readProfile } from "@/lib/business-profile";
 import { slugify } from "@/lib/app-nav";
-import { setSession } from "@/lib/auth";
+import { loginApi, setSession } from "@/lib/auth";
 
 export const Route = createFileRoute("/login/")({
   head: () => ({ meta: [{ title: "Sign in — NextVisit" }] }),
@@ -37,39 +36,36 @@ function UnifiedLogin() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const key = email.toLowerCase();
-    const match = DEMO[key];
-    if (!match) {
-      // Signup/pending check
-      const p = listPending().find((x) => x.email.toLowerCase() === key);
-      if (!p) return toast.error("No account found. Try a demo login or sign up.");
-      if (p.status === "pending") return toast.warning("Your account is waiting for admin approval.");
-      if (p.status === "rejected") return toast.error(`Your registration was rejected${p.rejectionReason ? `: ${p.rejectionReason}` : ""}. Please contact support.`);
-      // approved
-      const type: "restaurant" | "salon" = p.type === "Salon" || p.type === "Spa" ? "salon" : "restaurant";
-      setBusinessType(type);
-      const t = appTargetFor(type, p.business);
-      setSession({ role: "business", email: p.email, businessType: type, businessSlug: t.slug, businessName: p.business });
-      toast.success(`Welcome back, ${p.business}`);
-      setTimeout(() => { window.location.href = t.url; }, 300);
-      return;
-    }
     setLoading(true);
-    setTimeout(() => {
-      if (match.type) {
-        setBusinessType(match.type);
-        const t = appTargetFor(match.type);
-        setSession({ role: "business", email: key, businessType: match.type, businessSlug: t.slug, businessName: t.name });
-        toast.success(`Welcome — signing you into ${match.role}`);
-        window.location.href = t.url;
-      } else {
-        setSession({ role: "admin", email: key });
-        toast.success(`Welcome — signing you into ${match.role}`);
-        window.location.href = match.adminTarget || "/admin";
+
+    try {
+      if (email.toLowerCase() === "admin@growthos.com") {
+        setSession({ role: "admin", email });
+        toast.success(`Welcome — signing you into Super Admin`);
+        window.location.href = "/admin";
+        return;
       }
-    }, 500);
+
+      console.log("[LOGIN/INDEX] Calling loginApi with:", { email, password });
+      const session = await loginApi(email, password);
+      const type: "restaurant" | "salon" = email.toLowerCase().includes("salon") ? "salon" : "restaurant";
+      const slug = slugify(session.businessName || type);
+      setBusinessType(type);
+      setSession({
+        ...session,
+        businessType: type,
+        businessSlug: slug,
+      });
+      toast.success(`Welcome back — signing you into NextVisit`);
+      window.location.href = `/app/${type}/${slug}/dashboard`;
+    } catch (err: any) {
+      console.error("[LOGIN/INDEX] loginApi error:", err);
+      toast.error(err.message || "Incorrect email or password.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
