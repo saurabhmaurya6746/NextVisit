@@ -207,7 +207,37 @@ class AuthService:
                 detail="This account has been deactivated.",
             )
 
-        # 4. Issue JWT — reuse existing create_access_token()
+        # 4. Guard: business status must be ACTIVE
+        business = self.business_repo.get_by_id(user.business_id)
+        if not business or business.status != "ACTIVE":
+            status_val = business.status if business else "UNKNOWN"
+            logger.warning(
+                "Login rejected — business status not ACTIVE | business_id=%s status=%s",
+                user.business_id,
+                status_val,
+            )
+            if status_val == "PENDING":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your business account registration is pending administrator approval.",
+                )
+            elif status_val == "REJECTED":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your business account registration was rejected.",
+                )
+            elif status_val == "SUSPENDED":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your business account has been suspended.",
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your business account is not active.",
+                )
+
+        # 5. Issue JWT — reuse existing create_access_token()
         token = create_access_token(
             {
                 "sub": str(user.id),
@@ -217,7 +247,57 @@ class AuthService:
         )
         logger.info("Login successful | user_id=%s", user.id)
 
+        # 6. Register / update active device session (architecture preparation)
+        try:
+            from app.repositories.user_session_repository import UserSessionRepository
+            session_repo = UserSessionRepository(self.db)
+            session_repo.register_or_update_session(
+                user_id=user.id,
+                business_id=user.business_id,
+                device_id=getattr(data, "device_id", "web_default") or "web_default",
+                device_name=getattr(data, "device_name", "Web Browser"),
+                device_type=getattr(data, "device_type", "Desktop"),
+                platform=getattr(data, "platform", "Web"),
+            )
+        except Exception as exc:
+            logger.warning("Non-blocking device session registration error: %s", str(exc))
+
         return {
             "access_token": token,
             "token_type": "bearer",
         }
+
+    def logout(self, user_id: str, device_id: str = "web_default") -> bool:
+        """Mark user device session as inactive upon logout."""
+        from uuid import UUID
+        from app.repositories.user_session_repository import UserSessionRepository
+        session_repo = UserSessionRepository(self.db)
+        uid = UUID(user_id) if isinstance(user_id, str) else user_id
+        active_sessions = session_repo.list_active_sessions(uid)
+        for s in active_sessions:
+            if s.device_id == device_id:
+                session_repo.deactivate_session(s.id, uid)
+                return True
+        return False
+
+    def list_active_devices(self, user_id: str):
+        """Service method to list all active device sessions for a merchant user."""
+        from uuid import UUID
+        from app.repositories.user_session_repository import UserSessionRepository
+        uid = UUID(user_id) if isinstance(user_id, str) else user_id
+        return UserSessionRepository(self.db).list_active_sessions(uid)
+
+    def revoke_device(self, user_id: str, session_id: str) -> bool:
+        """Service method to revoke a specific device session."""
+        from uuid import UUID
+        from app.repositories.user_session_repository import UserSessionRepository
+        uid = UUID(user_id) if isinstance(user_id, str) else user_id
+        sid = UUID(session_id) if isinstance(session_id, str) else session_id
+        return UserSessionRepository(self.db).deactivate_session(sid, uid)
+
+    def count_active_devices(self, user_id: str) -> int:
+        """Service method to count current active device sessions for a merchant user."""
+        from uuid import UUID
+        from app.repositories.user_session_repository import UserSessionRepository
+        uid = UUID(user_id) if isinstance(user_id, str) else user_id
+        return UserSessionRepository(self.db).count_active_sessions(uid)

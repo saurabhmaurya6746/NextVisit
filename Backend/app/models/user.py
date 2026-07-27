@@ -45,3 +45,8 @@ class User(BaseModel):
         "Visit",
         back_populates="staff",
     )
+    sessions = relationship(
+        "UserSession",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )

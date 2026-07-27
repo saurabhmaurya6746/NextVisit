@@ -1,252 +1,459 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { ArrowLeft, KeyRound, Send, ArrowUpRight, PauseCircle, Trash2, Store, LogIn, Cake, Gift, Utensils, Ticket, Star, ShoppingBag, Megaphone, Users } from "lucide-react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import {
+  ArrowLeft,
+  KeyRound,
+  Send,
+  ArrowUpRight,
+  PauseCircle,
+  Trash2,
+  Store,
+  LogIn,
+  Megaphone,
+  ShoppingBag,
+  Loader2,
+  AlertCircle,
+  Copy,
+  Check,
+} from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { StatCard } from "@/components/stat-card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart } from "recharts";
-import { customers, coupons, campaigns, reviews, revenueSeries, customerGrowthSeries } from "@/lib/sample-data";
-import { getClientById } from "@/lib/clients-store";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { useMenu } from "@/lib/menu-store";
+import {
+  getAdminClientDetailApi,
+  updateAdminClientStatusApi,
+  deleteAdminClientApi,
+  impersonateAdminClientApi,
+  listSubscriptionPlansApi,
+  assignBusinessSubscriptionApi,
+  type ClientDetailModel,
+  type SubscriptionPlanModel,
+} from "@/lib/admin-api";
+import { setToken, setSession } from "@/lib/auth";
+import { slugify } from "@/lib/app-nav";
+import { setBusinessType } from "@/lib/business-type";
+import { pushNotification } from "@/lib/notifications-store";
 
 export const Route = createFileRoute("/admin/clients/$id")({
-  loader: ({ params }) => {
-    const client = getClientById(params.id);
-    if (!client) throw notFound();
-    return { client };
-  },
   component: ClientDetail,
-  notFoundComponent: () => (
-    <div className="p-8 text-center">
-      <p className="text-sm text-muted-foreground">This client could not be found.</p>
-      <Button asChild variant="link"><Link to="/admin/clients">Back to clients</Link></Button>
-    </div>
-  ),
 });
 
 function ClientDetail() {
-  const { client } = Route.useLoaderData();
-  const menu = useMenu();
-  // Deterministic demo metrics scaled by the client's own numbers so each business feels distinct
-  const cust = client.customers;
-  const totalOrders = Math.round(cust * 4.2);
-  const totalRevenue = Math.round(cust * 1250);
-  const todaysOrders = Math.max(4, Math.round(cust / 42));
-  const activeTables = client.type === "Restaurant" ? Math.max(4, Math.round(cust / 96)) : 0;
-  const pendingReviews = Math.max(1, Math.round(cust / 210));
-  const activeCampaigns = campaigns.filter((c) => c.status !== "draft").length;
-  const totalWhatsApp = Math.round(cust * 3.4);
-  const revenueByMonth = revenueSeries.map((r) => ({ month: r.month, revenue: Math.round((r.revenue / 240) * (client.revenue || 40)) }));
-  const growth = customerGrowthSeries.map((r, i) => ({ month: r.month, customers: Math.round((cust * (i + 1)) / customerGrowthSeries.length) }));
-  const todaysBdays = 2, tomorrowsBdays = 3, weekBdays = 11;
-  const todaysAnni = 1, tomorrowsAnni = 2;
+  const { id } = Route.useParams();
+  const [client, setClient] = useState<ClientDetailModel | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Dialog States
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const [notifDialogOpen, setNotifDialogOpen] = useState(false);
+  const [notifTitle, setNotifTitle] = useState("");
+  const [notifBody, setNotifBody] = useState("");
+  const [sendingNotif, setSendingNotif] = useState(false);
+
+  const [planDialogOpen, setPlanDialogOpen] = useState(false);
+  const [plans, setPlans] = useState<SubscriptionPlanModel[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState("");
+  const [planNotes, setPlanNotes] = useState("");
+  const [savingPlan, setSavingPlan] = useState(false);
+
+  const loadDetail = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getAdminClientDetailApi(id);
+      setClient(data);
+    } catch (err: any) {
+      setError(err.message || "Failed to load client details");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDetail();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[400px] flex-col items-center justify-center space-y-3">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">Loading merchant profile details…</p>
+      </div>
+    );
+  }
+
+  if (error || !client) {
+    return (
+      <div className="flex min-h-[400px] flex-col items-center justify-center space-y-3 text-center">
+        <AlertCircle className="h-10 w-10 text-destructive" />
+        <h3 className="font-display text-lg font-semibold">Client not found</h3>
+        <p className="text-sm text-muted-foreground">{error}</p>
+        <Button asChild variant="outline" className="rounded-full">
+          <Link to="/admin/clients">Back to clients list</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  const toggleStatus = async () => {
+    const nextStatus = client.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
+    try {
+      const updated = await updateAdminClientStatusApi(client.id, nextStatus);
+      setClient(updated);
+      toast.success(`Account status updated to ${nextStatus}`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update status");
+    }
+  };
+
+  const deleteClient = async () => {
+    if (!confirm(`Are you sure you want to delete ${client.name}?`)) return;
+    try {
+      await deleteAdminClientApi(client.id);
+      toast.success("Business account deleted");
+      window.location.href = "/admin/clients";
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete business");
+    }
+  };
+
+  const impersonate = async () => {
+    try {
+      const res = await impersonateAdminClientApi(client.id);
+      setToken(res.access_token);
+      const slug = slugify(client.name);
+      setBusinessType("restaurant");
+      setSession({
+        role: "business",
+        email: client.email,
+        clientId: res.business_id,
+        businessName: res.business_name,
+        businessType: "restaurant",
+        businessSlug: slug,
+        token: res.access_token,
+      });
+      toast.success(`Logged in as ${client.owner_name}`);
+      window.location.href = `/app/restaurant/${slug}/dashboard`;
+    } catch (err: any) {
+      toast.error(err.message || "Failed to impersonate merchant");
+    }
+  };
+
+  // 1. Reset Password Handler
+  const handleResetPassword = () => {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+    let pwd = "NV#";
+    for (let i = 0; i < 9; i++) {
+      pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setTempPassword(pwd);
+    setCopied(false);
+    toast.success(`Password reset generated for ${client.owner_name}`);
+  };
+
+  const handleCopyPassword = () => {
+    if (!tempPassword) return;
+    navigator.clipboard.writeText(tempPassword);
+    setCopied(true);
+    toast.success("Temporary password copied to clipboard");
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // 2. Send Notification Handler
+  const openNotifDialog = () => {
+    setNotifTitle(`Notice for ${client.name}`);
+    setNotifBody(`Hello ${client.owner_name}, please review your platform subscription and account configuration.`);
+    setNotifDialogOpen(true);
+  };
+
+  const handleSendNotification = async () => {
+    if (!notifTitle || !notifBody) {
+      toast.error("Please provide both a title and a message body.");
+      return;
+    }
+    setSendingNotif(true);
+    try {
+      pushNotification({
+        type: "campaign",
+        title: notifTitle,
+        body: notifBody,
+      });
+      toast.success(`Notification sent to ${client.name} (${client.email})`);
+      setNotifDialogOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to send notification");
+    } finally {
+      setSendingNotif(false);
+    }
+  };
+
+  // 3. Manage Subscription Plan Handler
+  const openPlanModal = async () => {
+    setPlanDialogOpen(true);
+    try {
+      const allPlans = await listSubscriptionPlansApi();
+      setPlans(allPlans);
+      if (allPlans.length > 0) {
+        setSelectedPlanId(allPlans[0].id);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load subscription plans");
+    }
+  };
+
+  const handleSavePlan = async () => {
+    if (!selectedPlanId) return;
+    setSavingPlan(true);
+    try {
+      await assignBusinessSubscriptionApi(client.id, {
+        plan_id: selectedPlanId,
+        notes: planNotes || undefined,
+      });
+      toast.success(`Subscription plan updated for ${client.name}`);
+      setPlanDialogOpen(false);
+      await loadDetail();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update subscription plan");
+    } finally {
+      setSavingPlan(false);
+    }
+  };
+
   return (
     <>
       <Link to="/admin/clients" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-3.5 w-3.5" /> All clients
       </Link>
       <PageHeader
-        title={client.business}
-        description={`${client.id.toUpperCase()} · ${client.type} · ${client.city} · Owner ${client.owner}`}
+        title={client.name}
+        description={`${client.id.substring(0, 8).toUpperCase()} · ${client.business_type?.name || "General"} · ${client.country} · Owner ${client.owner_name}`}
         actions={
           <>
-            <Button variant="outline" size="sm" className="rounded-full" onClick={() => toast.success(`Logged in as ${client.owner} (demo)`) }><LogIn className="mr-1.5 h-4 w-4" /> Login as client</Button>
-            <Button variant="outline" size="sm" className="rounded-full" onClick={() => toast.success("Password reset link sent")}><KeyRound className="mr-1.5 h-4 w-4" /> Reset password</Button>
-            <Button variant="outline" size="sm" className="rounded-full" onClick={() => toast.success("Notification queued")}><Send className="mr-1.5 h-4 w-4" /> Send notification</Button>
-            <Button size="sm" className="rounded-full gradient-brand text-primary-foreground" onClick={() => toast.success("Upgrade flow initiated")}><ArrowUpRight className="mr-1.5 h-4 w-4" /> Upgrade plan</Button>
+            <Button variant="outline" size="sm" className="rounded-full" onClick={impersonate}>
+              <LogIn className="mr-1.5 h-4 w-4" /> Login as client
+            </Button>
+            <Button variant="outline" size="sm" className="rounded-full" onClick={() => setResetDialogOpen(true)}>
+              <KeyRound className="mr-1.5 h-4 w-4" /> Reset password
+            </Button>
+            <Button variant="outline" size="sm" className="rounded-full" onClick={openNotifDialog}>
+              <Send className="mr-1.5 h-4 w-4" /> Send notification
+            </Button>
+            <Button size="sm" className="rounded-full gradient-brand text-primary-foreground" onClick={openPlanModal}>
+              <ArrowUpRight className="mr-1.5 h-4 w-4" /> Subscription Plan
+            </Button>
           </>
         }
       />
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Last login" value={client.lastLogin ? new Date(client.lastLogin).toLocaleDateString() : "—"} icon={LogIn} accent="info" />
-        <StatCard label="Campaigns sent" value={client.campaignsSent ?? 0} icon={Megaphone} accent="primary" />
-        <StatCard label="Orders processed" value={(client.ordersProcessed ?? 0).toLocaleString()} icon={ShoppingBag} accent="accent" />
-        <StatCard label={client.trialEnd ? (client.isTrialExpired ? "Trial" : "Trial ends in") : "Plan expiry"} value={client.trialEnd ? (client.isTrialExpired ? "Expired" : `${client.trialDaysRemaining}d`) : client.expiry} icon={Star} accent={client.isTrialExpired ? "destructive" : "warning"} />
+        <StatCard label="Last login" value={client.last_login ? new Date(client.last_login).toLocaleDateString() : "Never"} icon={LogIn} accent="info" />
+        <StatCard label="Campaigns created" value={client.stats.campaign_count} icon={Megaphone} accent="primary" />
+        <StatCard label="Total visits" value={client.stats.visit_count} icon={ShoppingBag} accent="accent" />
+        <StatCard label="Status" value={client.status} icon={Store} accent={client.status === "ACTIVE" ? "accent" : "destructive"} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="rounded-2xl lg:col-span-2">
           <CardHeader><CardTitle className="font-display">Business information</CardTitle></CardHeader>
           <CardContent className="grid gap-4 text-sm sm:grid-cols-2">
-            <div className="flex items-center gap-3">
-              <div className="grid h-14 w-14 place-items-center rounded-2xl gradient-brand text-primary-foreground shadow-glow"><Store className="h-6 w-6" /></div>
+            <div className="flex items-center gap-3 sm:col-span-2">
+              <div className="grid h-14 w-14 place-items-center rounded-2xl gradient-brand text-primary-foreground shadow-glow">
+                <Store className="h-6 w-6" />
+              </div>
               <div>
-                <p className="font-semibold">{client.business}</p>
-                <p className="text-xs text-muted-foreground">{client.type}</p>
+                <p className="font-semibold">{client.name}</p>
+                <p className="text-xs text-muted-foreground">{client.business_type?.name || "Business"}</p>
               </div>
             </div>
-            <Info label="Business ID" value={client.id.toUpperCase()} />
-            <Info label="Owner" value={client.owner} />
-            <Info label="Email" value={client.email} />
-            <Info label="Phone" value={client.phone} />
-            <Info label="Address" value={`${client.city} · India`} />
-            <Info label="Plan" value={<Badge variant="outline" className="rounded-full">{client.plan}</Badge>} />
-            <Info label="Status" value={<Badge className="rounded-full capitalize">{client.status}</Badge>} />
-            <Info label="Expiry" value={client.expiry} />
-            <Info label="Joined" value="2025-11-04" />
+            <Info label="Business ID" value={client.id} />
+            <Info label="Owner Name" value={client.owner_name} />
+            <Info label="Email Address" value={client.email} />
+            <Info label="Phone Number" value={client.phone} />
+            <Info label="Country & Currency" value={`${client.country} (${client.currency})`} />
+            <Info label="Address" value={client.address || "Not specified"} />
+            <Info label="Subscription Status" value={<Badge variant="outline" className="rounded-full capitalize">{client.subscription_status}</Badge>} />
+            <Info label="Account Status" value={<Badge className="rounded-full capitalize">{client.status}</Badge>} />
+            <Info label="Joined Date" value={new Date(client.created_at).toLocaleDateString()} />
+            {client.approved_at && <Info label="Approved At" value={new Date(client.approved_at).toLocaleDateString()} />}
           </CardContent>
         </Card>
 
         <Card className="rounded-2xl">
-          <CardHeader><CardTitle className="font-display">Storage & usage</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="font-display">Platform usage & statistics</CardTitle></CardHeader>
           <CardContent className="space-y-4 text-sm">
             <div>
-              <div className="mb-1.5 flex justify-between"><span>Storage</span><span className="text-muted-foreground">4.2 / 20 GB</span></div>
-              <Progress value={21} />
+              <div className="mb-1.5 flex justify-between"><span>Registered Customers</span><span className="font-medium">{client.stats.customer_count}</span></div>
+              <Progress value={Math.min(100, (client.stats.customer_count / 100) * 100)} />
             </div>
             <div>
-              <div className="mb-1.5 flex justify-between"><span>Customers</span><span className="text-muted-foreground">{client.customers} / ∞</span></div>
-              <Progress value={64} />
+              <div className="mb-1.5 flex justify-between"><span>Active Services</span><span className="font-medium">{client.stats.service_count}</span></div>
+              <Progress value={Math.min(100, (client.stats.service_count / 20) * 100)} />
             </div>
             <div>
-              <div className="mb-1.5 flex justify-between"><span>WhatsApp credits</span><span className="text-muted-foreground">3,214 / 5,000</span></div>
-              <Progress value={64} />
+              <div className="mb-1.5 flex justify-between"><span>WhatsApp Campaigns</span><span className="font-medium">{client.stats.campaign_count}</span></div>
+              <Progress value={Math.min(100, (client.stats.campaign_count / 50) * 100)} />
+            </div>
+            <div>
+              <div className="mb-1.5 flex justify-between"><span>Loyalty Program</span><span className="font-medium">{client.stats.loyalty_enabled ? "Enabled" : "Disabled"}</span></div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Total customers" value={cust.toLocaleString()} icon={Users} accent="primary" />
-        <StatCard label="Active customers" value={Math.round(cust * 0.72).toLocaleString()} icon={Users} accent="accent" />
-        <StatCard label="Total orders" value={totalOrders.toLocaleString()} icon={ShoppingBag} accent="info" />
-        <StatCard label="Total revenue" value={`₹${totalRevenue.toLocaleString("en-IN")}`} accent="warning" />
-        {client.type === "Restaurant" && <StatCard label="Active tables" value={activeTables} icon={Store} accent="primary" />}
-        <StatCard label="Today's orders" value={todaysOrders} icon={ShoppingBag} accent="accent" />
-        <StatCard label="Pending reviews" value={pendingReviews} icon={Star} accent="warning" />
-        <StatCard label="Active campaigns" value={activeCampaigns} icon={Megaphone} accent="info" />
-        <StatCard label="Coupons created" value={coupons.length} icon={Ticket} accent="primary" />
-        <StatCard label="WhatsApp sent" value={totalWhatsApp.toLocaleString()} icon={Send} accent="accent" />
-      </div>
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <Card className="rounded-2xl lg:col-span-2">
-          <CardHeader><CardTitle className="font-display">Monthly revenue</CardTitle><p className="text-xs text-muted-foreground">Last 7 months · ₹</p></CardHeader>
-          <CardContent className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={revenueByMonth}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="month" stroke="var(--muted-foreground)" fontSize={12} />
-                <YAxis stroke="var(--muted-foreground)" fontSize={12} />
-                <Tooltip contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12 }} />
-                <Bar dataKey="revenue" fill="oklch(0.6 0.22 275)" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-        <Card className="rounded-2xl">
-          <CardHeader><CardTitle className="font-display">Upcoming events</CardTitle></CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <EventRow icon={<Cake className="h-4 w-4 text-primary" />} label="Today's birthdays" value={todaysBdays} />
-            <EventRow icon={<Cake className="h-4 w-4 text-primary" />} label="Tomorrow's birthdays" value={tomorrowsBdays} />
-            <EventRow icon={<Cake className="h-4 w-4 text-primary" />} label="This week's birthdays" value={weekBdays} />
-            <EventRow icon={<Gift className="h-4 w-4 text-accent" />} label="Today's anniversaries" value={todaysAnni} />
-            <EventRow icon={<Gift className="h-4 w-4 text-accent" />} label="Tomorrow's anniversaries" value={tomorrowsAnni} />
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="mt-4 rounded-2xl">
-        <CardHeader><CardTitle className="font-display">Customer growth</CardTitle></CardHeader>
-        <CardContent className="h-56">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={growth}>
-              <defs>
-                <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="oklch(0.7 0.17 165)" stopOpacity={0.5} />
-                  <stop offset="100%" stopColor="oklch(0.7 0.17 165)" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="month" stroke="var(--muted-foreground)" fontSize={12} />
-              <YAxis stroke="var(--muted-foreground)" fontSize={12} />
-              <Tooltip contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12 }} />
-              <Area type="monotone" dataKey="customers" stroke="oklch(0.7 0.17 165)" fill="url(#cg)" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-
-      <Card className="mt-4 rounded-2xl">
-        <CardHeader><CardTitle className="font-display">Business data</CardTitle></CardHeader>
-        <CardContent>
-          <Tabs defaultValue="customers">
-            <TabsList className="flex flex-wrap gap-1 rounded-full">
-              <TabsTrigger value="customers" className="rounded-full">Customers</TabsTrigger>
-              <TabsTrigger value="menu" className="rounded-full">{client.type === "Restaurant" ? "Menu" : "Services"}</TabsTrigger>
-              <TabsTrigger value="campaigns" className="rounded-full">Campaigns</TabsTrigger>
-              <TabsTrigger value="coupons" className="rounded-full">Coupons</TabsTrigger>
-              <TabsTrigger value="reviews" className="rounded-full">Reviews</TabsTrigger>
-            </TabsList>
-            <TabsContent value="customers" className="mt-4">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Phone</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Visits</TableHead><TableHead className="text-right">Spent</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {customers.slice(0, 8).map((c) => (
-                      <TableRow key={c.id}>
-                        <TableCell className="font-medium">{c.name}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{c.phone}</TableCell>
-                        <TableCell><Badge variant="outline" className="rounded-full text-[10px]">{c.status}</Badge></TableCell>
-                        <TableCell className="text-right">{c.visits}</TableCell>
-                        <TableCell className="text-right">₹{c.spent.toLocaleString("en-IN")}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </TabsContent>
-            <TabsContent value="menu" className="mt-4">
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {menu.map((m) => (
-                  <div key={m.id} className="flex items-center justify-between rounded-xl border p-3 text-sm">
-                    <div className="flex items-center gap-2"><Utensils className="h-4 w-4 text-muted-foreground" /><div><p className="font-medium">{m.name}</p><p className="text-xs text-muted-foreground">{m.category}</p></div></div>
-                    <span className="font-medium">₹{m.price}</span>
-                  </div>
-                ))}
-              </div>
-            </TabsContent>
-            <TabsContent value="campaigns" className="mt-4 space-y-2">
-              {campaigns.map((c) => (
-                <div key={c.id} className="flex items-center justify-between rounded-xl border p-3 text-sm">
-                  <div><p className="font-medium">{c.name}</p><p className="text-xs text-muted-foreground">{c.channel} · {c.audience}</p></div>
-                  <Badge variant="outline" className="rounded-full capitalize">{c.status}</Badge>
-                </div>
-              ))}
-            </TabsContent>
-            <TabsContent value="coupons" className="mt-4 space-y-2">
-              {coupons.map((cp) => (
-                <div key={cp.code} className="flex items-center justify-between rounded-xl border p-3 text-sm">
-                  <div><p className="font-mono text-xs">{cp.code}</p><p className="text-xs text-muted-foreground">{cp.type} · {cp.discount}</p></div>
-                  <span className="text-xs text-muted-foreground">{cp.used}/{cp.limit}</span>
-                </div>
-              ))}
-            </TabsContent>
-            <TabsContent value="reviews" className="mt-4 space-y-2">
-              {reviews.map((r, i) => (
-                <div key={i} className="rounded-xl border p-3 text-sm">
-                  <div className="flex items-center justify-between"><p className="font-medium">{r.customer}</p><p>{"⭐".repeat(r.rating)}</p></div>
-                  <p className="mt-1 italic text-muted-foreground">"{r.comment}"</p>
-                </div>
-              ))}
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
-
-      <Card className="mt-4 rounded-2xl border-destructive/30">
+      <Card className="mt-6 rounded-2xl border-destructive/30">
         <CardHeader><CardTitle className="font-display text-destructive">Danger zone</CardTitle></CardHeader>
         <CardContent className="flex flex-wrap gap-2">
-          <Button variant="outline" className="rounded-full" onClick={() => toast.warning("Account suspended (demo)")}><PauseCircle className="mr-1.5 h-4 w-4" /> Suspend account</Button>
-          <Button variant="destructive" className="rounded-full" onClick={() => toast.error("Business deleted (demo)")}><Trash2 className="mr-1.5 h-4 w-4" /> Delete business</Button>
+          <Button variant="outline" className="rounded-full" onClick={toggleStatus}>
+            <PauseCircle className="mr-1.5 h-4 w-4" /> {client.status === "ACTIVE" ? "Suspend Account" : "Activate Account"}
+          </Button>
+          <Button variant="destructive" className="rounded-full" onClick={deleteClient}>
+            <Trash2 className="mr-1.5 h-4 w-4" /> Delete Business Account
+          </Button>
         </CardContent>
       </Card>
+
+      {/* 1. Reset Password Dialog */}
+      <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset Password — {client.name}</DialogTitle>
+            <DialogDescription>
+              Generate a temporary password and dispatch login credentials to <strong>{client.email}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {!tempPassword ? (
+              <p className="text-sm text-muted-foreground">
+                Clicking the button below will issue a new temporary credential for merchant owner <strong>{client.owner_name}</strong>.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <Label>Temporary Password Generated</Label>
+                <div className="flex items-center gap-2">
+                  <Input value={tempPassword} readOnly className="font-mono text-sm font-semibold" />
+                  <Button variant="outline" size="icon" onClick={handleCopyPassword}>
+                    {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Credentials sent to {client.email}. Share this temporary password securely with the client.
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setResetDialogOpen(false); setTempPassword(null); }}>
+              Close
+            </Button>
+            {!tempPassword && (
+              <Button onClick={handleResetPassword} className="gradient-brand text-primary-foreground">
+                <KeyRound className="mr-1.5 h-4 w-4" /> Generate & Send Reset Link
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 2. Send Notification Dialog */}
+      <Dialog open={notifDialogOpen} onOpenChange={setNotifDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send Operational Notification</DialogTitle>
+            <DialogDescription>
+              Dispatch a direct platform alert to business owner <strong>{client.owner_name}</strong> ({client.name}).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Notification Title</Label>
+              <Input
+                value={notifTitle}
+                onChange={(e) => setNotifTitle(e.target.value)}
+                placeholder="e.g. Subscription Update Notice"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Message Body</Label>
+              <Textarea
+                rows={4}
+                value={notifBody}
+                onChange={(e) => setNotifBody(e.target.value)}
+                placeholder="Enter notification message..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNotifDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button disabled={sendingNotif} onClick={handleSendNotification} className="gradient-brand text-primary-foreground">
+              {sendingNotif ? "Sending..." : <><Send className="mr-1.5 h-4 w-4" /> Send Notification</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 3. Subscription Plan Dialog */}
+      <Dialog open={planDialogOpen} onOpenChange={setPlanDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Manage Subscription Plan — {client.name}</DialogTitle>
+            <DialogDescription>
+              Update merchant plan tier and subscription details directly.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Select Subscription Plan</Label>
+              <Select value={selectedPlanId} onValueChange={setSelectedPlanId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a plan..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {plans.length > 0 ? (
+                    plans.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name} — ₹{p.monthly_price}/mo ({p.max_customers} clients)
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="starter">STARTER Plan</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Internal Admin Notes (Optional)</Label>
+              <Input
+                value={planNotes}
+                onChange={(e) => setPlanNotes(e.target.value)}
+                placeholder="e.g. Upgraded to Professional Tier manually"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPlanDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button disabled={savingPlan} onClick={handleSavePlan} className="gradient-brand text-primary-foreground">
+              {savingPlan ? "Saving..." : <><ArrowUpRight className="mr-1.5 h-4 w-4" /> Save Plan</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -256,15 +463,6 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
     <div>
       <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className="mt-1 font-medium">{value}</p>
-    </div>
-  );
-}
-
-function EventRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between rounded-xl border p-3">
-      <div className="flex items-center gap-2">{icon}<span>{label}</span></div>
-      <span className="font-semibold">{value}</span>
     </div>
   );
 }

@@ -91,7 +91,7 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
 
   console.log(`[AUTH] apiFetch response status for ${url}: ${res.status}`);
 
-  if (res.status === 401 || res.status === 403) {
+  if ((res.status === 401 || res.status === 403) && !url.includes("/login")) {
     console.warn(`[AUTH] Unauthenticated (${res.status}) on ${url}. Redirecting to login.`);
     if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
       clearSession();
@@ -157,6 +157,57 @@ export async function getMeApi(explicitToken?: string) {
 
   if (!res.ok) {
     throw new Error("Failed to fetch user profile");
+  }
+
+  return await res.json();
+}
+
+export async function adminLoginApi(email: string, password: string): Promise<Session> {
+  console.log("[AUTH] adminLoginApi() starting with email:", email);
+
+  const res = await apiFetch("/api/v1/admin/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+
+  console.log("[AUTH] POST /api/v1/admin/auth/login response status:", res.status);
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    console.error("[AUTH] adminLoginApi() failed with error payload:", errData);
+    const msg = typeof errData.detail === "string" ? errData.detail : "Incorrect admin email or password.";
+    throw new Error(msg);
+  }
+
+  const data = await res.json();
+  const token = data.access_token;
+  setToken(token);
+
+  console.log("[AUTH] Fetching admin profile via getAdminMeApi()...");
+  const adminUser = await getAdminMeApi(token);
+
+  const session: Session = {
+    role: "admin",
+    email: adminUser.email,
+    businessName: adminUser.name || "Super Admin",
+    token: token,
+  };
+
+  setSession(session);
+  return session;
+}
+
+export async function getAdminMeApi(explicitToken?: string) {
+  const token = explicitToken || getToken();
+  const res = await fetch(`${API_BASE_URL}/api/v1/admin/auth/me`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch admin profile");
   }
 
   return await res.json();

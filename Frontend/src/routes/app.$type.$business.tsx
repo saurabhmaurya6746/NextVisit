@@ -66,7 +66,13 @@ function AppLayout() {
       <div className="flex min-h-screen w-full bg-background">
         <BusinessSidebar />
         <SidebarInset className="min-w-0">
-          <Topbar userName={businessName} userRole={`${type === "salon" ? "Salon" : "Restaurant"} · Owner`} initials={initials} />
+          <Topbar
+            userName={businessName}
+            businessType={profile?.type || (type === "salon" ? "Salon" : "Restaurant")}
+            country={profile?.country || "India"}
+            logoUrl={profile?.logo}
+            initials={initials}
+          />
           <TrialBanner />
           {!onboarded && wizardState.paused && (
             <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-primary/5 px-4 py-2 text-sm sm:px-6">

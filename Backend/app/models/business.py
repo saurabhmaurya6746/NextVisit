@@ -1,3 +1,4 @@
+import enum
 import uuid
 from datetime import datetime
 
@@ -6,6 +7,13 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
+
+
+class BusinessStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    ACTIVE = "ACTIVE"
+    REJECTED = "REJECTED"
+    SUSPENDED = "SUSPENDED"
 
 class Business(BaseModel):
     __tablename__ = "businesses"
@@ -47,6 +55,38 @@ class Business(BaseModel):
         default="trial",
     )
 
+    subscription_plan_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("subscription_plans.id"),
+        nullable=True,
+    )
+
+    plan_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    subscription_notes: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default=BusinessStatus.PENDING.value,
+        nullable=False,
+    )
+
+    rejection_reason: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         default=True,
@@ -58,6 +98,7 @@ class Business(BaseModel):
     )
     
     business_type = relationship("BusinessType")
+    subscription_plan = relationship("SubscriptionPlan")
     users = relationship(
         "User",
         back_populates="business",
@@ -104,4 +145,22 @@ class Business(BaseModel):
         back_populates="business",
         uselist=False,
         cascade="all, delete-orphan",
+    )
+    dining_areas = relationship(
+        "DiningArea",
+        back_populates="business",
+        cascade="all, delete-orphan",
+        order_by="DiningArea.display_order",
+    )
+    menu_categories = relationship(
+        "MenuCategory",
+        back_populates="business",
+        cascade="all, delete-orphan",
+        order_by="MenuCategory.display_order",
+    )
+    menu_items = relationship(
+        "MenuItem",
+        back_populates="business",
+        cascade="all, delete-orphan",
+        order_by="MenuItem.display_order",
     )

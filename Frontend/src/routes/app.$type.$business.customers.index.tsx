@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { CustomerCard } from "@/components/customer-card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -52,6 +53,18 @@ function CustomersPage() {
   const [emailInput, setEmailInput] = useState("");
   const [birthDateInput, setBirthDateInput] = useState("");
   const [anniversaryInput, setAnniversaryInput] = useState("");
+
+  // Edit Customer modal state
+  const [editingCustomer, setEditingCustomer] = useState<CustomerModel | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editGender, setEditGender] = useState("");
+  const [editBirthDate, setEditBirthDate] = useState("");
+  const [editAnniversary, setEditAnniversary] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editNotes, setEditNotes] = useState("");
 
   const loadCustomers = async () => {
     setLoading(true);
@@ -104,6 +117,11 @@ function CustomersPage() {
       toast.error("Name and Phone are required.");
       return;
     }
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (emailInput.trim() && !EMAIL_REGEX.test(emailInput.trim())) {
+      toast.error("Please enter a valid email address (e.g. name@example.com).");
+      return;
+    }
     setAddLoading(true);
     try {
       const newCust = await createCustomerApi({
@@ -126,6 +144,54 @@ function CustomersPage() {
       toast.error(err.message || "Failed to create customer");
     } finally {
       setAddLoading(false);
+    }
+  };
+
+  const openEditModal = (c: CustomerModel) => {
+    setEditingCustomer(c);
+    setEditName(c.name || "");
+    setEditPhone(c.phone || "");
+    setEditEmail(c.email || "");
+    setEditGender(c.gender || "");
+    setEditBirthDate(c.birth_date || "");
+    setEditAnniversary(c.anniversary_date || "");
+    setEditAddress(c.address || "");
+    setEditNotes(c.notes || "");
+  };
+
+  const handleSaveEditCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCustomer) return;
+    if (!editName.trim() || !editPhone.trim()) {
+      toast.error("Name and Phone are required.");
+      return;
+    }
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (editEmail.trim() && !EMAIL_REGEX.test(editEmail.trim())) {
+      toast.error("Please enter a valid email address.");
+      return;
+    }
+
+    setEditLoading(true);
+    try {
+      const updated = await updateCustomerApi(editingCustomer.id, {
+        name: editName.trim(),
+        phone: editPhone.trim(),
+        email: editEmail.trim() || undefined,
+        gender: editGender.trim() || undefined,
+        birth_date: editBirthDate || undefined,
+        anniversary_date: editAnniversary || undefined,
+        address: editAddress.trim() || undefined,
+        notes: editNotes.trim() || undefined,
+      });
+      toast.success(`Customer ${updated.name} updated successfully!`);
+      setEditingCustomer(null);
+      await loadCustomers();
+    } catch (err: any) {
+      console.error("[CUSTOMERS] Update error:", err);
+      toast.error(err.message || "Failed to update customer");
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -214,7 +280,7 @@ function CustomersPage() {
         />
       ) : view === "card" ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filtered.map((c, i) => <CustomerCard key={c.id} c={c} index={i} />)}
+          {filtered.map((c, i) => <CustomerCard key={c.id} c={c} index={i} onEdit={() => openEditModal(c)} />)}
         </div>
       ) : (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="rounded-2xl border bg-card shadow-elegant overflow-hidden">
@@ -255,7 +321,7 @@ function CustomersPage() {
                       <div className="flex justify-end gap-1">
                         <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full" title="WhatsApp" onClick={() => handleWhatsApp(c)}><MessageCircle className="h-3.5 w-3.5" /></Button>
                         <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full" title="Call" onClick={() => window.open(`tel:${c.phone.replace(/[^\d+]/g, "")}`)}><Phone className="h-3.5 w-3.5" /></Button>
-                        <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full" title="Edit" onClick={() => toast("Edit customer functionality coming soon")}><Edit className="h-3.5 w-3.5" /></Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full" title="Edit Customer" onClick={() => openEditModal(c)}><Edit className="h-3.5 w-3.5" /></Button>
                         <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full text-destructive" title="Archive" onClick={() => setToArchive(c.id)}><Archive className="h-3.5 w-3.5" /></Button>
                       </div>
                     </TableCell>
@@ -300,6 +366,53 @@ function CustomersPage() {
               <Button type="button" variant="outline" onClick={() => setIsAddOpen(false)}>Cancel</Button>
               <Button type="submit" disabled={addLoading} className="gradient-brand text-primary-foreground">
                 {addLoading ? "Saving..." : "Create Customer"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Customer Modal */}
+      <Dialog open={!!editingCustomer} onOpenChange={(open) => !open && setEditingCustomer(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Customer Profile</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSaveEditCustomer} className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-cust-name">Full Name *</Label>
+              <Input id="edit-cust-name" value={editName} onChange={(e) => setEditName(e.target.value)} required />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-cust-phone">Phone Number *</Label>
+              <Input id="edit-cust-phone" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} required />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-cust-email">Email Address</Label>
+              <Input id="edit-cust-email" type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-cust-dob">Birth Date</Label>
+                <Input id="edit-cust-dob" type="date" value={editBirthDate} onChange={(e) => setEditBirthDate(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-cust-anniv">Anniversary</Label>
+                <Input id="edit-cust-anniv" type="date" value={editAnniversary} onChange={(e) => setEditAnniversary(e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-cust-address">Address</Label>
+              <Input id="edit-cust-address" placeholder="e.g. 123 Main Street" value={editAddress} onChange={(e) => setEditAddress(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-cust-notes">Customer Notes</Label>
+              <Textarea id="edit-cust-notes" placeholder="Preferences, allergies, or VIP notes..." value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2} />
+            </div>
+            <DialogFooter className="mt-4">
+              <Button type="button" variant="outline" onClick={() => setEditingCustomer(null)}>Cancel</Button>
+              <Button type="submit" disabled={editLoading} className="gradient-brand text-primary-foreground">
+                {editLoading ? "Updating..." : "Save Changes"}
               </Button>
             </DialogFooter>
           </form>

@@ -119,13 +119,34 @@ export async function createCustomerApi(payload: {
   address?: string;
   notes?: string;
 }): Promise<CustomerModel> {
+  const body: Record<string, any> = {
+    name: payload.name.trim(),
+    phone: payload.phone.trim(),
+  };
+
+  const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (payload.email && payload.email.trim() && EMAIL_REGEX.test(payload.email.trim())) {
+    body.email = payload.email.trim();
+  }
+  if (payload.gender && payload.gender.trim()) body.gender = payload.gender.trim();
+  if (payload.birth_date && payload.birth_date.trim()) body.birth_date = payload.birth_date.trim();
+  if (payload.anniversary_date && payload.anniversary_date.trim()) body.anniversary_date = payload.anniversary_date.trim();
+  if (payload.address && payload.address.trim()) body.address = payload.address.trim();
+  if (payload.notes && payload.notes.trim()) body.notes = payload.notes.trim();
+
   const res = await apiFetch("/api/v1/customers", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to create customer");
+    let errMsg = "Failed to create customer";
+    if (Array.isArray(errData.detail)) {
+      errMsg = errData.detail.map((e: any) => `${e.loc?.join(".") || "field"}: ${e.msg}`).join("; ");
+    } else if (typeof errData.detail === "string") {
+      errMsg = errData.detail;
+    }
+    throw new Error(errMsg);
   }
   const data: BackendCustomer = await res.json();
   return formatCustomer(data);
@@ -145,13 +166,31 @@ export async function updateCustomerApi(
     is_active?: boolean;
   }
 ): Promise<CustomerModel> {
+  const body: Record<string, any> = {};
+
+  if (payload.name !== undefined) body.name = payload.name.trim();
+  if (payload.phone !== undefined) body.phone = payload.phone.trim();
+  if (payload.email !== undefined) body.email = payload.email?.trim() || null;
+  if (payload.gender !== undefined) body.gender = payload.gender?.trim() || null;
+  if (payload.birth_date !== undefined) body.birth_date = payload.birth_date?.trim() || null;
+  if (payload.anniversary_date !== undefined) body.anniversary_date = payload.anniversary_date?.trim() || null;
+  if (payload.address !== undefined) body.address = payload.address?.trim() || null;
+  if (payload.notes !== undefined) body.notes = payload.notes?.trim() || null;
+  if (payload.is_active !== undefined) body.is_active = payload.is_active;
+
   const res = await apiFetch(`/api/v1/customers/${id}`, {
     method: "PUT",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to update customer");
+    let errMsg = "Failed to update customer";
+    if (Array.isArray(errData.detail)) {
+      errMsg = errData.detail.map((e: any) => `${e.loc?.join(".") || "field"}: ${e.msg}`).join("; ");
+    } else if (typeof errData.detail === "string") {
+      errMsg = errData.detail;
+    }
+    throw new Error(errMsg);
   }
   const data: BackendCustomer = await res.json();
   return formatCustomer(data);

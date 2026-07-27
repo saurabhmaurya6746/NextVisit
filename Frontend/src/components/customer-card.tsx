@@ -16,7 +16,7 @@ const statusColor: Record<string, string> = {
   "At Risk": "bg-destructive/15 text-destructive border-destructive/30",
 };
 
-export function CustomerCard({ c, index = 0 }: { c: any; index?: number }) {
+export function CustomerCard({ c, index = 0, onEdit }: { c: any; index?: number; onEdit?: () => void }) {
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03 }} whileHover={{ scale: 1.02 }}>
       <Card className="group h-full overflow-hidden rounded-2xl transition-all duration-200 hover:-translate-y-0.5 hover:shadow-glow">
@@ -41,8 +41,8 @@ export function CustomerCard({ c, index = 0 }: { c: any; index?: number }) {
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-1.5">
             <Button size="sm" variant="outline" className="h-8 rounded-full text-xs" onClick={() => toast.success(`WhatsApp sent to ${c.name}`)}><MessageCircle className="mr-1 h-3 w-3" /> WhatsApp</Button>
-            <Button size="sm" variant="outline" className="h-8 rounded-full text-xs" onClick={() => toast(`Calling ${c.phone}`)}><Phone className="mr-1 h-3 w-3" /> Call</Button>
-            <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full" onClick={() => toast("Edit dialog")}><Edit className="h-3.5 w-3.5" /></Button>
+            <Button size="sm" variant="outline" className="h-8 rounded-full text-xs" onClick={() => window.open(`tel:${c.phone.replace(/[^\d+]/g, "")}`)}><Phone className="mr-1 h-3 w-3" /> Call</Button>
+            <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full" title="Edit Customer" onClick={() => onEdit?.()}><Edit className="h-3.5 w-3.5" /></Button>
             <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full text-destructive" onClick={() => toast.error("Removed (demo)")}><Trash2 className="h-3.5 w-3.5" /></Button>
           </div>
         </div>

@@ -56,3 +56,13 @@ class CampaignGenerateAudienceResponse(BaseModel):
     campaign_id: UUID
     customers_found: int
     logs_created: int
+
+
+class CampaignAiGenerateRequest(BaseModel):
+    campaign_type: str = Field(..., max_length=100)
+    title: str = Field(..., max_length=200)
+    discount: str | None = Field(default=None, max_length=100)
+
+
+class CampaignAiGenerateResponse(BaseModel):
+    generated_message: str

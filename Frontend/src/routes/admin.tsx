@@ -14,7 +14,7 @@ export const Route = createFileRoute("/admin")({
     if (typeof window === "undefined") return;
     const s = getSession();
     if (!s || s.role !== "admin") {
-      throw redirect({ to: "/login" });
+      throw redirect({ to: "/login/admin" });
     }
   },
   component: AdminLayout,
@@ -35,7 +35,7 @@ function AdminLayout() {
       <div className="flex min-h-screen w-full bg-background">
         <AdminSidebar />
         <SidebarInset className="min-w-0">
-          <Topbar userName="Iris Novak" userRole="Platform Owner" initials="IN" />
+          <Topbar userName="Saurabh Maurya" userRole="Super Admin" initials="SM" />
           <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6 lg:p-8">
             <Outlet />
           </main>

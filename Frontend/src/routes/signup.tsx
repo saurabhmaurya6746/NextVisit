@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, type FormEvent } from "react";
-import { CheckCircle2, Clock } from "lucide-react";
+import { CheckCircle2, Clock, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { BrandLogo } from "@/components/brand-logo";
 import { toast } from "sonner";
 import { getBusinessTypesApi, registerApi } from "@/lib/auth";
+import { PasswordInput } from "@/components/ui/password-input";
 
 export const Route = createFileRoute("/signup")({
   head: () => ({ meta: [{ title: "Create account — NextVisit" }] }),
@@ -86,6 +87,8 @@ function SignupPage() {
       setLoading(false);
     }
   };
+
+  const [showPassword, setShowPassword] = useState(false);
 
   return (
     <div className="grid min-h-screen place-items-center bg-background p-6">
@@ -165,11 +168,21 @@ function SignupPage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="password">Password</Label>
-                  <Input id="password" type="password" required value={form.password} onChange={(e) => set("password")(e.target.value)} />
+                  <PasswordInput
+                    id="password"
+                    required
+                    value={form.password}
+                    onChange={(e) => set("password")(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="confirm">Confirm password</Label>
-                  <Input id="confirm" type="password" required value={form.confirm} onChange={(e) => set("confirm")(e.target.value)} />
+                  <PasswordInput
+                    id="confirm"
+                    required
+                    value={form.confirm}
+                    onChange={(e) => set("confirm")(e.target.value)}
+                  />
                 </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">

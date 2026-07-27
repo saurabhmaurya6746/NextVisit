@@ -9,7 +9,8 @@ import { toast } from "sonner";
 import { setBusinessType } from "@/lib/business-type";
 import { readProfile } from "@/lib/business-profile";
 import { slugify } from "@/lib/app-nav";
-import { loginApi, setSession } from "@/lib/auth";
+import { adminLoginApi, loginApi, setSession } from "@/lib/auth";
+import { PasswordInput } from "@/components/ui/password-input";
 
 export const Route = createFileRoute("/login/")({
   head: () => ({ meta: [{ title: "Sign in — NextVisit" }] }),
@@ -18,7 +19,7 @@ export const Route = createFileRoute("/login/")({
 
 // Demo credentials → role routing.
 const DEMO: Record<string, { role: string; type?: "restaurant" | "salon"; adminTarget?: string }> = {
-  "admin@growthos.com": { role: "Super Admin", adminTarget: "/admin" },
+  "admin@nextvisit.com": { role: "Super Admin", adminTarget: "/admin" },
   "demo@restaurant.com": { role: "Restaurant Owner", type: "restaurant" },
   "demo@salon.com": { role: "Salon Owner", type: "salon" },
 };
@@ -41,9 +42,10 @@ function UnifiedLogin() {
     setLoading(true);
 
     try {
-      if (email.toLowerCase() === "admin@growthos.com") {
-        setSession({ role: "admin", email });
-        toast.success(`Welcome — signing you into Super Admin`);
+      if (email.toLowerCase().includes("admin")) {
+        console.log("[LOGIN/INDEX] Calling adminLoginApi for super admin...");
+        await adminLoginApi(email, password);
+        toast.success(`Welcome back — signing you into Super Admin`);
         window.location.href = "/admin";
         return;
       }
@@ -88,7 +90,7 @@ function UnifiedLogin() {
                 <Label htmlFor="password">Password</Label>
                 <button type="button" onClick={() => toast("Password reset link sent if the email exists.")} className="text-xs text-muted-foreground hover:text-foreground">Forgot password?</button>
               </div>
-              <Input id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+              <PasswordInput id="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
             <Button type="submit" disabled={loading} className="w-full rounded-full gradient-brand text-primary-foreground shadow-glow">
               {loading ? "Signing in…" : (<>Sign in <ArrowRight className="ml-1.5 h-4 w-4" /></>)}

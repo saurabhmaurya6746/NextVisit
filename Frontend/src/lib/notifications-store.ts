@@ -1,11 +1,25 @@
 import { useEffect, useState } from "react";
 
-export type NotificationType =
+export type AdminNotificationType =
+  | "registration"
+  | "approval"
+  | "approval_approved"
+  | "approval_rejected"
+  | "subscription"
+  | "system_error"
+  | "campaign_failure";
+
+export type MerchantNotificationType =
   | "qr_order"
   | "staff_order"
+  | "visit"
+  | "payment"
+  | "review"
+  | "staff_activity"
   | "birthday"
-  | "campaign"
-  | "payment";
+  | "campaign";
+
+export type NotificationType = AdminNotificationType | MerchantNotificationType;
 
 export interface AppNotification {
   id: string;
@@ -18,7 +32,7 @@ export interface AppNotification {
   read: boolean;
 }
 
-const KEY = "growthos:qr-notifications"; // kept key for back-compat with existing data
+const KEY = "growthos:qr-notifications";
 const EVT = "growthos:qr-notifications-changed";
 
 function migrate(raw: any): AppNotification {
@@ -40,25 +54,30 @@ function read(): AppNotification[] {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || "[]");
     return Array.isArray(raw) ? raw.map(migrate) : [];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
+
 function write(n: AppNotification[]) {
   localStorage.setItem(KEY, JSON.stringify(n.slice(0, 60)));
   window.dispatchEvent(new Event(EVT));
 }
 
-/** Subtle "ding" — 800Hz sine, ~150ms, ~30% volume. */
+/** Subtle "ding" sound helper */
 export function playNotificationSound() {
   try {
     const AC: any = (window as any).AudioContext || (window as any).webkitAudioContext;
     if (!AC) return;
     const ctx = new AC();
-    const o = ctx.createOscillator(); const g = ctx.createGain();
-    o.type = "sine"; o.frequency.value = 800;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.value = 800;
     g.gain.value = 0.3;
-    o.connect(g); g.connect(ctx.destination);
+    o.connect(g);
+    g.connect(ctx.destination);
     o.start();
-    // gentle fade to avoid click
     g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.15);
     o.stop(ctx.currentTime + 0.16);
     setTimeout(() => ctx.close(), 400);
@@ -82,7 +101,6 @@ export function pushNotification(n: Omit<AppNotification, "id" | "at" | "read">,
   return item;
 }
 
-/** Back-compat helper used by the QR self-order flow. */
 export function pushQrNotification(n: { orderId: string; table: string; customerName?: string; items: number; total: number }) {
   return pushNotification({
     type: "qr_order",
@@ -93,9 +111,17 @@ export function pushQrNotification(n: { orderId: string; table: string; customer
   });
 }
 
-export function markAllRead() { write(read().map((n) => ({ ...n, read: true }))); }
-export function markRead(id: string) { write(read().map((n) => n.id === id ? { ...n, read: true } : n)); }
-export function clearNotifications() { write([]); }
+export function markAllRead() {
+  write(read().map((n) => ({ ...n, read: true })));
+}
+
+export function markRead(id: string) {
+  write(read().map((n) => (n.id === id ? { ...n, read: true } : n)));
+}
+
+export function clearNotifications() {
+  write([]);
+}
 
 export function useNotifications() {
   const [list, setList] = useState<AppNotification[]>(() => read());
@@ -103,10 +129,12 @@ export function useNotifications() {
     const on = () => setList(read());
     window.addEventListener(EVT, on);
     window.addEventListener("storage", on);
-    return () => { window.removeEventListener(EVT, on); window.removeEventListener("storage", on); };
+    return () => {
+      window.removeEventListener(EVT, on);
+      window.removeEventListener("storage", on);
+    };
   }, []);
   return list;
 }
 
-/** Back-compat alias. */
 export const useQrNotifications = useNotifications;

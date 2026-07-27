@@ -6,6 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
+from app.api.v1.admin_approvals.router import router as admin_approvals_router
+from app.api.v1.admin_auth.router import router as admin_auth_router
+from app.api.v1.admin_clients.router import router as admin_clients_router
+from app.api.v1.admin_dashboard.router import router as admin_dashboard_router
+from app.api.v1.admin_settings.router import router as admin_settings_router
+from app.api.v1.admin_subscriptions.router import router as admin_subscriptions_router
 from app.api.v1.auth.router import router as auth_router
 from app.api.v1.automation.router import router as automation_router
 from app.api.v1.business.router import router as business_router
@@ -16,12 +22,21 @@ from app.api.v1.campaigns.router import router as campaigns_router
 from app.api.v1.customers.router import router as customers_router
 from app.api.v1.dashboard.router import router as dashboard_router
 from app.api.v1.loyalty.router import router as loyalty_router
+from app.api.v1.menu.router import router as menu_router
 from app.api.v1.message_templates.router import router as message_templates_router
+from app.api.v1.orders.router import router as orders_router
 from app.api.v1.services.router import router as services_router
 from app.api.v1.staff.router import router as staff_router
+from app.api.v1.dining_areas.router import router as dining_areas_router
+from app.api.v1.setup.router import router as setup_router
+from app.api.v1.tables.router import router as tables_router
 from app.api.v1.uploads.router import router as uploads_router
 from app.api.v1.visits.router import router as visits_router
 from app.db.database import engine
+from app.models.base import Base
+
+# Ensure all database tables exist
+Base.metadata.create_all(bind=engine)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,6 +55,36 @@ app.add_middleware(
 
 os.makedirs("uploads", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+app.include_router(
+    admin_approvals_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    admin_auth_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    admin_clients_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    admin_dashboard_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    admin_settings_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    admin_subscriptions_router,
+    prefix="/api/v1",
+)
 
 app.include_router(
     auth_router,
@@ -97,12 +142,37 @@ app.include_router(
 )
 
 app.include_router(
+    menu_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    orders_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
     services_router,
     prefix="/api/v1",
 )
 
 app.include_router(
     staff_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    dining_areas_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    setup_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    tables_router,
     prefix="/api/v1",
 )
 

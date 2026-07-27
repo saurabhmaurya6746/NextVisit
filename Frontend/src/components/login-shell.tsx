@@ -1,22 +1,24 @@
 import { Link } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { ArrowRight, Github, Crown, Store } from "lucide-react";
+import { ArrowRight, Github, Crown, Store, Eye, EyeOff } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BrandLogo } from "@/components/brand-logo";
 import { toast } from "sonner";
-import { loginApi, setSession } from "@/lib/auth";
+import { adminLoginApi, loginApi, setSession } from "@/lib/auth";
 import { setBusinessType } from "@/lib/business-type";
 import { readProfile } from "@/lib/business-profile";
 import { slugify } from "@/lib/app-nav";
 
+import { PasswordInput } from "@/components/ui/password-input";
+
 export function LoginShell({ role, target, tagline, quote, author }: { role: "Business Owner" | "Super Admin"; target: string; tagline: string; quote: string; author: string }) {
   const [loading, setLoading] = useState(false);
   const isAdmin = role === "Super Admin";
-  const demoEmail = isAdmin ? "admin@growthos.com" : "demo@restaurant.com";
-  const demoPass = isAdmin ? "Admin@123" : "Demo@123";
+  const demoEmail = isAdmin ? "admin@nextvisit.com" : "demo@restaurant.com";
+  const demoPass = isAdmin ? "Admin@123456" : "Demo@123";
   const [email, setEmail] = useState(demoEmail);
   const [password, setPassword] = useState(demoPass);
 
@@ -27,8 +29,8 @@ export function LoginShell({ role, target, tagline, quote, author }: { role: "Bu
 
     try {
       if (isAdmin) {
-        console.log("[LOGIN] Super Admin bypass setting admin session");
-        setSession({ role: "admin", email });
+        console.log("[LOGIN] Invoking adminLoginApi() for super admin...");
+        const session = await adminLoginApi(email, password);
         toast.success(`Welcome back — signing you into the ${role} panel`);
         window.location.href = target;
       } else {
@@ -91,7 +93,12 @@ export function LoginShell({ role, target, tagline, quote, author }: { role: "Bu
                 <Label htmlFor="password">Password</Label>
                 <a href="#" className="text-xs text-primary hover:underline">Forgot?</a>
               </div>
-              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              <PasswordInput
+                id="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
             </div>
             <Button type="submit" disabled={loading} className="w-full rounded-full gradient-brand text-primary-foreground shadow-glow">
               {loading ? "Signing in…" : (<>Continue <ArrowRight className="ml-1.5 h-4 w-4" /></>)}
@@ -102,7 +109,18 @@ export function LoginShell({ role, target, tagline, quote, author }: { role: "Bu
             <div className="h-px flex-1 bg-border" /> Or continue with demo <div className="h-px flex-1 bg-border" />
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <Button variant="outline" className="rounded-full" onClick={() => { setSession({ role: "admin", email: "admin@growthos.com" }); window.location.href = "/admin"; }}>
+            <Button variant="outline" className="rounded-full" onClick={async () => {
+              console.log("[LOGIN] Super Admin demo button clicked!");
+              setEmail("admin@nextvisit.com");
+              setPassword("Admin@123456");
+              try {
+                await adminLoginApi("admin@nextvisit.com", "Admin@123456");
+                toast.success("Signed in as Super Admin");
+                window.location.href = "/admin";
+              } catch (err: any) {
+                toast.error(err.message || "Super Admin demo login failed");
+              }
+            }}>
               <Crown className="mr-1.5 h-4 w-4" /> Super Admin
             </Button>
             <Button variant="outline" className="rounded-full" onClick={async () => {

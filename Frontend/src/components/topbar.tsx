@@ -1,4 +1,23 @@
-import { Bell, Search, Sparkles, Users, ShoppingBag, Ticket, Megaphone, QrCode, Cake, DollarSign } from "lucide-react";
+import {
+  Bell,
+  Search,
+  Sparkles,
+  Users,
+  ShoppingBag,
+  Ticket,
+  Megaphone,
+  QrCode,
+  Cake,
+  DollarSign,
+  UserPlus,
+  Clock,
+  Check,
+  X,
+  ShieldAlert,
+  AlertTriangle,
+  Star,
+  UserCheck,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
@@ -8,9 +27,53 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { customers, orders, coupons, campaigns } from "@/lib/sample-data";
-import { useNotifications, markAllRead, markRead, clearNotifications, type NotificationType } from "@/lib/notifications-store";
+import {
+  useNotifications,
+  markAllRead,
+  markRead,
+  clearNotifications,
+  type NotificationType,
+} from "@/lib/notifications-store";
+import { getSession } from "@/lib/auth";
 
-export function Topbar({ userName, userRole, initials }: { userName: string; userRole: string; initials: string }) {
+const ADMIN_NOTIF_TYPES: NotificationType[] = [
+  "registration",
+  "approval",
+  "approval_approved",
+  "approval_rejected",
+  "subscription",
+  "system_error",
+  "campaign_failure",
+];
+
+const MERCHANT_NOTIF_TYPES: NotificationType[] = [
+  "qr_order",
+  "staff_order",
+  "visit",
+  "payment",
+  "review",
+  "staff_activity",
+  "birthday",
+  "campaign",
+];
+
+export interface TopbarProps {
+  userName?: string;
+  userRole?: string;
+  initials?: string;
+  logoUrl?: string;
+  country?: string;
+  businessType?: string;
+}
+
+export function Topbar({
+  userName,
+  userRole,
+  initials,
+  logoUrl,
+  country,
+  businessType,
+}: TopbarProps) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -18,7 +81,18 @@ export function Topbar({ userName, userRole, initials }: { userName: string; use
   const notifRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const notifications = useNotifications();
-  const unread = notifications.filter((n) => !n.read).length;
+
+  const session = getSession();
+  const isAdmin = session?.role === "admin";
+
+  const displayNotifications = useMemo(() => {
+    if (isAdmin) {
+      return notifications.filter((n) => ADMIN_NOTIF_TYPES.includes(n.type));
+    }
+    return notifications.filter((n) => MERCHANT_NOTIF_TYPES.includes(n.type));
+  }, [notifications, isAdmin]);
+
+  const unread = displayNotifications.filter((n) => !n.read).length;
 
   useEffect(() => {
     function on(e: MouseEvent) {
@@ -42,6 +116,17 @@ export function Topbar({ userName, userRole, initials }: { userName: string; use
 
   const total = results.customers.length + results.orders.length + results.coupons.length + results.campaigns.length;
 
+  // Profile data resolution
+  const displayName = isAdmin
+    ? (userName || session?.businessName || "Saurabh Maurya")
+    : (userName || session?.businessName || "NextVisit Business");
+
+  const displaySubtitle = isAdmin
+    ? (userRole || "Super Admin")
+    : `${businessType || "Restaurant"} • ${country || "India"}`;
+
+  const computedInitials = initials || displayName.split(/\s+/).map((s) => s[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur-xl">
       <SidebarTrigger />
@@ -49,7 +134,10 @@ export function Topbar({ userName, userRole, initials }: { userName: string; use
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={q}
-          onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setOpen(true);
+          }}
           onFocus={() => setOpen(true)}
           placeholder="Search customers, orders, coupons, campaigns…"
           className="h-9 rounded-full border-transparent bg-muted/60 pl-9"
@@ -98,41 +186,62 @@ export function Topbar({ userName, userRole, initials }: { userName: string; use
         )}
       </div>
       <div className="ml-auto flex items-center gap-1.5">
-        <Button variant="ghost" size="sm" className="hidden gap-1.5 rounded-full text-xs md:inline-flex">
-          <Sparkles className="h-3.5 w-3.5 text-primary" /> Ask AI
-        </Button>
         <div ref={notifRef} className="relative">
-          <Button variant="ghost" size="icon" className="relative rounded-full" aria-label="Notifications" onClick={() => { setNotifOpen((v) => !v); if (!notifOpen) setTimeout(markAllRead, 800); }}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="relative rounded-full"
+            aria-label="Notifications"
+            onClick={() => {
+              setNotifOpen((v) => !v);
+              if (!notifOpen) setTimeout(markAllRead, 800);
+            }}
+          >
             <Bell className="h-4 w-4" />
-            {unread > 0 && <span className="absolute right-1 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-destructive px-1 text-[9px] font-bold text-white">{unread}</span>}
+            {unread > 0 && (
+              <span className="absolute right-1 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-destructive px-1 text-[9px] font-bold text-white">
+                {unread}
+              </span>
+            )}
           </Button>
           {notifOpen && (
             <div className="absolute right-0 top-full mt-2 w-80 rounded-2xl border bg-popover p-2 shadow-elegant animate-in fade-in-0 zoom-in-95">
               <div className="flex items-center justify-between px-2 pb-1">
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Notifications</p>
-                {notifications.length > 0 && <button className="text-[11px] text-muted-foreground hover:text-foreground" onClick={() => clearNotifications()}>Clear all</button>}
+                {displayNotifications.length > 0 && (
+                  <button className="text-[11px] text-muted-foreground hover:text-foreground" onClick={() => clearNotifications()}>
+                    Clear all
+                  </button>
+                )}
               </div>
-              {notifications.length === 0 ? (
+              {displayNotifications.length === 0 ? (
                 <p className="p-4 text-center text-sm text-muted-foreground">No notifications yet</p>
               ) : (
                 <div className="max-h-80 space-y-1 overflow-auto">
-                  {notifications.map((n) => {
+                  {displayNotifications.map((n) => {
                     const Icon = ICONS[n.type] || Bell;
                     return (
-                      <button key={n.id} onClick={() => {
-                        markRead(n.id);
-                        setNotifOpen(false);
-                        if (n.orderId) navigate({ to: "/app/orders/$id" as any, params: { id: n.orderId } as any });
-                      }}
-                        className={`flex w-full items-start gap-2 rounded-lg p-2 text-left hover:bg-muted ${!n.read ? "bg-primary/5" : ""}`}>
-                        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg gradient-brand text-primary-foreground"><Icon className="h-4 w-4" /></div>
+                      <button
+                        key={n.id}
+                        onClick={() => {
+                          markRead(n.id);
+                          setNotifOpen(false);
+                          if (n.orderId) navigate({ to: "/app/orders/$id" as any, params: { id: n.orderId } as any });
+                        }}
+                        className={`flex w-full items-start gap-2 rounded-lg p-2 text-left hover:bg-muted ${!n.read ? "bg-primary/5" : ""}`}
+                      >
+                        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg gradient-brand text-primary-foreground">
+                          <Icon className="h-4 w-4" />
+                        </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
                             {!n.read && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />}
                             <p className="text-sm font-medium truncate">{n.title}</p>
                           </div>
                           <p className="text-[11px] text-muted-foreground truncate">{n.body}</p>
-                          <p className="text-[10px] text-muted-foreground">{new Date(n.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {new Date(n.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </p>
                         </div>
                         {n.orderId && <span className="text-[10px] text-primary opacity-70">View →</span>}
                       </button>
@@ -144,16 +253,19 @@ export function Topbar({ userName, userRole, initials }: { userName: string; use
           )}
         </div>
         <ThemeToggle />
-        <Link to="/" className="ml-1 flex items-center gap-2 rounded-full border bg-card px-2 py-1 pr-3 transition-colors hover:bg-muted">
+        <div className="ml-1 flex items-center gap-2 rounded-full border bg-card px-2 py-1 pr-3">
           <Avatar className="h-7 w-7">
-            <AvatarFallback className="bg-gradient-brand text-[11px] text-primary-foreground">{initials}</AvatarFallback>
+            {logoUrl ? (
+              <img src={logoUrl} alt={displayName} className="h-full w-full object-cover rounded-full" />
+            ) : (
+              <AvatarFallback className="bg-gradient-brand text-[11px] text-primary-foreground">{computedInitials}</AvatarFallback>
+            )}
           </Avatar>
           <div className="hidden text-left leading-tight sm:block">
-            <p className="text-xs font-semibold">{userName}</p>
-            <p className="text-[10px] text-muted-foreground">{userRole}</p>
+            <p className="text-xs font-semibold">{displayName}</p>
+            <p className="text-[10px] text-muted-foreground">{displaySubtitle}</p>
           </div>
-        </Link>
-        <Badge variant="secondary" className="hidden rounded-full text-[10px] lg:inline-flex">Demo</Badge>
+        </div>
       </div>
     </header>
   );
@@ -168,9 +280,19 @@ function Section({ label, icon }: { label: string; icon: ReactNode }) {
 }
 
 const ICONS: Record<NotificationType, typeof Bell> = {
+  registration: UserPlus,
+  approval: Clock,
+  approval_approved: Check,
+  approval_rejected: X,
+  subscription: ShieldAlert,
+  system_error: AlertTriangle,
+  campaign_failure: Megaphone,
   qr_order: QrCode,
   staff_order: ShoppingBag,
+  visit: Users,
+  payment: DollarSign,
+  review: Star,
+  staff_activity: UserCheck,
   birthday: Cake,
   campaign: Megaphone,
-  payment: DollarSign,
 };

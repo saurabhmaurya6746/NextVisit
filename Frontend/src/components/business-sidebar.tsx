@@ -11,6 +11,7 @@ const restaurantPrimary = [
   { title: "Orders", path: "orders", icon: ShoppingBag },
   { title: "Menu", path: "menu", icon: BookOpen },
   { title: "Customers", path: "customers", icon: Users },
+  { title: "Staff", path: "team", icon: UserCog },
   { title: "Revenue", path: "revenue", icon: TrendingUp },
 ];
 const salonPrimary = [
@@ -18,6 +19,7 @@ const salonPrimary = [
   { title: "Appointments", path: "appointments", icon: Scissors },
   { title: "Services", path: "services", icon: Sparkles },
   { title: "Customers", path: "customers", icon: Users },
+  { title: "Staff", path: "team", icon: UserCog },
   { title: "Revenue", path: "revenue", icon: TrendingUp },
 ];
 const restaurantAutomations = [

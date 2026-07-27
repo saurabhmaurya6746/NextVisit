@@ -105,6 +105,15 @@ class UserService:
         if data.name is not None:
             target_user.name = data.name
 
+        if data.email is not None:
+            existing_user = self.user_repo.get_by_email(data.email)
+            if existing_user and existing_user.id != target_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A user with this email already exists.",
+                )
+            target_user.email = data.email
+
         if data.role is not None:
             new_role = data.role.upper()
             if new_role == "OWNER":

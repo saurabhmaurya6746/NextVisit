@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,20 +9,99 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/empty-state";
+import { SkeletonRows } from "@/components/skeletons";
 import { toast } from "sonner";
-import { Store, Plus, Trash2, UtensilsCrossed, Scissors } from "lucide-react";
+import { Store, Plus, Trash2, UtensilsCrossed, Scissors, QrCode, Upload, Loader2, AlertTriangle } from "lucide-react";
 import { useBusinessType, setBusinessType, resetOnboarding, type BusinessType } from "@/lib/business-type";
 import { useProfile, saveProfile } from "@/lib/business-profile";
 import { useMenu, saveMenu, type MenuItem } from "@/lib/menu-store";
 import { cn } from "@/lib/utils";
 import { openWizard, clearDraft } from "@/lib/wizard-store";
+import { API_BASE_URL } from "@/lib/auth";
+import {
+  getBusinessSettingsApi,
+  updateBusinessSettingsApi,
+  getBusinessProfileApi,
+  updateBusinessProfileApi,
+  uploadPaymentQRApi,
+  type BusinessSettings,
+  type BusinessProfile,
+} from "@/lib/business-settings-api";
 
 export const Route = createFileRoute("/app/$type/$business/settings")({ component: SettingsPage });
 
 function SettingsPage() {
   const type = useBusinessType();
-  const restaurant = useProfile("restaurant");
-  const salon = useProfile("salon");
+  const restaurantProfile = useProfile("restaurant");
+  const salonProfile = useProfile("salon");
+
+  // Remote state
+  const [profile, setProfile] = useState<BusinessProfile | null>(null);
+  const [settings, setSettings] = useState<BusinessSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch settings & profile on mount
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [profData, settsData] = await Promise.all([
+        getBusinessProfileApi(),
+        getBusinessSettingsApi(),
+      ]);
+      setProfile(profData);
+      setSettings(settsData);
+    } catch (err: any) {
+      console.error("[SETTINGS] Error loading business settings/profile:", err);
+      setError(err.message || "Failed to load settings from server");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <PageHeader
+          title="Settings"
+          description="Loading business configuration..."
+          actions={<Badge variant="outline" className="rounded-full capitalize">{type}</Badge>}
+        />
+        <Card className="rounded-2xl p-6">
+          <SkeletonRows rows={6} cols={2} />
+        </Card>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-4">
+        <PageHeader
+          title="Settings"
+          description="Business profile, menu / services, hours, integrations and preferences."
+          actions={<Badge variant="outline" className="rounded-full capitalize">{type}</Badge>}
+        />
+        <EmptyState
+          title="Failed to load settings"
+          description={error}
+          icon={<AlertTriangle className="h-8 w-8 text-destructive" />}
+          action={
+            <Button variant="outline" className="rounded-full" onClick={loadData}>
+              Retry
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
   return (
     <>
       <PageHeader
@@ -49,7 +128,12 @@ function SettingsPage() {
         </TabsList>
 
         <TabsContent value="profile" className="mt-4">
-          <ProfileTab type={type} restaurant={restaurant} salon={salon} />
+          <ProfileTab
+            type={type}
+            initialProfile={profile}
+            initialSettings={settings}
+            onSaved={loadData}
+          />
         </TabsContent>
 
         <TabsContent value="type" className="mt-4">
@@ -62,22 +146,27 @@ function SettingsPage() {
               <MenuTab />
             </TabsContent>
             <TabsContent value="tables" className="mt-4">
-              <TablesTab restaurant={restaurant} />
+              <TablesTab restaurant={restaurantProfile} />
             </TabsContent>
             <TabsContent value="gst" className="mt-4">
-              <GstTab restaurant={restaurant} />
+              <GstTab
+                restaurant={restaurantProfile}
+                initialSettings={settings}
+                onSaved={loadData}
+              />
             </TabsContent>
           </>
         )}
 
         {type === "salon" && (
           <TabsContent value="services" className="mt-4">
-            <ServicesTab salon={salon} />
+            <ServicesTab salon={salonProfile} />
           </TabsContent>
         )}
 
         <TabsContent value="hours" className="mt-4">
-          <Card className="rounded-2xl"><CardHeader><CardTitle className="font-display">Business hours</CardTitle></CardHeader>
+          <Card className="rounded-2xl">
+            <CardHeader><CardTitle className="font-display">Business hours</CardTitle></CardHeader>
             <CardContent className="grid gap-2">
               {["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"].map((d) => (
                 <div key={d} className="grid grid-cols-[100px_1fr_auto] items-center gap-3">
@@ -105,27 +194,206 @@ function SettingsPage() {
   );
 }
 
-function ProfileTab({ type, restaurant, salon }: { type: BusinessType; restaurant: any; salon: any }) {
-  const [rest, setRest] = useState(restaurant);
-  const [sal, setSal] = useState(salon);
-  const p = type === "restaurant" ? rest : sal;
-  const setP = (v: any) => (type === "restaurant" ? setRest(v) : setSal(v));
+function ProfileTab({
+  type,
+  initialProfile,
+  initialSettings,
+  onSaved,
+}: {
+  type: BusinessType;
+  initialProfile: BusinessProfile | null;
+  initialSettings: BusinessSettings | null;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(initialProfile?.name || "");
+  const [phone, setPhone] = useState(initialProfile?.phone || "");
+  const [currency, setCurrency] = useState(initialProfile?.currency || initialSettings?.currency || "USD");
+  const [address, setAddress] = useState(initialProfile?.address || "");
+  const [logoUrl, setLogoUrl] = useState(initialProfile?.logo_url || initialSettings?.logo || "");
+
+  const [upiId, setUpiId] = useState(initialSettings?.payment_upi_id || "");
+  const [reviewLink, setReviewLink] = useState(initialSettings?.review_link || "");
+  const [bookingLink, setBookingLink] = useState(initialSettings?.booking_link || "");
+  const [qrImageUrl, setQrImageUrl] = useState(initialSettings?.payment_qr_image || "");
+
+  const [saving, setSaving] = useState(false);
+  const [uploadingQr, setUploadingQr] = useState(false);
+
+  // Sync state if props change
+  useEffect(() => {
+    if (initialProfile) {
+      setName(initialProfile.name || "");
+      setPhone(initialProfile.phone || "");
+      setCurrency(initialProfile.currency || "USD");
+      setAddress(initialProfile.address || "");
+      setLogoUrl(initialProfile.logo_url || "");
+    }
+    if (initialSettings) {
+      setUpiId(initialSettings.payment_upi_id || "");
+      setReviewLink(initialSettings.review_link || "");
+      setBookingLink(initialSettings.booking_link || "");
+      setQrImageUrl(initialSettings.payment_qr_image || "");
+    }
+  }, [initialProfile, initialSettings]);
+
+  // Save profile & settings handler
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await Promise.all([
+        updateBusinessProfileApi({
+          name: name.trim() || undefined,
+          phone: phone.trim() || undefined,
+          currency: currency.trim() || undefined,
+          address: address.trim() || undefined,
+          logo_url: logoUrl.trim() || undefined,
+        }),
+        updateBusinessSettingsApi({
+          currency: currency.trim() || undefined,
+          payment_upi_id: upiId.trim() || undefined,
+          review_link: reviewLink.trim() || undefined,
+          booking_link: bookingLink.trim() || undefined,
+          logo: logoUrl.trim() || undefined,
+          payment_qr_image: qrImageUrl || undefined,
+        }),
+      ]);
+      saveProfile(type, { name, currency, logo: logoUrl, upiQr: qrImageUrl });
+      toast.success("Business profile & settings saved successfully!");
+      onSaved();
+    } catch (err: any) {
+      console.error("[SETTINGS] Error saving profile:", err);
+      toast.error(err.message || "Failed to save profile");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Payment QR upload handler
+  const handleQrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingQr(true);
+    try {
+      const res = await uploadPaymentQRApi(file);
+      setQrImageUrl(res.payment_qr_image);
+      toast.success(res.message || "Payment QR code uploaded successfully!");
+      onSaved();
+    } catch (err: any) {
+      console.error("[SETTINGS] Upload QR error:", err);
+      toast.error(err.message || "Failed to upload Payment QR image.");
+    } finally {
+      setUploadingQr(false);
+    }
+  };
+
+  const formattedQrUrl = qrImageUrl?.startsWith("http")
+    ? qrImageUrl
+    : qrImageUrl
+    ? `${API_BASE_URL}${qrImageUrl.startsWith("/") ? "" : "/"}${qrImageUrl}`
+    : null;
+
   return (
     <Card className="rounded-2xl">
-      <CardHeader><CardTitle className="font-display">Business profile</CardTitle></CardHeader>
-      <CardContent className="space-y-4">
+      <CardHeader><CardTitle className="font-display">Business Profile & Payment Settings</CardTitle></CardHeader>
+      <CardContent className="space-y-6">
+        {/* Logo & Basic Info */}
         <div className="flex items-center gap-4">
-          <div className="grid h-16 w-16 place-items-center rounded-2xl gradient-brand text-primary-foreground shadow-glow"><Store className="h-7 w-7" /></div>
-          <Input placeholder="Logo URL" value={p.logo} onChange={(e) => setP({ ...p, logo: e.target.value })} className="max-w-sm" />
+          <div className="grid h-16 w-16 place-items-center rounded-2xl gradient-brand text-primary-foreground shadow-glow">
+            {logoUrl ? (
+              <img src={logoUrl} alt="Logo" className="h-full w-full rounded-2xl object-cover" />
+            ) : (
+              <Store className="h-7 w-7" />
+            )}
+          </div>
+          <div className="flex-1 max-w-sm">
+            <Label className="text-xs">Logo Image URL</Label>
+            <Input placeholder="https://..." value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} />
+          </div>
         </div>
+
         <div className="grid gap-3 sm:grid-cols-2">
-          <Fld label="Business name" value={p.name} onChange={(v) => setP({ ...p, name: v })} />
-          <Fld label="Currency" value={p.currency} onChange={(v) => setP({ ...p, currency: v })} />
-          <Fld label="Google review link" value={p.googleReviewLink} onChange={(v) => setP({ ...p, googleReviewLink: v })} />
-          {type === "restaurant" && <Fld label="UPI QR image URL" value={rest.upiQr} onChange={(v) => setRest({ ...rest, upiQr: v })} />}
+          <Fld label="Business name" value={name} onChange={setName} />
+          <Fld label="Phone" value={phone} onChange={setPhone} />
+          <Fld label="Currency (e.g. USD, INR, EUR)" value={currency} onChange={setCurrency} />
+          <Fld label="Address" value={address} onChange={setAddress} />
+          <Fld label="UPI ID (for payments)" value={upiId} onChange={setUpiId} />
+          <Fld label="Google review link" value={reviewLink} onChange={setReviewLink} />
+          <Fld label="Online booking link" value={bookingLink} onChange={setBookingLink} />
         </div>
+
+        {/* Payment QR Code Upload & Preview */}
+        <div className="rounded-2xl border p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold flex items-center gap-1.5">
+                <QrCode className="h-4 w-4 text-primary" /> Payment QR Code
+              </p>
+              <p className="text-xs text-muted-foreground">Upload a PNG, JPG, or WEBP QR code image (max 5 MB).</p>
+            </div>
+            <div className="relative">
+              <input
+                type="file"
+                id="qr-upload-input"
+                accept="image/*"
+                className="hidden"
+                onChange={handleQrUpload}
+                disabled={uploadingQr}
+              />
+              <Label
+                htmlFor="qr-upload-input"
+                className={cn(
+                  "cursor-pointer inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium border bg-muted/60 hover:bg-muted transition-colors",
+                  uploadingQr && "opacity-50 pointer-events-none"
+                )}
+              >
+                {uploadingQr ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-3.5 w-3.5 text-primary" /> Upload QR Code
+                  </>
+                )}
+              </Label>
+            </div>
+          </div>
+
+          {/* QR Code Preview */}
+          <div className="flex items-center gap-4 pt-2">
+            {formattedQrUrl ? (
+              <div className="relative h-28 w-28 rounded-xl border p-1 bg-background shadow-sm">
+                <img
+                  src={formattedQrUrl}
+                  alt="Payment QR Code"
+                  className="h-full w-full object-contain rounded-lg"
+                />
+              </div>
+            ) : (
+              <div className="h-28 w-28 rounded-xl border border-dashed flex flex-col items-center justify-center p-2 text-center bg-muted/20 text-muted-foreground">
+                <QrCode className="h-8 w-8 mb-1 opacity-40" />
+                <span className="text-[10px]">No QR code uploaded yet</span>
+              </div>
+            )}
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p className="font-medium text-foreground">Usage in Customer Flow:</p>
+              <p>Customers can scan this QR code at checkout to make direct digital payments.</p>
+              {formattedQrUrl && (
+                <p className="truncate font-mono text-[10px] text-primary">{formattedQrUrl}</p>
+              )}
+            </div>
+          </div>
+        </div>
+
         <div className="flex justify-end">
-          <Button className="rounded-full gradient-brand text-primary-foreground" onClick={() => { saveProfile(type, p); toast.success("Profile saved"); }}>Save</Button>
+          <Button
+            disabled={saving}
+            className="rounded-full gradient-brand text-primary-foreground"
+            onClick={handleSave}
+          >
+            {saving ? "Saving..." : "Save Profile & Settings"}
+          </Button>
         </div>
       </CardContent>
     </Card>
@@ -191,22 +459,74 @@ function MenuTab() {
   );
 }
 
-function GstTab({ restaurant }: { restaurant: any }) {
-  const [p, setP] = useState(restaurant);
+function GstTab({
+  restaurant,
+  initialSettings,
+  onSaved,
+}: {
+  restaurant: any;
+  initialSettings: BusinessSettings | null;
+  onSaved: () => void;
+}) {
+  const [taxPct, setTaxPct] = useState<number>(initialSettings?.tax_percentage ?? restaurant.gstPercent ?? 5);
+  const [serviceCharge, setServiceCharge] = useState<number>(initialSettings?.service_charge ?? 0);
+  const [gstEnabled, setGstEnabled] = useState(restaurant.gstEnabled ?? true);
+  const [gstNumber, setGstNumber] = useState(restaurant.gstNumber ?? "");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (initialSettings) {
+      setTaxPct(initialSettings.tax_percentage ?? 5);
+      setServiceCharge(initialSettings.service_charge ?? 0);
+    }
+  }, [initialSettings]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await updateBusinessSettingsApi({
+        tax_percentage: Number(taxPct) || 0,
+        service_charge: Number(serviceCharge) || 0,
+      });
+      saveProfile("restaurant", {
+        ...restaurant,
+        gstEnabled,
+        gstNumber,
+        gstPercent: taxPct,
+      });
+      toast.success("Tax & service charge settings saved!");
+      onSaved();
+    } catch (err: any) {
+      console.error("[SETTINGS] Error saving GST/tax settings:", err);
+      toast.error(err.message || "Failed to save tax settings.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <Card className="rounded-2xl">
-      <CardHeader><CardTitle className="font-display">GST & tax</CardTitle><p className="text-xs text-muted-foreground">When enabled, invoices calculate GST on top of the subtotal.</p></CardHeader>
+      <CardHeader><CardTitle className="font-display">GST & Tax Settings</CardTitle><p className="text-xs text-muted-foreground">Configures tax rate and service charges applied on invoices.</p></CardHeader>
       <CardContent className="space-y-4">
         <label className="flex items-center justify-between rounded-xl border p-3">
           <span>Enable GST on invoices</span>
-          <Switch checked={p.gstEnabled} onCheckedChange={(v) => setP({ ...p, gstEnabled: v })} />
+          <Switch checked={gstEnabled} onCheckedChange={setGstEnabled} />
         </label>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Fld label="GSTIN" value={p.gstNumber} onChange={(v) => setP({ ...p, gstNumber: v })} />
-          <div className="space-y-1.5"><Label>GST %</Label><Input type="number" value={p.gstPercent} onChange={(e) => setP({ ...p, gstPercent: +e.target.value })} /></div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Fld label="GSTIN Number" value={gstNumber} onChange={setGstNumber} />
+          <div className="space-y-1.5">
+            <Label>Tax Percentage (%)</Label>
+            <Input type="number" value={taxPct} onChange={(e) => setTaxPct(Number(e.target.value))} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Service Charge (%)</Label>
+            <Input type="number" value={serviceCharge} onChange={(e) => setServiceCharge(Number(e.target.value))} />
+          </div>
         </div>
         <div className="flex justify-end">
-          <Button className="rounded-full gradient-brand text-primary-foreground" onClick={() => { saveProfile("restaurant", p); toast.success("Tax settings saved"); }}>Save</Button>
+          <Button disabled={saving} className="rounded-full gradient-brand text-primary-foreground" onClick={handleSave}>
+            {saving ? "Saving..." : "Save Tax Settings"}
+          </Button>
         </div>
       </CardContent>
     </Card>
@@ -289,5 +609,5 @@ function ServicesTab({ salon }: { salon: any }) {
 }
 
 function Fld({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (<div className="space-y-1.5"><Label>{label}</Label><Input value={value} onChange={(e) => onChange(e.target.value)} /></div>);
+  return (<div className="space-y-1.5"><Label>{label}</Label><Input value={value || ""} onChange={(e) => onChange(e.target.value)} /></div>);
 }
