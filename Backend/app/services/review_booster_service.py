@@ -232,58 +232,38 @@ class ReviewBoosterService:
         seven_days_ago = today_start - timedelta(days=7)
         thirty_days_ago = today_start - timedelta(days=30)
 
-        # Log counts
-        log_counts = self.db.execute(
-            select(
-                func.count(CampaignLog.id).label("total"),
-                func.sum(
-                    (CampaignLog.status == CampaignLogStatus.PENDING).cast(Integer)
-                ).label("pending_logs"),
-                func.sum(
-                    (CampaignLog.status == CampaignLogStatus.SENT).cast(Integer)
-                ).label("requested"),
-                func.sum(
-                    (CampaignLog.clicked_at.is_not(None)).cast(Integer)
-                ).label("clicked"),
-                func.sum(
-                    (CampaignLog.reviewed_at.is_not(None)).cast(Integer)
-                ).label("reviewed"),
-            )
-            .join(Campaign, CampaignLog.campaign_id == Campaign.id)
-            .where(
-                Campaign.business_id == business_id,
-                Campaign.campaign_type == CampaignType.REVIEW,
-            )
-        ).first()
+        # Fetch completed visits map & latest review logs map
+        visit_map = self._get_last_completed_visit_map(business_id)
+        log_map = self._get_review_logs_map(business_id)
 
-        requested = log_counts.requested or 0
-        clicked = log_counts.clicked or 0
-        reviewed = log_counts.reviewed or 0
-
-        # Total completed visit customers
-        total_completed_cust_count = self.db.scalar(
-            select(func.count(func.distinct(Visit.customer_id)))
-            .where(
-                Visit.business_id == business_id,
-                Visit.status == VisitStatus.COMPLETED,
-                Visit.payment_status == PaymentStatus.PAID,
+        all_customers = list(self.db.scalars(
+            select(Customer).where(
+                Customer.business_id == business_id,
+                Customer.is_active == True,
             )
-        ) or 0
+        ).all())
 
-        # Pending = Total completed customers minus those with SENT/CLICKED/REVIEWED review requests
-        sent_or_reviewed_cust_count = self.db.scalar(
-            select(func.count(func.distinct(CampaignLog.customer_id)))
-            .join(Campaign, CampaignLog.campaign_id == Campaign.id)
-            .where(
-                Campaign.business_id == business_id,
-                Campaign.campaign_type == CampaignType.REVIEW,
-                (CampaignLog.status == CampaignLogStatus.SENT)
-                | (CampaignLog.clicked_at.is_not(None))
-                | (CampaignLog.reviewed_at.is_not(None)),
-            )
-        ) or 0
+        pending = 0
+        requested = 0
+        clicked = 0
+        reviewed = 0
 
-        pending = max(0, total_completed_cust_count - sent_or_reviewed_cust_count)
+        for c in all_customers:
+            if c.id not in visit_map:
+                continue
+
+            latest_log = log_map.get(c.id)
+            if latest_log:
+                if latest_log.reviewed_at is not None:
+                    reviewed += 1
+                elif latest_log.clicked_at is not None:
+                    clicked += 1
+                elif latest_log.status == CampaignLogStatus.SENT:
+                    requested += 1
+                else:
+                    pending += 1
+            else:
+                pending += 1
 
         # Visit counts by timeframe
         visits_today = self.db.scalar(

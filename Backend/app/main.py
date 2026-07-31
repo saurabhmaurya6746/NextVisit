@@ -37,6 +37,8 @@ from app.api.v1.qr.router import router as qr_router
 from app.api.v1.customer_recovery.router import router as customer_recovery_router
 from app.api.v1.review_booster.router import router as review_booster_router
 from app.api.v1.coupons.router import router as coupons_router
+from app.api.v1.reports.router import router as reports_router
+from app.api.v1.subscription.router import router as subscription_router
 from app.db.database import engine
 from app.models.base import Base
 
@@ -213,6 +215,16 @@ app.include_router(
 
 app.include_router(
     coupons_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    reports_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    subscription_router,
     prefix="/api/v1",
 )
 

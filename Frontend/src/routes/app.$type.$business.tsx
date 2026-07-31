@@ -1,19 +1,50 @@
-import { createFileRoute, Outlet, redirect, useParams } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect, useParams, useRouterState } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { BusinessSidebar } from "@/components/business-sidebar";
 import { Topbar } from "@/components/topbar";
 import { OnboardingWizard } from "@/components/onboarding-wizard";
+import { ForbiddenView } from "@/components/forbidden-view";
 import { useBusinessType, useOnboarded, setBusinessType, type BusinessType } from "@/lib/business-type";
 import { AppLoader } from "@/components/app-loader";
 import { useAuthenticatedBusiness } from "@/lib/business-profile";
 import { TrialBanner } from "@/components/trial-banner";
-import { getSession } from "@/lib/auth";
+import { getSession, useSession, hasModulePermission } from "@/lib/auth";
 import { useWizardState, WIZARD_OPEN_EVENT, setPaused } from "@/lib/wizard-store";
 import { Button } from "@/components/ui/button";
 import { Sparkles, X } from "lucide-react";
 
 let appLoaderShown = false;
+
+const pathToModuleMap: Record<string, string> = {
+  "": "dashboard",
+  "dashboard": "dashboard",
+  "setup": "setup",
+  "tables": "tables",
+  "orders": "orders",
+  "appointments": "orders",
+  "menu": "menu",
+  "services": "menu",
+  "customers": "customers",
+  "team": "staff",
+  "revenue": "revenue",
+  "welcome": "welcome",
+  "birthday-campaigns": "birthday",
+  "anniversary-campaigns": "anniversary",
+  "festival-campaigns": "festivals",
+  "vip": "vip",
+  "whatsapp-campaigns": "whatsapp_campaigns",
+  "customer-recovery": "customer_recovery",
+  "coupons": "coupons",
+  "loyalty": "loyalty",
+  "review-booster": "review_booster",
+  "templates": "templates",
+  "reports": "reports",
+  "whatsapp-history": "whatsapp_history",
+  "calendar": "calendar",
+  "subscription": "subscription",
+  "settings": "settings",
+};
 
 export const Route = createFileRoute("/app/$type/$business")({
   head: () => ({ meta: [{ title: "Dashboard — NextVisit" }] }),
@@ -29,9 +60,13 @@ export const Route = createFileRoute("/app/$type/$business")({
 
 function AppLayout() {
   const params = useParams({ strict: false }) as { type?: string; business?: string };
+  const pathname = useRouterState({ select: (r) => r.location.pathname });
+  const session = useSession();
+
   const urlType = params.type || "restaurant";
   const normalizedType: BusinessType = urlType === "salon" ? "salon" : "restaurant";
   const storedType = useBusinessType();
+
   useEffect(() => {
     if (storedType !== normalizedType) setBusinessType(normalizedType);
   }, [storedType, normalizedType]);
@@ -42,7 +77,6 @@ function AppLayout() {
   const [loading, setLoading] = useState(!appLoaderShown);
   const wizardState = useWizardState();
 
-  // Load authenticated business profile from backend API
   const authBiz = useAuthenticatedBusiness();
 
   useEffect(() => {
@@ -60,6 +94,14 @@ function AppLayout() {
   const logoUrl = authBiz.logoUrl;
   const initials = authBiz.initials;
   const displayType = type === "salon" ? "Salon" : "Restaurant";
+
+  // Check Route Permission for Staff Members
+  const prefix = `/app/${urlType}/${params.business || ""}`;
+  let relativePath = pathname.replace(prefix, "").replace(/^\//, "");
+  const firstSegment = relativePath.split("/")[0] || "";
+  const targetModuleKey = pathToModuleMap[firstSegment] || firstSegment;
+
+  const isPermitted = hasModulePermission(session, targetModuleKey);
 
   return (
     <>
@@ -107,7 +149,7 @@ function AppLayout() {
               </div>
             )}
             <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6 lg:p-8">
-              <Outlet />
+              {isPermitted ? <Outlet /> : <ForbiddenView moduleName={firstSegment || "this module"} />}
             </main>
           </SidebarInset>
         </div>

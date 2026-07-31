@@ -1,7 +1,7 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_super_admin
@@ -10,9 +10,12 @@ from app.models.admin import Admin
 from app.schemas.subscription import (
     BusinessSubscriptionAssignRequest,
     BusinessSubscriptionItemResponse,
+    PaginatedSubscriptionUpgradeRequestsResponse,
     SubscriptionPlanCreate,
     SubscriptionPlanResponse,
     SubscriptionPlanUpdate,
+    SubscriptionUpgradeRejectRequest,
+    SubscriptionUpgradeRequestResponse,
 )
 from app.services.subscription_service import SubscriptionService
 
@@ -33,10 +36,7 @@ def list_plans(
     current_admin: Admin = Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
-    """
-    Returns all platform subscription plans (FREE, STARTER, PROFESSIONAL, ENTERPRISE, etc.).
-    Requires Super Admin authorization.
-    """
+    """Returns all platform subscription plans (FREE, STARTER, PROFESSIONAL, ENTERPRISE, etc.)."""
     return SubscriptionService(db).list_plans()
 
 
@@ -51,10 +51,7 @@ def create_plan(
     current_admin: Admin = Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
-    """
-    Creates a new platform subscription plan.
-    Requires Super Admin authorization.
-    """
+    """Creates a new platform subscription plan."""
     return SubscriptionService(db).create_plan(payload)
 
 
@@ -69,10 +66,7 @@ def update_plan(
     current_admin: Admin = Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
-    """
-    Updates details of a subscription plan.
-    Requires Super Admin authorization.
-    """
+    """Updates details of a subscription plan."""
     return SubscriptionService(db).update_plan(plan_id, payload)
 
 
@@ -87,10 +81,7 @@ def assign_business_subscription(
     current_admin: Admin = Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
-    """
-    Assigns or updates a merchant's subscription plan, trial days, or expiration date.
-    Requires Super Admin authorization.
-    """
+    """Assigns or updates a merchant's subscription plan, trial days, or expiration date."""
     return SubscriptionService(db).assign_business_subscription(
         business_id, payload
     )
@@ -105,8 +96,57 @@ def list_business_subscriptions(
     current_admin: Admin = Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
-    """
-    Returns a list of all businesses with their active subscription plan, trial end, and expiry details.
-    Requires Super Admin authorization.
-    """
+    """Returns a list of all businesses with their active subscription plan, trial end, and expiry details."""
     return SubscriptionService(db).list_business_subscriptions()
+
+
+# ── Super Admin Upgrade Requests Workflow ──────────────────────────────────
+
+@router.get(
+    "/requests",
+    response_model=PaginatedSubscriptionUpgradeRequestsResponse,
+    summary="List merchant subscription upgrade requests",
+)
+def list_upgrade_requests(
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=100),
+    status: str = Query("ALL", description="PENDING, APPROVED, REJECTED, CANCELLED, or ALL"),
+    search: str = Query("", description="Search by business, owner name, email or plan"),
+    current_admin: Admin = Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Paginated list of merchant subscription upgrade requests with status and search filters."""
+    return SubscriptionService(db).list_admin_upgrade_requests(
+        page=page, limit=limit, status_filter=status, search=search
+    )
+
+
+@router.post(
+    "/requests/{request_id}/approve",
+    response_model=SubscriptionUpgradeRequestResponse,
+    summary="Approve merchant subscription upgrade request",
+)
+def approve_upgrade_request(
+    request_id: UUID,
+    current_admin: Admin = Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Approves upgrade request, updates business plan, updates limits, and generates invoice."""
+    return SubscriptionService(db).approve_upgrade_request(current_admin, request_id)
+
+
+@router.post(
+    "/requests/{request_id}/reject",
+    response_model=SubscriptionUpgradeRequestResponse,
+    summary="Reject merchant subscription upgrade request",
+)
+def reject_upgrade_request(
+    request_id: UUID,
+    payload: SubscriptionUpgradeRejectRequest,
+    current_admin: Admin = Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Rejects upgrade request with a reason."""
+    return SubscriptionService(db).reject_upgrade_request(
+        current_admin, request_id, payload.reason
+    )

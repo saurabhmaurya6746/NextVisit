@@ -1,17 +1,34 @@
+import csv
+import io
+import json
 import logging
+from datetime import datetime, timezone
 from uuid import UUID
 
+from fastapi import HTTPException, status
+from fastapi.responses import StreamingResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.security import hash_password, verify_password
 from app.models.business import Business
 from app.models.business_settings import BusinessSettings
+from app.models.customer import Customer
+from app.models.menu_category import MenuCategory
+from app.models.menu_item import MenuItem
+from app.models.order import Order, OrderItem
+from app.models.service import Service
 from app.models.user import User
+from app.models.user_session import UserSession
+from app.models.visit import Visit
 from app.repositories.business_settings_repository import (
     BusinessSettingsRepository,
 )
 from app.schemas.business_settings import (
     BusinessSettingsUpdate,
+    ChangePasswordRequest,
     RestaurantSetupSettingsUpdate,
+    UserSessionItemResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,8 +90,11 @@ class BusinessSettingsService:
         settings = self.get_settings(current_user)
 
         update_data = data.model_dump(exclude_none=True)
+
+        # Update BusinessSettings columns
         for field, value in update_data.items():
-            setattr(settings, field, value)
+            if hasattr(settings, field):
+                setattr(settings, field, value)
 
         self.repo.update(settings)
         self.db.commit()
@@ -154,3 +174,187 @@ class BusinessSettingsService:
         self.db.refresh(settings)
 
         return self.get_restaurant_setup_settings(current_user)
+
+    # ── Section 9: Security Methods ──────────────────────────────────────────
+
+    def change_password(self, current_user: User, data: ChangePasswordRequest) -> dict:
+        user = self.db.scalar(select(User).where(User.id == current_user.id))
+        if not user or not verify_password(data.old_password, user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Incorrect old password.",
+            )
+
+        user.hashed_password = hash_password(data.new_password)
+        self.db.commit()
+        logger.info("User password changed successfully | user_id=%s", user.id)
+        return {"message": "Password changed successfully."}
+
+    def toggle_2fa(self, current_user: User, enable: bool) -> dict:
+        user = self.db.scalar(select(User).where(User.id == current_user.id))
+        if user:
+            user.two_factor_enabled = enable
+            self.db.commit()
+        return {"two_factor_enabled": enable, "message": f"Two Factor Authentication {'enabled' if enable else 'disabled'}."}
+
+    def get_active_sessions(self, current_user: User) -> list[UserSessionItemResponse]:
+        sessions = self.db.scalars(
+            select(UserSession)
+            .where(UserSession.user_id == current_user.id, UserSession.is_active == True)
+            .order_by(UserSession.last_active_at.desc())
+        ).all()
+        return [
+            UserSessionItemResponse(
+                id=s.id,
+                ip_address=s.ip_address,
+                user_agent=s.user_agent,
+                is_active=s.is_active,
+                last_active_at=s.last_active_at,
+                created_at=s.created_at,
+            )
+            for s in sessions
+        ]
+
+    def logout_other_devices(self, current_user: User) -> dict:
+        sessions = self.db.scalars(
+            select(UserSession).where(UserSession.user_id == current_user.id, UserSession.is_active == True)
+        ).all()
+        for s in sessions:
+            s.is_active = False
+        self.db.commit()
+        return {"message": "All other devices logged out successfully."}
+
+    # ── Section 10: Backup / Export Methods ──────────────────────────────────
+
+    def export_customers_csv(self, current_user: User) -> StreamingResponse:
+        customers = self.db.scalars(
+            select(Customer).where(Customer.business_id == current_user.business_id)
+        ).all()
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["ID", "Name", "Phone", "Email", "Visit Count", "Total Spent ($)", "Gender", "Address", "Created At"])
+
+        for c in customers:
+            writer.writerow([
+                str(c.id),
+                c.name or "",
+                c.phone or "",
+                c.email or "",
+                c.visit_count or 0,
+                c.total_spent or 0.0,
+                c.gender or "",
+                c.address or "",
+                c.created_at.isoformat() if c.created_at else "",
+            ])
+
+        output.seek(0)
+        filename = f"Customers_Backup_{datetime.now().strftime('%Y%m%d')}.csv"
+        return StreamingResponse(
+            io.BytesIO(output.getvalue().encode("utf-8")),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    def export_orders_csv(self, current_user: User) -> StreamingResponse:
+        orders = self.db.scalars(
+            select(Order).where(Order.business_id == current_user.business_id).order_by(Order.created_at.desc())
+        ).all()
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Order ID", "Order Number", "Source", "Status", "Total Amount ($)", "Payment Status", "Created At"])
+
+        for o in orders:
+            writer.writerow([
+                str(o.id),
+                o.order_number or "",
+                o.order_source or "",
+                o.status or "",
+                o.total_amount or 0.0,
+                o.payment_status or "",
+                o.created_at.isoformat() if o.created_at else "",
+            ])
+
+        output.seek(0)
+        filename = f"Orders_Backup_{datetime.now().strftime('%Y%m%d')}.csv"
+        return StreamingResponse(
+            io.BytesIO(output.getvalue().encode("utf-8")),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    def export_menu_csv(self, current_user: User) -> StreamingResponse:
+        items = self.db.scalars(
+            select(MenuItem).where(MenuItem.business_id == current_user.business_id)
+        ).all()
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["ID", "Category ID", "Name", "Price ($)", "Is Available", "Created At"])
+
+        for it in items:
+            writer.writerow([
+                str(it.id),
+                str(it.category_id) if it.category_id else "",
+                it.name or "",
+                it.price or 0.0,
+                "Yes" if it.is_available else "No",
+                it.created_at.isoformat() if it.created_at else "",
+            ])
+
+        output.seek(0)
+        filename = f"Menu_Backup_{datetime.now().strftime('%Y%m%d')}.csv"
+        return StreamingResponse(
+            io.BytesIO(output.getvalue().encode("utf-8")),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    def export_database_json(self, current_user: User) -> StreamingResponse:
+        biz = self.db.scalar(select(Business).where(Business.id == current_user.business_id))
+        settings = self.get_settings(current_user)
+        customers = self.db.scalars(select(Customer).where(Customer.business_id == current_user.business_id)).all()
+        categories = self.db.scalars(select(MenuCategory).where(MenuCategory.business_id == current_user.business_id)).all()
+        menu_items = self.db.scalars(select(MenuItem).where(MenuItem.business_id == current_user.business_id)).all()
+
+        backup_payload = {
+            "version": "1.0",
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "business": {
+                "id": str(biz.id) if biz else "",
+                "name": biz.name if biz else "",
+                "email": biz.email if biz else "",
+                "phone": biz.phone if biz else "",
+                "address": biz.address if biz else "",
+            },
+            "settings": {
+                "currency": settings.currency,
+                "tax_percentage": settings.tax_percentage,
+                "service_charge": settings.service_charge,
+                "invoice_prefix": settings.invoice_prefix,
+                "website": settings.website,
+                "whatsapp_number": settings.whatsapp_number,
+                "review_link": settings.review_link,
+            },
+            "customers_count": len(customers),
+            "customers": [
+                {"id": str(c.id), "name": c.name, "phone": c.phone, "email": c.email, "visit_count": c.visit_count, "total_spent": c.total_spent}
+                for c in customers
+            ],
+            "menu_categories": [
+                {"id": str(cat.id), "name": cat.name} for cat in categories
+            ],
+            "menu_items": [
+                {"id": str(item.id), "name": item.name, "price": item.price, "available": item.is_available}
+                for item in menu_items
+            ],
+        }
+
+        json_str = json.dumps(backup_payload, indent=2)
+        filename = f"Full_Database_Backup_{datetime.now().strftime('%Y%m%d')}.json"
+        return StreamingResponse(
+            io.BytesIO(json_str.encode("utf-8")),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )

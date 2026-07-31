@@ -1,6 +1,8 @@
 import logging
+from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -36,18 +38,10 @@ class AuthService:
 
         try:
             # 1. Validate business_type_id exists
-            logger.info(
-                "Validating business_type_id | id=%s",
-                data.business.business_type_id,
-            )
             business_type = self.business_type_repo.get_by_id(
                 data.business.business_type_id
             )
             if not business_type:
-                logger.warning(
-                    "Registration rejected — business_type_id not found | id=%s",
-                    data.business.business_type_id,
-                )
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Business type '{data.business.business_type_id}' does not exist.",
@@ -58,21 +52,12 @@ class AuthService:
                 data.owner.owner_email
             )
             if existing_user:
-                logger.warning(
-                    "Registration rejected — email already exists | email=%s",
-                    data.owner.owner_email,
-                )
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="An account with this email already exists.",
                 )
 
             # 3. Create Business
-            logger.info(
-                "Creating business | name=%s type_id=%s",
-                data.business.business_name,
-                data.business.business_type_id,
-            )
             business = Business(
                 business_type_id=data.business.business_type_id,
                 name=data.business.business_name,
@@ -85,25 +70,18 @@ class AuthService:
                 address=data.business.address,
             )
             business = self.business_repo.create(business)
-            logger.info("Business flushed | business_id=%s", business.id)
 
-            # 4. Create Owner User — business_id references businesses.id
-            logger.info(
-                "Creating owner user | email=%s business_id=%s",
-                data.owner.owner_email,
-                business.id,
-            )
+            # 4. Create Owner User
             user = User(
-                business_id=business.id,   # FK → businesses.id (NOT business_type_id)
+                business_id=business.id,
                 name=data.owner.owner_name,
                 email=data.owner.owner_email,
                 hashed_password=hash_password(data.owner.password),
                 role="OWNER",
             )
             user = self.user_repo.create(user)
-            logger.info("User flushed | user_id=%s", user.id)
 
-            # 5. Initialize default automation rules, message templates, and business settings
+            # 5. Initialize defaults
             from app.services.automation_service import AutomationService
             from app.services.business_settings_service import BusinessSettingsService
             from app.services.message_template_service import MessageTemplateService
@@ -111,17 +89,11 @@ class AuthService:
             MessageTemplateService(self.db).init_default_templates_for_business(business.id)
             BusinessSettingsService(self.db).init_default_settings_for_business(business.id)
 
-            # 6. Atomic commit — Business, User, and default configs in one transaction
+            # 6. Commit transaction
             self.db.commit()
             self.db.refresh(user)
             self.db.refresh(business)
-            logger.info(
-                "Transaction committed | user_id=%s business_id=%s",
-                user.id,
-                business.id,
-            )
 
-            # 6. Generate JWT
             token = create_access_token(
                 {
                     "sub": str(user.id),
@@ -129,7 +101,6 @@ class AuthService:
                     "role": user.role,
                 }
             )
-            logger.info("Access token issued | user_id=%s", user.id)
 
             return {
                 "access_token": token,
@@ -137,16 +108,11 @@ class AuthService:
             }
 
         except HTTPException:
-            # Re-raise FastAPI HTTP exceptions without rollback
-            # (no DB write happened for 409 guard)
             self.db.rollback()
             raise
 
         except IntegrityError as exc:
             self.db.rollback()
-            logger.error(
-                "IntegrityError during registration | error=%s", str(exc.orig)
-            )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="A record with the provided details already exists.",
@@ -154,57 +120,58 @@ class AuthService:
 
         except Exception as exc:
             self.db.rollback()
-            logger.exception(
-                "Unexpected error during registration | error=%s", str(exc)
-            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Registration failed due to an internal error. Please try again.",
             ) from exc
 
     # ------------------------------------------------------------------
-    # Login
+    # Login (Supports Owner Email OR Staff Auto-Generated Login ID)
     # ------------------------------------------------------------------
 
     def login(self, data: LoginRequest) -> dict:
         """
-        Authenticate an existing user.
-
-        Returns a signed JWT access token on success.
-        Raises HTTP 401 for both unknown email AND wrong password
-        (identical message prevents user-enumeration attacks).
+        Unified login endpoint accepting Email or Auto-Generated Staff Login ID.
+          - Contains '@' -> Authenticates Business Owner by Email
+          - Otherwise -> Authenticates Staff Member by Login ID (e.g., JAIL-001)
         """
-        logger.info("Login attempt | email=%s", data.email)
+        identifier = (data.email or "").strip()
+        logger.info("Login attempt | identifier=%s", identifier)
 
         _invalid = HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password.",
+            detail="Incorrect Email / Staff ID or password.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-        # 1. Look up user — reuse existing get_by_email()
-        user = self.user_repo.get_by_email(data.email)
+        if not identifier:
+            raise _invalid
+
+        # 1. Detection: If identifier contains '@', lookup by email; else lookup by login_id
+        if "@" in identifier:
+            user = self.db.scalar(
+                select(User).where(func.lower(User.email) == identifier.lower())
+            )
+        else:
+            user = self.db.scalar(
+                select(User).where(func.lower(User.login_id) == identifier.lower())
+            )
+
         if not user:
-            logger.warning(
-                "Login rejected — email not found | email=%s", data.email
-            )
+            logger.warning("Login rejected — identifier not found | identifier=%s", identifier)
             raise _invalid
 
-        # 2. Verify password — reuse existing verify_password()
+        # 2. Verify password
         if not verify_password(data.password, user.hashed_password):
-            logger.warning(
-                "Login rejected — wrong password | email=%s", data.email
-            )
+            logger.warning("Login rejected — wrong password | identifier=%s", identifier)
             raise _invalid
 
-        # 3. Guard: inactive account
-        if not user.is_active:
-            logger.warning(
-                "Login rejected — account inactive | user_id=%s", user.id
-            )
+        # 3. Guard: active account and status ACTIVE
+        if not user.is_active or (user.status and user.status.upper() == "INACTIVE"):
+            logger.warning("Login rejected — account inactive | user_id=%s", user.id)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="This account has been deactivated.",
+                detail="This staff account has been deactivated by Business Owner.",
             )
 
         # 4. Guard: business status must be ACTIVE
@@ -237,7 +204,11 @@ class AuthService:
                     detail="Your business account is not active.",
                 )
 
-        # 5. Issue JWT — reuse existing create_access_token()
+        # 5. Record last_login timestamp
+        user.last_login = datetime.now(timezone.utc)
+        self.db.commit()
+
+        # 6. Issue JWT access token
         token = create_access_token(
             {
                 "sub": str(user.id),
@@ -245,9 +216,9 @@ class AuthService:
                 "role": user.role,
             }
         )
-        logger.info("Login successful | user_id=%s", user.id)
+        logger.info("Login successful | user_id=%s role=%s", user.id, user.role)
 
-        # 6. Register / update active device session (architecture preparation)
+        # 7. Register / update active device session
         try:
             from app.repositories.user_session_repository import UserSessionRepository
             session_repo = UserSessionRepository(self.db)
@@ -281,14 +252,12 @@ class AuthService:
         return False
 
     def list_active_devices(self, user_id: str):
-        """Service method to list all active device sessions for a merchant user."""
         from uuid import UUID
         from app.repositories.user_session_repository import UserSessionRepository
         uid = UUID(user_id) if isinstance(user_id, str) else user_id
         return UserSessionRepository(self.db).list_active_sessions(uid)
 
     def revoke_device(self, user_id: str, session_id: str) -> bool:
-        """Service method to revoke a specific device session."""
         from uuid import UUID
         from app.repositories.user_session_repository import UserSessionRepository
         uid = UUID(user_id) if isinstance(user_id, str) else user_id
@@ -296,7 +265,6 @@ class AuthService:
         return UserSessionRepository(self.db).deactivate_session(sid, uid)
 
     def count_active_devices(self, user_id: str) -> int:
-        """Service method to count current active device sessions for a merchant user."""
         from uuid import UUID
         from app.repositories.user_session_repository import UserSessionRepository
         uid = UUID(user_id) if isinstance(user_id, str) else user_id

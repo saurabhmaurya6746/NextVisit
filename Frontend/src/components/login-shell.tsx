@@ -24,30 +24,37 @@ export function LoginShell({ role, target, tagline, quote, author }: { role: "Bu
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    console.log("[LOGIN] Continue button clicked! Form submit triggered with:", { email, password });
+    const cleanEmail = email.trim();
+    console.log("[LOGIN] Form submit triggered with:", { cleanEmail, password });
     setLoading(true);
 
     try {
-      if (isAdmin) {
-        console.log("[LOGIN] Invoking adminLoginApi() for super admin...");
-        const session = await adminLoginApi(email, password);
-        toast.success(`Welcome back — signing you into the ${role} panel`);
-        window.location.href = target;
-      } else {
-        console.log("[LOGIN] Invoking loginApi() for business user...");
-        const session = await loginApi(email, password);
-        console.log("[LOGIN] loginApi() returned session successfully:", session);
-        const type: "restaurant" | "salon" = email.toLowerCase().includes("salon") ? "salon" : "restaurant";
-        setBusinessType(type);
-        const slug = slugify(session.businessName || type);
-        setSession({
-          ...session,
-          businessType: type,
-          businessSlug: slug,
-        });
-        toast.success(`Welcome back — signing you into NextVisit`);
-        window.location.href = `/app/${type}/${slug}/dashboard`;
+      if (isAdmin || cleanEmail.toLowerCase().includes("admin")) {
+        try {
+          console.log("[LOGIN] Invoking adminLoginApi() for super admin...");
+          const session = await adminLoginApi(cleanEmail, password);
+          toast.success(`Welcome back — signing you into Super Admin`);
+          window.location.href = "/admin";
+          return;
+        } catch (adminErr) {
+          if (isAdmin) throw adminErr;
+          console.log("[LOGIN] Admin login attempt failed, trying merchant login...", adminErr);
+        }
       }
+
+      console.log("[LOGIN] Invoking loginApi() for business user...");
+      const session = await loginApi(cleanEmail, password);
+      console.log("[LOGIN] loginApi() returned session successfully:", session);
+      const type: "restaurant" | "salon" = cleanEmail.toLowerCase().includes("salon") ? "salon" : "restaurant";
+      setBusinessType(type);
+      const slug = slugify(session.businessName || type);
+      setSession({
+        ...session,
+        businessType: type,
+        businessSlug: slug,
+      });
+      toast.success(`Welcome back — signing you into NextVisit`);
+      window.location.href = `/app/${type}/${slug}/dashboard`;
     } catch (err: any) {
       console.error("[LOGIN] submit error caught:", err);
       toast.error(err.message || "Login failed. Please check your credentials.");
@@ -55,6 +62,7 @@ export function LoginShell({ role, target, tagline, quote, author }: { role: "Bu
       setLoading(false);
     }
   };
+
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
       <div className="relative hidden overflow-hidden bg-foreground text-background lg:block">
@@ -85,8 +93,8 @@ export function LoginShell({ role, target, tagline, quote, author }: { role: "Bu
 
           <form onSubmit={submit} className="mt-8 space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <Label htmlFor="email">Email or Staff Login ID</Label>
+              <Input id="email" type="text" placeholder="owner@restaurant.com or ST001" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">

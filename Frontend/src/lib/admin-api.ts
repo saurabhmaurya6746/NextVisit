@@ -365,6 +365,74 @@ export async function listBusinessSubscriptionsApi(): Promise<BusinessSubscripti
   return await res.json();
 }
 
+export interface AdminUpgradeRequestItem {
+  id: string;
+  business_id: string;
+  business_name: string;
+  owner_name: string;
+  email: string;
+  current_plan: SubscriptionPlanModel | null;
+  requested_plan: SubscriptionPlanModel;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+  reason: string | null;
+  requested_at: string;
+  approved_by: string | null;
+  approved_at: string | null;
+  rejected_by: string | null;
+  rejected_at: string | null;
+}
+
+export interface PaginatedAdminUpgradeRequests {
+  items: AdminUpgradeRequestItem[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+}
+
+export async function listAdminUpgradeRequestsApi(
+  page = 1,
+  limit = 10,
+  status = "ALL",
+  search = ""
+): Promise<PaginatedAdminUpgradeRequests> {
+  const params = new URLSearchParams();
+  params.set("page", page.toString());
+  params.set("limit", limit.toString());
+  if (status) params.set("status", status);
+  if (search) params.set("search", search);
+
+  const res = await apiFetch(`/api/v1/admin/subscriptions/requests?${params.toString()}`);
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to fetch subscription requests");
+  }
+  return await res.json();
+}
+
+export async function approveUpgradeRequestApi(requestId: string): Promise<AdminUpgradeRequestItem> {
+  const res = await apiFetch(`/api/v1/admin/subscriptions/requests/${requestId}/approve`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to approve upgrade request");
+  }
+  return await res.json();
+}
+
+export async function rejectUpgradeRequestApi(requestId: string, reason: string): Promise<AdminUpgradeRequestItem> {
+  const res = await apiFetch(`/api/v1/admin/subscriptions/requests/${requestId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to reject upgrade request");
+  }
+  return await res.json();
+}
+
 // 5. Admin System Settings APIs
 export interface PlatformSettingsModel {
   id: string;

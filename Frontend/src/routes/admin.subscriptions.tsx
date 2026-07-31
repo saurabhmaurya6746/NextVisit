@@ -1,23 +1,31 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Check, Plus, Loader2, Edit2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Check, Plus, Loader2, Edit2, Clock, CheckCircle2, XCircle, Search, Filter } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
 import { PageHeader } from "@/components/page-header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import {
   listSubscriptionPlansApi,
   createSubscriptionPlanApi,
   updateSubscriptionPlanApi,
   listBusinessSubscriptionsApi,
   assignBusinessSubscriptionApi,
+  listAdminUpgradeRequestsApi,
+  approveUpgradeRequestApi,
+  rejectUpgradeRequestApi,
   type SubscriptionPlanModel,
   type BusinessSubscriptionItemModel,
+  type AdminUpgradeRequestItem,
 } from "@/lib/admin-api";
 import { formatCurrency } from "@/lib/currency";
 
@@ -28,13 +36,25 @@ function SubscriptionsPage() {
   const [businessSubs, setBusinessSubs] = useState<BusinessSubscriptionItemModel[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Upgrade Requests State
+  const [requests, setRequests] = useState<AdminUpgradeRequestItem[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(false);
+  const [reqPage, setReqPage] = useState(1);
+  const [reqTotalPages, setReqTotalPages] = useState(1);
+  const [reqStatusFilter, setReqStatusFilter] = useState("ALL");
+  const [reqSearch, setReqSearch] = useState("");
+
   // Dialog States
   const [createOpen, setCreateOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
 
   const [selectedBusiness, setSelectedBusiness] = useState<BusinessSubscriptionItemModel | null>(null);
   const [editingPlan, setEditingPlan] = useState<SubscriptionPlanModel | null>(null);
+  const [rejectingRequest, setRejectingRequest] = useState<AdminUpgradeRequestItem | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [approvingId, setApprovingId] = useState<string | null>(null);
 
   // Form states for new plan
   const [name, setName] = useState("");
@@ -56,7 +76,7 @@ function SubscriptionsPage() {
   // Form states for assigning plan
   const [selectedPlanId, setSelectedPlanId] = useState("");
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [pRes, bRes] = await Promise.all([
@@ -70,11 +90,25 @@ function SubscriptionsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  const loadRequests = useCallback(async () => {
+    setRequestsLoading(true);
+    try {
+      const res = await listAdminUpgradeRequestsApi(reqPage, 10, reqStatusFilter, reqSearch);
+      setRequests(res.items || []);
+      setReqTotalPages(res.pages || 1);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load subscription requests");
+    } finally {
+      setRequestsLoading(false);
+    }
+  }, [reqPage, reqStatusFilter, reqSearch]);
 
   useEffect(() => {
     loadData();
-  }, []);
+    loadRequests();
+  }, [loadData, loadRequests]);
 
   const handleCreatePlan = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,15 +154,6 @@ function SubscriptionsPage() {
     const parsedCampaigns = parseInt(editMaxCampaigns, 10);
     const parsedStorage = parseFloat(editStorageLimit);
 
-    if (isNaN(parsedPrice) || parsedPrice < 0) {
-      toast.error("Monthly price must be a valid positive number.");
-      return;
-    }
-    if (isNaN(parsedCustomers) || parsedCustomers < 1) {
-      toast.error("Customer limit must be at least 1.");
-      return;
-    }
-
     setEditSaving(true);
     try {
       await updateSubscriptionPlanApi(editingPlan.id, {
@@ -168,11 +193,43 @@ function SubscriptionsPage() {
     }
   };
 
+  const handleApproveRequest = async (reqId: string) => {
+    setApprovingId(reqId);
+    try {
+      await approveUpgradeRequestApi(reqId);
+      toast.success("Upgrade request APPROVED! Business plan & limits updated.");
+      loadRequests();
+      loadData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to approve request");
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
+  const handleRejectRequestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectingRequest || !rejectReason.trim()) {
+      toast.error("Please provide a reason for rejection.");
+      return;
+    }
+    try {
+      await rejectUpgradeRequestApi(rejectingRequest.id, rejectReason.trim());
+      toast.success("Upgrade request REJECTED.");
+      setRejectOpen(false);
+      setRejectingRequest(null);
+      setRejectReason("");
+      loadRequests();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to reject request");
+    }
+  };
+
   return (
     <>
       <PageHeader
-        title="Subscription plans"
-        description="Platform subscription tiers, pricing limits, and merchant plan assignments."
+        title="Subscription Management"
+        description="Manage subscription tiers, review upgrade requests, and assign merchant plans."
         actions={
           <Button size="sm" className="rounded-full gradient-brand text-primary-foreground" onClick={() => setCreateOpen(true)}>
             <Plus className="mr-1.5 h-4 w-4" /> Create plan
@@ -180,12 +237,164 @@ function SubscriptionsPage() {
         }
       />
 
-      {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-primary" />
-        </div>
-      ) : (
-        <>
+      <Tabs defaultValue="requests" className="space-y-6">
+        <TabsList className="rounded-2xl bg-muted/50 p-1">
+          <TabsTrigger value="requests" className="rounded-xl text-xs flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5" /> Subscription Upgrade Requests
+          </TabsTrigger>
+          <TabsTrigger value="plans" className="rounded-xl text-xs">Platform Plans</TabsTrigger>
+          <TabsTrigger value="roster" className="rounded-xl text-xs">Merchant Roster</TabsTrigger>
+        </TabsList>
+
+        {/* 1. UPGRADE REQUESTS TAB */}
+        <TabsContent value="requests">
+          <Card className="rounded-2xl border shadow-sm">
+            <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <CardTitle className="font-display text-base">Pending & Historical Upgrade Requests</CardTitle>
+                <CardDescription>Review merchant upgrade requests and approve plan activations.</CardDescription>
+              </div>
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                <div className="relative flex-1 sm:w-64">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search business, owner, plan..."
+                    className="pl-9 rounded-xl text-xs"
+                    value={reqSearch}
+                    onChange={(e) => {
+                      setReqSearch(e.target.value);
+                      setReqPage(1);
+                    }}
+                  />
+                </div>
+                <Select
+                  value={reqStatusFilter}
+                  onValueChange={(val) => {
+                    setReqStatusFilter(val);
+                    setReqPage(1);
+                  }}
+                >
+                  <SelectTrigger className="w-36 rounded-xl text-xs">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Statuses</SelectItem>
+                    <SelectItem value="PENDING">Pending</SelectItem>
+                    <SelectItem value="APPROVED">Approved</SelectItem>
+                    <SelectItem value="REJECTED">Rejected</SelectItem>
+                    <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {requestsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : requests.length === 0 ? (
+                <div className="py-12 text-center text-sm text-muted-foreground">No subscription upgrade requests found matching criteria.</div>
+              ) : (
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Business & Owner</TableHead>
+                        <TableHead>Current Plan</TableHead>
+                        <TableHead>Requested Plan</TableHead>
+                        <TableHead>Requested Date</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {requests.map((r) => (
+                        <TableRow key={r.id}>
+                          <TableCell>
+                            <div className="font-semibold text-sm text-foreground">{r.business_name}</div>
+                            <div className="text-xs text-muted-foreground">{r.owner_name} ({r.email})</div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="rounded-full text-xs">
+                              {r.current_plan?.name || "Free Tier"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="rounded-full text-xs font-semibold text-primary">
+                              {r.requested_plan.name} ({formatCurrency(r.requested_plan.monthly_price, "INR")}/mo)
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {new Date(r.requested_at).toLocaleString()}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "rounded-full text-[10px] capitalize",
+                                r.status === "APPROVED" && "border-emerald-500/40 text-emerald-600 bg-emerald-500/10",
+                                r.status === "PENDING" && "border-amber-500/40 text-amber-600 bg-amber-500/10 font-bold animate-pulse",
+                                r.status === "REJECTED" && "border-rose-500/40 text-rose-600 bg-rose-500/10",
+                                r.status === "CANCELLED" && "border-muted text-muted-foreground"
+                              )}
+                            >
+                              {r.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {r.status === "PENDING" ? (
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  size="sm"
+                                  disabled={approvingId === r.id}
+                                  className="rounded-full text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                                  onClick={() => handleApproveRequest(r.id)}
+                                >
+                                  {approvingId === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Approve"}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="rounded-full text-xs text-destructive hover:bg-destructive/10"
+                                  onClick={() => {
+                                    setRejectingRequest(r);
+                                    setRejectOpen(true);
+                                  }}
+                                >
+                                  Reject
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                {r.status === "APPROVED" ? `Approved by ${r.approved_by || "Admin"}` : r.status === "REJECTED" ? `Reason: ${r.reason}` : "Cancelled"}
+                              </span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+
+                  {/* Pagination Footer */}
+                  <div className="mt-4 flex items-center justify-between pt-2 border-t text-xs text-muted-foreground">
+                    <div>Page {reqPage} of {reqTotalPages}</div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" className="rounded-full text-xs" disabled={reqPage <= 1} onClick={() => setReqPage((p) => p - 1)}>
+                        Previous
+                      </Button>
+                      <Button size="sm" variant="outline" className="rounded-full text-xs" disabled={reqPage >= reqTotalPages} onClick={() => setReqPage((p) => p + 1)}>
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* 2. PLANS TAB */}
+        <TabsContent value="plans">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {plans.map((p) => (
               <Card key={p.id} className="relative rounded-2xl transition-all hover:-translate-y-1">
@@ -198,10 +407,10 @@ function SubscriptionsPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <ul className="space-y-1.5 text-sm">
-                    <li className="flex items-center gap-2"><Check className="h-4 w-4 text-success" /> Up to {p.max_customers.toLocaleString()} customers</li>
-                    <li className="flex items-center gap-2"><Check className="h-4 w-4 text-success" /> Up to {p.max_staff} Active Devices</li>
-                    <li className="flex items-center gap-2"><Check className="h-4 w-4 text-success" /> {p.max_campaigns_per_month} campaigns/mo</li>
-                    <li className="flex items-center gap-2"><Check className="h-4 w-4 text-success" /> {p.trial_days} days trial</li>
+                    <li className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-500" /> Up to {p.max_customers.toLocaleString()} customers</li>
+                    <li className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-500" /> Up to {p.max_staff} Active Devices</li>
+                    <li className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-500" /> {p.max_campaigns_per_month} campaigns/mo</li>
+                    <li className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-500" /> {p.trial_days} days trial</li>
                   </ul>
                   <Button variant="outline" className="w-full rounded-full" onClick={() => handleOpenEditModal(p)}>
                     <Edit2 className="mr-1.5 h-3.5 w-3.5" /> Manage plan
@@ -210,8 +419,11 @@ function SubscriptionsPage() {
               </Card>
             ))}
           </div>
+        </TabsContent>
 
-          <Card className="mt-6 rounded-2xl">
+        {/* 3. ROSTER TAB */}
+        <TabsContent value="roster">
+          <Card className="rounded-2xl border shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="font-display">Merchant subscription roster</CardTitle>
             </CardHeader>
@@ -267,96 +479,69 @@ function SubscriptionsPage() {
               </Table>
             </CardContent>
           </Card>
-        </>
-      )}
+        </TabsContent>
+      </Tabs>
+
+      {/* Reject Reason Dialog */}
+      <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject Upgrade Request — {rejectingRequest?.business_name}</DialogTitle>
+            <DialogDescription>Provide a reason for rejecting this upgrade request.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleRejectRequestSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Rejection Reason</Label>
+              <Textarea
+                rows={3}
+                placeholder="e.g. Invalid payment verification, please contact billing support."
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                required
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRejectOpen(false)}>Cancel</Button>
+              <Button type="submit" variant="destructive">Confirm Rejection</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Plan Modal */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Manage Plan Parameters — {editingPlan?.name}</DialogTitle>
-            <DialogDescription>
-              Modify pricing, limits, and trial terms for this subscription tier.
-            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveEditPlan} className="space-y-3">
             <div>
               <Label>Plan Name</Label>
-              <Input
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                required
-              />
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} required />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <Label>Monthly Price (₹)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editPrice}
-                  onChange={(e) => setEditPrice(e.target.value)}
-                  required
-                />
+                <Input type="number" step="0.01" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} required />
               </div>
               <div>
                 <Label>Trial Duration (Days)</Label>
-                <Input
-                  type="number"
-                  value={editTrialDays}
-                  onChange={(e) => setEditTrialDays(e.target.value)}
-                  required
-                />
+                <Input type="number" value={editTrialDays} onChange={(e) => setEditTrialDays(e.target.value)} required />
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <Label>Customer Limit</Label>
-                <Input
-                  type="number"
-                  value={editMaxCustomers}
-                  onChange={(e) => setEditMaxCustomers(e.target.value)}
-                  required
-                />
+                <Input type="number" value={editMaxCustomers} onChange={(e) => setEditMaxCustomers(e.target.value)} required />
               </div>
               <div>
                 <Label>Active Devices Limit</Label>
-                <Input
-                  type="number"
-                  value={editMaxDevices}
-                  onChange={(e) => setEditMaxDevices(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <Label>Campaign Limit (Per Month)</Label>
-                <Input
-                  type="number"
-                  value={editMaxCampaigns}
-                  onChange={(e) => setEditMaxCampaigns(e.target.value)}
-                  required
-                />
-              </div>
-              <div>
-                <Label>Storage Allocation (GB)</Label>
-                <Input
-                  type="number"
-                  step="0.5"
-                  value={editStorageLimit}
-                  onChange={(e) => setEditStorageLimit(e.target.value)}
-                  required
-                />
+                <Input type="number" value={editMaxDevices} onChange={(e) => setEditMaxDevices(e.target.value)} required />
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={editSaving} className="gradient-brand text-primary-foreground">
-                {editSaving ? "Saving Changes..." : "Save Changes"}
-              </Button>
+              <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={editSaving}>Save Changes</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -377,18 +562,6 @@ function SubscriptionsPage() {
               <Label>Monthly Price (₹)</Label>
               <Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} required />
             </div>
-            <div>
-              <Label>Trial Days</Label>
-              <Input type="number" value={trialDays} onChange={(e) => setTrialDays(e.target.value)} required />
-            </div>
-            <div>
-              <Label>Max Customers</Label>
-              <Input type="number" value={maxCustomers} onChange={(e) => setMaxCustomers(e.target.value)} required />
-            </div>
-            <div>
-              <Label>Max Active Devices</Label>
-              <Input type="number" value={maxStaff} onChange={(e) => setMaxStaff(e.target.value)} required />
-            </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
               <Button type="submit">Create Plan</Button>
@@ -407,7 +580,7 @@ function SubscriptionsPage() {
             <div>
               <Label>Select Subscription Plan</Label>
               <select
-                className="w-full rounded-md border p-2 text-sm"
+                className="w-full rounded-md border p-2 text-sm bg-background"
                 value={selectedPlanId}
                 onChange={(e) => setSelectedPlanId(e.target.value)}
               >

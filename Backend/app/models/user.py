@@ -1,6 +1,7 @@
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, String
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Identity, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
@@ -8,6 +9,13 @@ from app.models.base import BaseModel
 
 class User(BaseModel):
     __tablename__ = "users"
+
+    auto_id: Mapped[int] = mapped_column(
+        Integer,
+        Identity(start=1001, increment=1),
+        unique=True,
+        nullable=False,
+    )
 
     business_id: Mapped[UUID] = mapped_column(
         ForeignKey("businesses.id"),
@@ -18,8 +26,22 @@ class User(BaseModel):
 
     email: Mapped[str] = mapped_column(
         String(150),
-        unique=True,
-        nullable=False,
+        nullable=True,
+    )
+
+    phone: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    designation: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    login_id: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
     )
 
     hashed_password: Mapped[str] = mapped_column(
@@ -32,9 +54,36 @@ class User(BaseModel):
         default="OWNER",
     )
 
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="ACTIVE",
+        nullable=False,
+    )
+
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         default=True,
+    )
+
+    permissions: Mapped[list[str] | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
+    last_login: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    two_factor_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    created_by_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
     )
 
     business = relationship(

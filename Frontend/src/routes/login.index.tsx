@@ -17,20 +17,6 @@ export const Route = createFileRoute("/login/")({
   component: UnifiedLogin,
 });
 
-// Demo credentials → role routing.
-const DEMO: Record<string, { role: string; type?: "restaurant" | "salon"; adminTarget?: string }> = {
-  "admin@nextvisit.com": { role: "Super Admin", adminTarget: "/admin" },
-  "demo@restaurant.com": { role: "Restaurant Owner", type: "restaurant" },
-  "demo@salon.com": { role: "Salon Owner", type: "salon" },
-};
-
-function appTargetFor(type: "restaurant" | "salon", nameOverride?: string) {
-  const profile = readProfile(type) as { name?: string };
-  const name = nameOverride || profile?.name || type;
-  const business = slugify(name);
-  return { url: `/app/${type}/${business}/dashboard`, slug: business, name };
-}
-
 function UnifiedLogin() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
@@ -41,18 +27,26 @@ function UnifiedLogin() {
     e.preventDefault();
     setLoading(true);
 
+    const cleanEmail = email.trim();
+
     try {
-      if (email.toLowerCase().includes("admin")) {
-        console.log("[LOGIN/INDEX] Calling adminLoginApi for super admin...");
-        await adminLoginApi(email, password);
-        toast.success(`Welcome back — signing you into Super Admin`);
-        window.location.href = "/admin";
-        return;
+      // 1. If email contains 'admin', try Super Admin login first
+      if (cleanEmail.toLowerCase().includes("admin")) {
+        try {
+          console.log("[LOGIN/INDEX] Calling adminLoginApi for super admin...");
+          const session = await adminLoginApi(cleanEmail, password);
+          toast.success(`Welcome back — signing you into Super Admin`);
+          window.location.href = "/admin";
+          return;
+        } catch (adminErr) {
+          console.log("[LOGIN/INDEX] Super Admin auth attempt skipped/failed, proceeding to merchant/staff login...", adminErr);
+        }
       }
 
-      console.log("[LOGIN/INDEX] Calling loginApi with:", { email, password });
-      const session = await loginApi(email, password);
-      const type: "restaurant" | "salon" = email.toLowerCase().includes("salon") ? "salon" : "restaurant";
+      // 2. Otherwise/Fallback: Business Owner or Staff login
+      console.log("[LOGIN/INDEX] Calling loginApi with:", { cleanEmail, password });
+      const session = await loginApi(cleanEmail, password);
+      const type: "restaurant" | "salon" = cleanEmail.toLowerCase().includes("salon") ? "salon" : "restaurant";
       const slug = slugify(session.businessName || type);
       setBusinessType(type);
       setSession({
@@ -64,7 +58,7 @@ function UnifiedLogin() {
       window.location.href = `/app/${type}/${slug}/dashboard`;
     } catch (err: any) {
       console.error("[LOGIN/INDEX] loginApi error:", err);
-      toast.error(err.message || "Incorrect email or password.");
+      toast.error(err.message || "Incorrect Email / Staff ID or password.");
     } finally {
       setLoading(false);
     }
@@ -84,7 +78,17 @@ function UnifiedLogin() {
             <p className="mt-1 text-sm text-muted-foreground">Enter your credentials to access your dashboard.</p>
           </div>
           <form onSubmit={submit} className="mt-8 space-y-4">
-            <div className="space-y-1.5"><Label htmlFor="email">Email</Label><Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@business.com" /></div>
+            <div className="space-y-1.5">
+              <Label htmlFor="email">Email / Staff Login ID</Label>
+              <Input
+                id="email"
+                type="text"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="owner@business.com or ST001"
+              />
+            </div>
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">Password</Label>
