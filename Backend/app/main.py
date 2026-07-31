@@ -28,10 +28,14 @@ from app.api.v1.orders.router import router as orders_router
 from app.api.v1.services.router import router as services_router
 from app.api.v1.staff.router import router as staff_router
 from app.api.v1.dining_areas.router import router as dining_areas_router
+from app.api.v1.festivals.router import router as festivals_router
 from app.api.v1.setup.router import router as setup_router
 from app.api.v1.tables.router import router as tables_router
 from app.api.v1.uploads.router import router as uploads_router
 from app.api.v1.visits.router import router as visits_router
+from app.api.v1.qr.router import router as qr_router
+from app.api.v1.customer_recovery.router import router as customer_recovery_router
+from app.api.v1.review_booster.router import router as review_booster_router
 from app.db.database import engine
 from app.models.base import Base
 
@@ -183,6 +187,26 @@ app.include_router(
 
 app.include_router(
     visits_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    qr_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    festivals_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    customer_recovery_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    review_booster_router,
     prefix="/api/v1",
 )
 

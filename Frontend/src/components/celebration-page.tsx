@@ -1,10 +1,12 @@
 import { motion } from "framer-motion";
 import { Cake, Gift, CalendarDays, CalendarRange, ArrowRight } from "lucide-react";
-import { Link } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { getCelebrants, type Kind } from "@/lib/celebration-utils";
+import { type Kind } from "@/lib/celebration-utils";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/auth";
 
 const accentMap = {
   primary: "from-primary/20 to-primary/5 text-primary",
@@ -34,8 +36,8 @@ function ClickableStat({
       transition={{ delay: index * 0.04, duration: 0.4, ease: "easeOut" }}
       whileHover={{ scale: 1.02 }}
     >
-      <Link to={to} className="block">
-        <Card className="group relative overflow-hidden rounded-2xl p-5 shadow-elegant transition-all hover:-translate-y-0.5 hover:shadow-glow">
+      <Link to={to as any} className="block">
+        <Card className="group relative overflow-hidden rounded-2xl p-5 shadow-elegant transition-all hover:-translate-y-0.5 hover:shadow-glow bg-card">
           <div className={cn("pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-gradient-to-br opacity-70 blur-2xl", accentMap[accent])} />
           <div className="relative flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -56,16 +58,33 @@ function ClickableStat({
 }
 
 export function CelebrationPage({ kind }: { kind: Kind }) {
+  const params = useParams({ strict: false });
+  const type = params.type || "restaurant";
+  const business = params.business || "my-business";
+
   const isBday = kind === "birthday";
   const title = isBday ? "Birthday campaigns" : "Anniversary campaigns";
   const emoji = isBday ? "🎂" : "❤️";
-  const base = isBday ? "/app/birthdays" : "/app/anniversaries";
+  const campaignPath = isBday ? "birthday-campaigns" : "anniversary-campaigns";
+  const base = `/app/${type}/${business}/${campaignPath}`;
   const labelToday = isBday ? "Today's Birthdays" : "Today's Anniversaries";
 
-  const todayCount = getCelebrants(kind, "today").length;
-  const tomCount = getCelebrants(kind, "tomorrow").length;
-  const weekCount = getCelebrants(kind, "week").length;
-  const monthCount = getCelebrants(kind, "month").length;
+  // Fetch real database summary counts for birthday or anniversary
+  const summaryEndpoint = isBday ? "/api/v1/customers/birthday-summary" : "/api/v1/customers/anniversary-summary";
+  const { data: summary } = useQuery({
+    queryKey: [isBday ? "birthday-summary" : "anniversary-summary"],
+    queryFn: async () => {
+      const res = await apiFetch(summaryEndpoint);
+      if (!res.ok) throw new Error("Failed to fetch celebration summary");
+      return res.json();
+    },
+    refetchInterval: 30000,
+  });
+
+  const todayCount = summary?.today ?? 0;
+  const tomCount = summary?.tomorrow ?? 0;
+  const weekCount = summary?.this_week ?? 0;
+  const monthCount = summary?.this_month ?? 0;
 
   return (
     <>
@@ -77,7 +96,7 @@ export function CelebrationPage({ kind }: { kind: Kind }) {
         <ClickableStat label="This Month" value={monthCount} to={`${base}/month`} Icon={CalendarRange} accent="primary" index={3} />
       </div>
       <p className="mt-6 text-sm text-muted-foreground">
-        Tip: from any list you can open WhatsApp with the message prefilled — just tap Send.
+        Tip: from any list you can open WhatsApp with the prefilled personalized AI message — just tap Send.
       </p>
     </>
   );

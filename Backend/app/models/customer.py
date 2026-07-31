@@ -84,3 +84,9 @@ class Customer(BaseModel):
         uselist=False,
         cascade="all, delete-orphan",
     )
+
+    @property
+    def loyalty_points(self) -> int:
+        if hasattr(self, "loyalty") and self.loyalty is not None:
+            return self.loyalty.current_points
+        return 0

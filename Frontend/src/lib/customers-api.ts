@@ -13,6 +13,7 @@ export interface BackendCustomer {
   notes: string | null;
   visit_count: number;
   total_spent: number;
+  loyalty_points?: number;
   first_visit_at: string | null;
   last_visit_at: string | null;
   is_active: boolean;
@@ -78,7 +79,7 @@ export function formatCustomer(c: BackendCustomer): CustomerModel {
     notes: c.notes || "",
     visits: c.visit_count || 0,
     spent: c.total_spent || 0,
-    points: Math.round((c.total_spent || 0) * 10),
+    points: c.loyalty_points ?? 0,
     lastVisit,
     status,
     initials,
@@ -200,6 +201,113 @@ export async function getCustomerSegmentsApi() {
   const res = await apiFetch("/api/v1/customers/segments");
   if (!res.ok) {
     throw new Error("Failed to fetch customer segments");
+  }
+  return await res.json();
+}
+
+export interface CustomerCrmData {
+  profile: BackendCustomer;
+  total_visits: number;
+  total_orders: number;
+  total_spent: number;
+  avg_bill: number;
+  loyalty_points: number;
+  last_visit_at: string | null;
+  first_visit_at: string | null;
+  last_order_at: string | null;
+  customer_since: string;
+  total_qr_orders: number;
+  total_staff_orders: number;
+  preferred_dining_area: string;
+  favorite_table: string;
+  favorite_items: Array<{ name: string; count: number; total_spent: number }>;
+  avg_visit_frequency_days: number | null;
+  customer_lifetime_value: number;
+  timeline: Array<{
+    id: string;
+    type: string;
+    title: string;
+    description?: string | null;
+    timestamp: string;
+    badge?: string | null;
+    amount?: number | null;
+  }>;
+  visits: Array<{
+    id: string;
+    visit_number: number;
+    date: string;
+    table_name: string;
+    dining_area_name: string;
+    source: string;
+    status: string;
+    total_amount: number;
+    loyalty_earned: number;
+    payment_method?: string | null;
+  }>;
+  orders: Array<{
+    id: string;
+    order_number: string;
+    status: string;
+    source: string;
+    table_name: string;
+    created_at: string;
+    completed_at?: string | null;
+    subtotal: number;
+    tax_amount: number;
+    discount_amount: number;
+    total_amount: number;
+    items: Array<{
+      id: string;
+      name: string;
+      unit_price: number;
+      quantity: number;
+      subtotal: number;
+      notes?: string | null;
+    }>;
+  }>;
+  loyalty_history: Array<{
+    id: string;
+    date: string;
+    reason: string;
+    points: number;
+    type: string;
+    balance_after: number;
+  }>;
+  loyalty_current_points: number;
+  loyalty_lifetime_points: number;
+  loyalty_redeemed_points: number;
+  whatsapp_logs: Array<{
+    id: string;
+    campaign_name?: string | null;
+    type: string;
+    message: string;
+    status: string;
+    sent_at: string;
+  }>;
+  campaigns: Array<{
+    id: string;
+    name: string;
+    type: string;
+    status: string;
+    sent_at?: string | null;
+  }>;
+  reviews: Array<{
+    id: string;
+    rating: number;
+    comment: string;
+    date: string;
+    google_status: string;
+  }>;
+  ai_insights: string;
+}
+
+export async function getCustomerCrmDetailsApi(id: string): Promise<CustomerCrmData> {
+  const res = await apiFetch(`/api/v1/customers/${id}/crm`);
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    const err = new Error(errData.detail || `HTTP ${res.status}`);
+    (err as any).status = res.status;
+    throw err;
   }
   return await res.json();
 }

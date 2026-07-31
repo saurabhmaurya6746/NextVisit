@@ -101,6 +101,32 @@ def get_current_user(
     return user
 
 
+def get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    """
+    Returns the authenticated User if a valid Bearer JWT is provided.
+    Otherwise, for public endpoints (such as public QR ordering), falls back
+    to returning the active business User record from the database.
+    """
+    if credentials:
+        try:
+            return get_current_user(credentials, db)
+        except HTTPException:
+            pass
+
+    from sqlalchemy import select
+    stmt = select(User).where(User.is_active.is_(True)).order_by(User.created_at.asc())
+    user = db.scalar(stmt)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active restaurant business profile found.",
+        )
+    return user
+
+
 def get_current_super_admin(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
     db: Session = Depends(get_db),

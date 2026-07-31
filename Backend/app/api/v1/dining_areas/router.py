@@ -5,7 +5,12 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import get_current_user
 from app.db.database import get_db
 from app.models.user import User
-from app.schemas.dining_area import DiningAreaCreate, DiningAreaResponse, DiningAreaUpdate
+from app.schemas.dining_area import (
+    DiningAreaCreate,
+    DiningAreaReorderItem,
+    DiningAreaResponse,
+    DiningAreaUpdate,
+)
 from app.services.dining_area_service import DiningAreaService
 
 router = APIRouter(prefix="/dining-areas", tags=["Dining Areas"])
@@ -26,6 +31,15 @@ def create_dining_area(
     db: Session = Depends(get_db),
 ):
     return DiningAreaService(db).create_area(current_user, data)
+
+
+@router.post("/reorder", response_model=list[DiningAreaResponse], summary="Reorder dining areas")
+def reorder_dining_areas(
+    items: list[DiningAreaReorderItem],
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return DiningAreaService(db).reorder_areas(current_user, items)
 
 
 @router.put("/{id}", response_model=DiningAreaResponse, summary="Update dining area")

@@ -3,10 +3,11 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { LayoutDashboard, Users, ShoppingBag, Cake, Heart, MessageCircle, Ticket, Trophy, Star, RefreshCw, MessageSquare, BarChart3, Calendar as CalIcon, UserCog, Settings, LogOut, Scissors, Utensils, UserPlus, PartyPopper, Crown, BookOpen, Sparkles, CreditCard, TrendingUp, History } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter } from "@/components/ui/sidebar";
 import { BrandLogo } from "@/components/brand-logo";
-import { useBusinessType } from "@/lib/business-type";
+import { clearSession } from "@/lib/auth";
 
 const restaurantPrimary = [
   { title: "Dashboard", path: "dashboard", icon: LayoutDashboard },
+  { title: "Restaurant Setup", path: "setup", icon: Settings },
   { title: "Tables", path: "tables", icon: Utensils },
   { title: "Orders", path: "orders", icon: ShoppingBag },
   { title: "Menu", path: "menu", icon: BookOpen },
@@ -85,6 +86,7 @@ function Group({ label, items, isActive }: { label: string; items: Item[]; isAct
     </SidebarGroup>
   );
 }
+import { useBusinessType } from "@/lib/business-type";
 
 export function BusinessSidebar() {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
@@ -113,7 +115,14 @@ export function BusinessSidebar() {
       <SidebarFooter className="border-t">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild><Link to="/"><LogOut /><span>Sign out</span></Link></SidebarMenuButton>
+            <SidebarMenuButton
+              onClick={() => {
+                clearSession();
+              }}
+              asChild
+            >
+              <Link to="/login"><LogOut /><span>Sign out</span></Link>
+            </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

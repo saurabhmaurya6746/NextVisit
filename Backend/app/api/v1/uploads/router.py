@@ -35,3 +35,18 @@ def upload_payment_qr(
     Requires a valid Bearer JWT.
     """
     return UploadService(db).upload_payment_qr(current_user, file)
+
+
+@router.delete(
+    "/payment-qr",
+    status_code=status.HTTP_200_OK,
+    summary="Delete Payment QR code image for authenticated business",
+)
+def delete_payment_qr(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Deletes Payment QR code image and clears reference in BusinessSettings.
+    """
+    return UploadService(db).delete_payment_qr(current_user)

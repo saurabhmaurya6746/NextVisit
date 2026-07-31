@@ -41,3 +41,9 @@ class DiningAreaUpdate(BaseModel):
     display_order: int | None = Field(default=None, ge=0)
     color: str | None = Field(default=None, max_length=50)
     is_active: bool | None = None
+
+
+class DiningAreaReorderItem(BaseModel):
+    id: UUID
+    display_order: int = Field(..., ge=0)
+

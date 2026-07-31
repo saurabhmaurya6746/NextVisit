@@ -52,9 +52,12 @@ export function setSession(s: Session) {
 }
 
 export function clearSession() {
-  console.log("[AUTH] clearSession() called - removing tokens");
+  console.log("[AUTH] clearSession() called - clearing session and invalidating business profile caches");
   localStorage.removeItem(KEY_SESSION);
   localStorage.removeItem(KEY_TOKEN);
+  localStorage.removeItem("growthos:profile:restaurant");
+  localStorage.removeItem("growthos:profile:salon");
+  localStorage.removeItem("nextvisit:authenticated_business");
   window.dispatchEvent(new Event(EVT));
 }
 
@@ -85,18 +88,19 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   }
 
   console.log(`[AUTH] apiFetch ${options.method || "GET"} -> ${url}`);
-  console.log(`[AUTH] Authorization Header:`, headers.get("Authorization"));
 
   const res = await fetch(url, { ...options, headers });
 
-  console.log(`[AUTH] apiFetch response status for ${url}: ${res.status}`);
-
-  if ((res.status === 401 || res.status === 403) && !url.includes("/login")) {
+  if (
+    (res.status === 401 || res.status === 403) &&
+    !url.includes("/login") &&
+    typeof window !== "undefined" &&
+    !window.location.pathname.startsWith("/login") &&
+    !window.location.pathname.startsWith("/qr")
+  ) {
     console.warn(`[AUTH] Unauthenticated (${res.status}) on ${url}. Redirecting to login.`);
-    if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
-      clearSession();
-      window.location.href = "/login";
-    }
+    clearSession();
+    window.location.href = "/login";
   }
 
   return res;
@@ -105,12 +109,13 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
 export async function loginApi(email: string, password: string): Promise<Session> {
   console.log("[AUTH] loginApi() starting with email:", email);
 
+  // Invalidate any previous session or cached business profiles
+  clearSession();
+
   const res = await apiFetch("/api/v1/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
-
-  console.log("[AUTH] POST /api/v1/auth/login response status:", res.status);
 
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
@@ -119,22 +124,32 @@ export async function loginApi(email: string, password: string): Promise<Session
   }
 
   const data = await res.json();
-  console.log("[AUTH] POST /api/v1/auth/login success, received access_token:", data.access_token ? `${data.access_token.substring(0, 15)}...` : "NONE");
-
   const token = data.access_token;
   setToken(token);
 
   console.log("[AUTH] Fetching user profile via getMeApi()...");
   const user = await getMeApi(token);
-  console.log("[AUTH] GET /api/v1/auth/me response profile:", user);
+
+  let bizName = user.name;
+  try {
+    const bizRes = await fetch(`${API_BASE_URL}/api/v1/business`, {
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+    if (bizRes.ok) {
+      const bizData = await bizRes.json();
+      if (bizData?.name) bizName = bizData.name;
+    }
+  } catch (e) {
+    console.warn("[AUTH] Failed to prefetch business info during login:", e);
+  }
 
   const session: Session = {
     role: "business",
     email: user.email,
     clientId: user.business_id,
-    businessName: user.name,
+    businessName: bizName,
     businessType: "restaurant",
-    businessSlug: slugify(user.name || "restaurant"),
+    businessSlug: slugify(bizName || "restaurant"),
     token: token,
   };
 

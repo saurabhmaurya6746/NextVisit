@@ -1,66 +1,282 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Minus, ShoppingBag, Check, Save, ArrowLeft } from "lucide-react";
+import { Plus, Minus, ShoppingBag, Check, ArrowLeft, User, Search, UserPlus, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import { useMenu, menuCategories, type MenuItem } from "@/lib/menu-store";
-import { useProfile } from "@/lib/business-profile";
-import { appendItemsToActiveOrder, getActiveOrderForTable, calcTotals, type OrderItem } from "@/lib/orders-store";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { listMenuCategoriesApi } from "@/lib/menu-api";
+import { getTablesMapApi, createOrderApi, getCustomerByPhoneApi, type OrderItemCreatePayload } from "@/lib/orders-api";
 import { toast } from "sonner";
-import { useNavigate } from "@tanstack/react-router";
 import { fmt } from "@/lib/currency";
+import { pushNotification } from "@/lib/notifications-store";
 
-interface Props { open: boolean; onOpenChange: (o: boolean) => void; presetTable?: string }
+interface CartItem {
+  menu_item_id: string;
+  item_name: string;
+  unit_price: number;
+  quantity: number;
+  tax_rate: number;
+  discount: number;
+  notes?: string;
+}
 
-export function NewOrderDialog({ open, onOpenChange, presetTable }: Props) {
-  const menu = useMenu();
-  const profile = useProfile("restaurant");
-  const navigate = useNavigate();
+interface Props {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  presetTable?: string;
+  presetTableId?: string;
+}
+
+export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId }: Props) {
+  const qc = useQueryClient();
   const [step, setStep] = useState(presetTable ? 1 : 0);
-  const [table, setTable] = useState<string>(presetTable || "");
-  const [cart, setCart] = useState<OrderItem[]>([]);
-  const [activeCat, setActiveCat] = useState<string>("");
+  const [selectedTableId, setSelectedTableId] = useState<string>(presetTableId || "");
+  const [selectedTableName, setSelectedTableName] = useState<string>(presetTable || "");
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [activeCatId, setActiveCatId] = useState<string>("");
 
-  // If parent updates presetTable while the dialog is open, jump straight
-  // to the menu step with that table selected (no intermediate picker).
+  // Customer Details State (Step 2)
+  const [custMode, setCustMode] = useState<"existing" | "new" | "guest">("existing");
+  const [searchPhone, setSearchPhone] = useState("");
+  const [foundCustomer, setFoundCustomer] = useState<{ id: string; name: string; phone: string } | null>(null);
+  const [searchingPhone, setSearchingPhone] = useState(false);
+
+  // New Customer form
+  const [newName, setNewName] = useState("");
+  const [newPhone, setNewPhone] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newBday, setNewBday] = useState("");
+  const [newAnni, setNewAnni] = useState("");
+  const [newNotes, setNewNotes] = useState("");
+  const [orderNotes, setOrderNotes] = useState("");
+
+  // ---------------------------------------------------------------------------
+  // Data Fetching via React Query
+  // ---------------------------------------------------------------------------
+  const { data: menuCategories = [] } = useQuery({
+    queryKey: ["menu", "categories"],
+    queryFn: listMenuCategoriesApi,
+    enabled: open,
+  });
+
+  const { data: diningAreas = [] } = useQuery({
+    queryKey: ["tables", "map"],
+    queryFn: getTablesMapApi,
+    enabled: open,
+  });
+
+  const allTables = useMemo(() => {
+    return diningAreas.flatMap((area) => area.tables);
+  }, [diningAreas]);
+
   useEffect(() => {
-    if (open && presetTable) { setTable(presetTable); setStep(1); }
-  }, [open, presetTable]);
+    if (open) {
+      if (presetTableId) {
+        setSelectedTableId(presetTableId);
+        setSelectedTableName(presetTable || "");
+        setStep(1);
+      } else if (presetTable) {
+        const match = allTables.find(
+          (t) => t.table_name.toLowerCase() === presetTable.toLowerCase() || t.id === presetTable
+        );
+        if (match) {
+          setSelectedTableId(match.id);
+          setSelectedTableName(match.table_name);
+          setStep(1);
+        }
+      }
+    }
+  }, [open, presetTable, presetTableId, allTables]);
 
-  const cats = useMemo(() => menuCategories(menu), [menu]);
-  const current = activeCat || cats[0] || "";
-  const totals = calcTotals(cart, profile.gstPercent, profile.gstEnabled);
+  const currentCatId = activeCatId || menuCategories[0]?.id || "";
+  const currentCatItems = useMemo(() => {
+    const cat = menuCategories.find((c) => c.id === currentCatId);
+    return cat ? cat.items.filter((i) => i.is_available) : [];
+  }, [menuCategories, currentCatId]);
+
+  // Cart calculations
+  const subtotal = cart.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+  const taxTotal = cart.reduce((s, i) => s + (i.unit_price * i.quantity * (i.tax_rate / 100)), 0);
+  const total = subtotal + taxTotal;
 
   function reset() {
-    setStep(presetTable ? 1 : 0); setTable(presetTable || ""); setCart([]); setActiveCat("");
+    setStep(presetTable ? 1 : 0);
+    setSelectedTableId(presetTableId || "");
+    setSelectedTableName(presetTable || "");
+    setCart([]);
+    setActiveCatId("");
+    setCustMode("existing");
+    setSearchPhone("");
+    setFoundCustomer(null);
+    setNewName("");
+    setNewPhone("");
+    setNewEmail("");
+    setNewBday("");
+    setNewAnni("");
+    setNewNotes("");
+    setOrderNotes("");
   }
-  function close() { reset(); onOpenChange(false); }
 
-  function addToCart(m: MenuItem) {
-    setCart((c) => {
-      const idx = c.findIndex((x) => x.id === m.id);
-      if (idx >= 0) { const copy = [...c]; copy[idx] = { ...copy[idx], qty: copy[idx].qty + 1 }; return copy; }
-      return [...c, { id: m.id, name: m.name, price: m.price, qty: 1 }];
+  function close() {
+    reset();
+    onOpenChange(false);
+  }
+
+  function addToCart(item: { id: string; name: string; price: number; gst_percentage?: number }) {
+    setCart((prev) => {
+      const idx = prev.findIndex((x) => x.menu_item_id === item.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], quantity: copy[idx].quantity + 1 };
+        return copy;
+      }
+      return [
+        ...prev,
+        {
+          menu_item_id: item.id,
+          item_name: item.name,
+          unit_price: item.price,
+          quantity: 1,
+          tax_rate: item.gst_percentage || 0,
+          discount: 0,
+        },
+      ];
     });
   }
-  function bump(id: string, d: number) {
-    setCart((c) => c.flatMap((i) => i.id === id ? (i.qty + d <= 0 ? [] : [{ ...i, qty: i.qty + d }]) : [i]));
+
+  function bumpQty(menuItemId: string, delta: number) {
+    setCart((prev) =>
+      prev.flatMap((i) =>
+        i.menu_item_id === menuItemId
+          ? i.quantity + delta <= 0
+            ? []
+            : [{ ...i, quantity: i.quantity + delta }]
+          : [i]
+      )
+    );
   }
 
-  function pickTable(t: string) { setTable(t); setStep(1); }
+  function pickTable(tId: string, tName: string) {
+    setSelectedTableId(tId);
+    setSelectedTableName(tName);
+    setStep(1);
+  }
 
-  function saveTemp() {
-    const active = getActiveOrderForTable(table);
-    const order = appendItemsToActiveOrder({
-      table, items: cart, source: "staff",
-      gstPercent: profile.gstPercent, gstEnabled: profile.gstEnabled,
+  // Handle phone search
+  async function handlePhoneSearch() {
+    if (!searchPhone.trim()) return;
+    setSearchingPhone(true);
+    try {
+      const cust = await getCustomerByPhoneApi(searchPhone.trim());
+      if (cust) {
+        setFoundCustomer(cust);
+        toast.success(`Found customer: ${cust.name}`);
+      } else {
+        setFoundCustomer(null);
+        toast.info("No existing customer found with this phone. Switch to 'New Customer' to register.");
+      }
+    } catch {
+      setFoundCustomer(null);
+      toast.info("No existing customer found.");
+    } finally {
+      setSearchingPhone(false);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Place Order Mutation
+  // ---------------------------------------------------------------------------
+  const placeOrderMut = useMutation({
+    mutationFn: createOrderApi,
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["tables", "map"] });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["customers"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+
+      // ─── Fire notification + sound via existing notification store ───
+      const time = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+      pushNotification({
+        type: "staff_order",
+        title: "\ud83d\udecd\ufe0f New Staff Order",
+        body: [
+          `Table: ${selectedTableName || "Unknown"}`,
+          `Order: ${res.order_number}`,
+          `Amount: \u20b9${res.total_amount.toFixed(2)}`,
+          `Time: ${time}`,
+        ].join(" \u00b7 "),
+        orderId: res.id,
+        table: selectedTableName || "",
+      });
+      // ─────────────────────────────────────────────────────────────────
+
+      toast.success(`Order ${res.order_number} created successfully!`);
+      close();
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to place order.");
+    },
+  });
+
+  function handlePlaceOrder() {
+    if (!selectedTableId) {
+      toast.error("Please select a table.");
+      return;
+    }
+    if (cart.length === 0) {
+      toast.error("Cart is empty.");
+      return;
+    }
+
+    const itemsPayload: OrderItemCreatePayload[] = cart.map((i) => ({
+      menu_item_id: i.menu_item_id,
+      item_name: i.item_name,
+      unit_price: i.unit_price,
+      quantity: i.quantity,
+      tax_rate: i.tax_rate,
+      discount: i.discount,
+      notes: i.notes || undefined,
+    }));
+
+    let customer_id: string | null = null;
+    let customer_details = null;
+
+    if (custMode === "existing") {
+      if (foundCustomer) {
+        customer_id = foundCustomer.id;
+      } else if (searchPhone.trim()) {
+        // Fallback search inline
+        toast.error("Please search and select an existing customer, or select New/Guest.");
+        return;
+      }
+    } else if (custMode === "new") {
+      if (!newName.trim() || !newPhone.trim()) {
+        toast.error("Name and Phone are required for new customer.");
+        return;
+      }
+      customer_details = {
+        name: newName.trim(),
+        phone: newPhone.trim(),
+        email: newEmail.trim() || null,
+        birth_date: newBday || null,
+        anniversary_date: newAnni || null,
+        notes: newNotes.trim() || null,
+      };
+    } // Guest: customer_id = null, customer_details = null
+
+    placeOrderMut.mutate({
+      table_id: selectedTableId,
+      customer_id,
+      customer_details,
+      order_source: "POS",
+      notes: orderNotes.trim() || null,
+      items: itemsPayload,
     });
-    toast.success(active
-      ? `Added to active session on ${table}`
-      : `Order ${order.id.slice(-6)} saved · attached to ${table}`);
-    close();
-    navigate({ to: "/app/orders/$id" as any, params: { id: order.id } as any });
   }
 
   return (
@@ -69,106 +285,200 @@ export function NewOrderDialog({ open, onOpenChange, presetTable }: Props) {
         <DialogHeader>
           <DialogTitle className="font-display flex items-center gap-2">
             <ShoppingBag className="h-5 w-5 text-primary" /> New staff order
-            {table && <span className="ml-2 rounded-full bg-primary/10 px-3 py-0.5 text-sm font-medium text-primary">{table}</span>}
+            {selectedTableName && (
+              <span className="ml-2 rounded-full bg-primary/10 px-3 py-0.5 text-sm font-medium text-primary">
+                {selectedTableName}
+              </span>
+            )}
           </DialogTitle>
           <p className="pt-1 text-xs text-muted-foreground">
-            {step === 0 ? "Step 1 of 2 · Select a table" : `Step 2 of 2 · Add items to ${table}`}
+            {step === 0 ? "Step 1 of 2 · Select a table" : `Step 2 of 2 · Add items & place order for ${selectedTableName}`}
           </p>
         </DialogHeader>
 
         <div className="min-h-[360px]">
           <AnimatePresence mode="wait">
+            {/* STEP 0: SELECT TABLE */}
             {step === 0 && (
               <motion.div key="s0" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                <p className="mb-3 text-sm text-muted-foreground">Tap a table to continue. Customer & payment are collected at checkout.</p>
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
-                  {profile.tableNames.map((t) => (
-                    <TableChip key={t} label={t} active={table === t} onClick={() => pickTable(t)} />
-                  ))}
-                  {profile.parcel && <TableChip label="Parcel" active={table === "Parcel"} onClick={() => pickTable("Parcel")} />}
-                  {profile.takeaway && <TableChip label="Take Away" active={table === "Take Away"} onClick={() => pickTable("Take Away")} />}
-                </div>
+                <p className="mb-3 text-sm text-muted-foreground">
+                  Tap a table to start a staff temporary order. Customer details are collected at payment.
+                </p>
+                {allTables.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">No tables configured. Please add tables in Table Setup.</p>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+                    {allTables.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => pickTable(t.id, t.table_name)}
+                        className={cn(
+                          "rounded-xl border px-3 py-4 text-sm font-medium transition-all text-left",
+                          selectedTableId === t.id
+                            ? "gradient-brand text-primary-foreground shadow-elegant"
+                            : t.status === "OCCUPIED"
+                            ? "bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300"
+                            : "hover:-translate-y-0.5 hover:border-primary"
+                        )}
+                      >
+                        <div className="font-semibold">{t.table_name}</div>
+                        <div className="text-[10px] opacity-80 mt-1">
+                          {t.status === "OCCUPIED" ? "Occupied" : `Cap: ${t.capacity}`}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </motion.div>
             )}
 
+            {/* STEP 1: MENU & CART (PLACE ORDER DIRECTLY) */}
             {step === 1 && (
-              <motion.div key="s1" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                className="grid gap-3 md:grid-cols-[140px_1fr_260px]">
-                <div className="space-y-1">
-                  {cats.map((c) => (
-                    <button key={c} onClick={() => setActiveCat(c)} className={cn("w-full rounded-xl px-3 py-2 text-left text-sm transition-all",
-                      c === current ? "gradient-brand text-primary-foreground shadow-elegant" : "hover:bg-muted")}>{c}</button>
-                  ))}
-                </div>
-                <div className="grid max-h-[420px] grid-cols-2 gap-2 overflow-y-auto pr-1">
-                  {menu.filter((m) => m.category === current && m.available).map((m) => (
-                    <button key={m.id} onClick={() => addToCart(m)} className="group rounded-xl border p-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-glow">
-                      {m.image && <img src={m.image} alt="" className="mb-2 h-20 w-full rounded-lg object-cover" />}
-                      <p className="font-medium">{m.name}</p>
-                      <div className="mt-2 flex items-center justify-between">
-                        <span className="text-sm font-semibold">{fmt(m.price)}</span>
-                        <Plus className="h-4 w-4 text-primary opacity-0 transition-opacity group-hover:opacity-100" />
-                      </div>
+              <motion.div
+                key="s1"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="grid gap-3 md:grid-cols-[140px_1fr_260px]"
+              >
+                {/* Category Sidebar */}
+                <div className="space-y-1 overflow-y-auto max-h-[420px]">
+                  {menuCategories.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => setActiveCatId(c.id)}
+                      className={cn(
+                        "w-full rounded-xl px-3 py-2 text-left text-sm transition-all",
+                        c.id === currentCatId
+                          ? "gradient-brand text-primary-foreground shadow-elegant"
+                          : "hover:bg-muted"
+                      )}
+                    >
+                      {c.name}
                     </button>
                   ))}
                 </div>
-                <div className="rounded-xl border p-3">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Cart · {table}</p>
-                  {cart.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">Tap items to add.</p>
+
+                {/* Items Grid */}
+                <div className="grid max-h-[420px] grid-cols-2 gap-2 overflow-y-auto pr-1">
+                  {currentCatItems.length === 0 ? (
+                    <p className="col-span-2 py-12 text-center text-xs text-muted-foreground">
+                      No available items in this category.
+                    </p>
                   ) : (
-                    <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                      {cart.map((i) => (
-                        <div key={i.id} className="rounded-lg bg-muted/40 p-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium">{i.name}</span>
-                            <div className="flex items-center gap-1">
-                              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => bump(i.id, -1)}><Minus className="h-3 w-3" /></Button>
-                              <span className="w-5 text-center text-sm">{i.qty}</span>
-                              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => bump(i.id, +1)}><Plus className="h-3 w-3" /></Button>
+                    currentCatItems.map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={() => addToCart(m)}
+                        className="group rounded-xl border p-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-glow"
+                      >
+                        <p className="font-medium text-sm">{m.name}</p>
+                        <div className="mt-2 flex items-center justify-between">
+                          <span className="text-sm font-semibold">{fmt(m.price)}</span>
+                          <Plus className="h-4 w-4 text-primary opacity-0 transition-opacity group-hover:opacity-100" />
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                {/* Cart Drawer */}
+                <div className="rounded-xl border p-3 flex flex-col justify-between">
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Cart · {selectedTableName}
+                    </p>
+                    {cart.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Tap items on the left to add to order.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                        {cart.map((i) => (
+                          <div key={i.menu_item_id} className="rounded-lg bg-muted/40 p-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-medium truncate max-w-[120px]">{i.item_name}</span>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6"
+                                  onClick={() => bumpQty(i.menu_item_id, -1)}
+                                >
+                                  <Minus className="h-3 w-3" />
+                                </Button>
+                                <span className="w-4 text-center text-xs">{i.quantity}</span>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6"
+                                  onClick={() => bumpQty(i.menu_item_id, +1)}
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                              <span>
+                                {fmt(i.unit_price)} × {i.quantity}
+                              </span>
+                              <span className="font-semibold text-foreground">
+                                {fmt(i.unit_price * i.quantity)}
+                              </span>
                             </div>
                           </div>
-                          <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                            <span>{fmt(i.price)} × {i.qty}</span>
-                            <span className="font-semibold text-foreground">{fmt(i.price * i.qty)}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="mt-3 space-y-1 border-t pt-2 text-xs">
-                    <div className="flex items-center justify-between"><span className="text-muted-foreground">Subtotal</span><span>{fmt(totals.subtotal)}</span></div>
-                    {profile.gstEnabled && <div className="flex items-center justify-between"><span className="text-muted-foreground">GST ({profile.gstPercent}%)</span><span>{fmt(totals.gst)}</span></div>}
-                    <div className="flex items-center justify-between border-t pt-1 text-sm"><span className="text-muted-foreground">Total</span><span className="font-display text-base font-semibold">{fmt(totals.total)}</span></div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <Button className="mt-3 w-full rounded-full gradient-brand text-primary-foreground" disabled={cart.length === 0} onClick={saveTemp}>
-                    <Save className="mr-1.5 h-4 w-4" /> Save order
-                  </Button>
+
+                  <div className="mt-3 border-t pt-2 space-y-2">
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Kitchen Notes (optional)</Label>
+                      <Textarea
+                        placeholder="e.g. Extra spicy, no onions…"
+                        rows={1}
+                        value={orderNotes}
+                        onChange={(e) => setOrderNotes(e.target.value)}
+                        className="text-xs resize-none rounded-lg h-7 min-h-0 py-1"
+                      />
+                    </div>
+
+                    <div className="space-y-1 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Subtotal</span>
+                        <span>{fmt(subtotal)}</span>
+                      </div>
+                      {taxTotal > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">Estimated Tax</span>
+                          <span>{fmt(taxTotal)}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between border-t pt-1 text-sm">
+                        <span className="text-muted-foreground">Total</span>
+                        <span className="font-display text-base font-semibold">{fmt(total)}</span>
+                      </div>
+                    </div>
+
+                    <Button
+                      className="w-full rounded-full gradient-brand text-primary-foreground"
+                      disabled={cart.length === 0 || placeOrderMut.isPending}
+                      onClick={handlePlaceOrder}
+                    >
+                      {placeOrderMut.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Check className="mr-1.5 h-4 w-4" /> Place Temporary Order
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
-
-        {step === 1 && !presetTable && (
-          <div className="mt-2 flex items-center justify-between">
-            <Button variant="ghost" size="sm" onClick={() => { setStep(0); setCart([]); }}>
-              <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Change table
-            </Button>
-            <span className="text-xs text-muted-foreground">{cart.reduce((s, i) => s + i.qty, 0)} items</span>
-          </div>
-        )}
       </DialogContent>
     </Dialog>
   );
 }
-
-function TableChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className={cn("rounded-xl border px-3 py-4 text-sm font-medium transition-all",
-      active ? "gradient-brand text-primary-foreground shadow-elegant" : "hover:-translate-y-0.5 hover:border-primary")}>{label}</button>
-  );
-}
-
-// silence unused imports for check tolerant builds
-void Check;

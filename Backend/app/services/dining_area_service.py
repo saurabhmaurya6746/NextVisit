@@ -8,7 +8,11 @@ from app.models.restaurant_table import RestaurantTable
 from app.models.user import User
 from app.repositories.dining_area_repository import DiningAreaRepository
 from app.repositories.restaurant_table_repository import RestaurantTableRepository
-from app.schemas.dining_area import DiningAreaCreate, DiningAreaUpdate
+from app.schemas.dining_area import (
+    DiningAreaCreate,
+    DiningAreaReorderItem,
+    DiningAreaUpdate,
+)
 from app.schemas.setup import AreaSetupItem
 
 logger = logging.getLogger(__name__)
@@ -34,9 +38,17 @@ class DiningAreaService:
         return area
 
     def create_area(self, current_user: User, data: DiningAreaCreate) -> DiningArea:
+        name_clean = data.name.strip()
+        existing = self.area_repo.get_by_name(current_user.business_id, name_clean)
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Dining area with name '{name_clean}' already exists.",
+            )
+
         area = DiningArea(
             business_id=current_user.business_id,
-            name=data.name.strip(),
+            name=name_clean,
             display_order=data.display_order,
             color=data.color,
             is_active=data.is_active,
@@ -48,11 +60,29 @@ class DiningAreaService:
     def update_area(self, current_user: User, area_id: uuid.UUID, data: DiningAreaUpdate) -> DiningArea:
         area = self.get_area(current_user, area_id)
         update_dict = data.model_dump(exclude_unset=True)
+
+        if "name" in update_dict and update_dict["name"] is not None:
+            new_name = update_dict["name"].strip()
+            if new_name.lower() != area.name.lower():
+                existing = self.area_repo.get_by_name(current_user.business_id, new_name)
+                if existing:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Dining area with name '{new_name}' already exists.",
+                    )
+            update_dict["name"] = new_name
+
         for key, val in update_dict.items():
-            if key == "name" and val is not None:
-                val = val.strip()
             setattr(area, key, val)
         return self.area_repo.update(area)
+
+    def reorder_areas(self, current_user: User, items: list[DiningAreaReorderItem]) -> list[DiningArea]:
+        for item in items:
+            area = self.area_repo.get_by_id(item.id, current_user.business_id)
+            if area:
+                area.display_order = item.display_order
+        self.db.commit()
+        return self.area_repo.list_by_business(current_user.business_id)
 
     def delete_area(self, current_user: User, area_id: uuid.UUID) -> None:
         area = self.get_area(current_user, area_id)

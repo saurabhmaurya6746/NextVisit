@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 from app.models.menu_category import MenuCategory
 from app.models.menu_item import MenuItem
@@ -24,6 +24,13 @@ class MenuRepository:
         stmt = select(MenuCategory).where(
             MenuCategory.id == category_id,
             MenuCategory.business_id == business_id,
+        )
+        return self.db.scalar(stmt)
+
+    def get_category_by_name(self, business_id: uuid.UUID, name: str) -> MenuCategory | None:
+        stmt = select(MenuCategory).where(
+            MenuCategory.business_id == business_id,
+            func.lower(MenuCategory.name) == func.lower(name.strip()),
         )
         return self.db.scalar(stmt)
 
@@ -59,6 +66,16 @@ class MenuRepository:
         stmt = select(MenuItem).where(
             MenuItem.id == item_id,
             MenuItem.business_id == business_id,
+        )
+        return self.db.scalar(stmt)
+
+    def get_item_by_name_and_category(
+        self, business_id: uuid.UUID, category_id: uuid.UUID, name: str
+    ) -> MenuItem | None:
+        stmt = select(MenuItem).where(
+            MenuItem.business_id == business_id,
+            MenuItem.category_id == category_id,
+            func.lower(MenuItem.name) == func.lower(name.strip()),
         )
         return self.db.scalar(stmt)
 

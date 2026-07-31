@@ -45,6 +45,7 @@ import { Route as AppTypeBusinessRevenueRouteImport } from './routes/app.$type.$
 import { Route as AppTypeBusinessReviewBoosterRouteImport } from './routes/app.$type.$business.review-booster'
 import { Route as AppTypeBusinessServicesRouteImport } from './routes/app.$type.$business.services'
 import { Route as AppTypeBusinessSettingsRouteImport } from './routes/app.$type.$business.settings'
+import { Route as AppTypeBusinessSetupRouteImport } from './routes/app.$type.$business.setup'
 import { Route as AppTypeBusinessSubscriptionRouteImport } from './routes/app.$type.$business.subscription'
 import { Route as AppTypeBusinessTablesRouteImport } from './routes/app.$type.$business.tables'
 import { Route as AppTypeBusinessTeamRouteImport } from './routes/app.$type.$business.team'
@@ -254,6 +255,11 @@ const AppTypeBusinessSettingsRoute = AppTypeBusinessSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AppTypeBusinessRoute,
 } as any)
+const AppTypeBusinessSetupRoute = AppTypeBusinessSetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => AppTypeBusinessRoute,
+} as any)
 const AppTypeBusinessSubscriptionRoute =
   AppTypeBusinessSubscriptionRouteImport.update({
     id: '/subscription',
@@ -419,6 +425,7 @@ export interface FileRoutesByFullPath {
   '/app/$type/$business/review-booster': typeof AppTypeBusinessReviewBoosterRoute
   '/app/$type/$business/services': typeof AppTypeBusinessServicesRoute
   '/app/$type/$business/settings': typeof AppTypeBusinessSettingsRoute
+  '/app/$type/$business/setup': typeof AppTypeBusinessSetupRoute
   '/app/$type/$business/subscription': typeof AppTypeBusinessSubscriptionRoute
   '/app/$type/$business/tables': typeof AppTypeBusinessTablesRoute
   '/app/$type/$business/team': typeof AppTypeBusinessTeamRoute
@@ -478,6 +485,7 @@ export interface FileRoutesByTo {
   '/app/$type/$business/review-booster': typeof AppTypeBusinessReviewBoosterRoute
   '/app/$type/$business/services': typeof AppTypeBusinessServicesRoute
   '/app/$type/$business/settings': typeof AppTypeBusinessSettingsRoute
+  '/app/$type/$business/setup': typeof AppTypeBusinessSetupRoute
   '/app/$type/$business/subscription': typeof AppTypeBusinessSubscriptionRoute
   '/app/$type/$business/tables': typeof AppTypeBusinessTablesRoute
   '/app/$type/$business/team': typeof AppTypeBusinessTeamRoute
@@ -539,6 +547,7 @@ export interface FileRoutesById {
   '/app/$type/$business/review-booster': typeof AppTypeBusinessReviewBoosterRoute
   '/app/$type/$business/services': typeof AppTypeBusinessServicesRoute
   '/app/$type/$business/settings': typeof AppTypeBusinessSettingsRoute
+  '/app/$type/$business/setup': typeof AppTypeBusinessSetupRoute
   '/app/$type/$business/subscription': typeof AppTypeBusinessSubscriptionRoute
   '/app/$type/$business/tables': typeof AppTypeBusinessTablesRoute
   '/app/$type/$business/team': typeof AppTypeBusinessTeamRoute
@@ -601,6 +610,7 @@ export interface FileRouteTypes {
     | '/app/$type/$business/review-booster'
     | '/app/$type/$business/services'
     | '/app/$type/$business/settings'
+    | '/app/$type/$business/setup'
     | '/app/$type/$business/subscription'
     | '/app/$type/$business/tables'
     | '/app/$type/$business/team'
@@ -660,6 +670,7 @@ export interface FileRouteTypes {
     | '/app/$type/$business/review-booster'
     | '/app/$type/$business/services'
     | '/app/$type/$business/settings'
+    | '/app/$type/$business/setup'
     | '/app/$type/$business/subscription'
     | '/app/$type/$business/tables'
     | '/app/$type/$business/team'
@@ -720,6 +731,7 @@ export interface FileRouteTypes {
     | '/app/$type/$business/review-booster'
     | '/app/$type/$business/services'
     | '/app/$type/$business/settings'
+    | '/app/$type/$business/setup'
     | '/app/$type/$business/subscription'
     | '/app/$type/$business/tables'
     | '/app/$type/$business/team'
@@ -1014,6 +1026,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTypeBusinessSettingsRouteImport
       parentRoute: typeof AppTypeBusinessRoute
     }
+    '/app/$type/$business/setup': {
+      id: '/app/$type/$business/setup'
+      path: '/setup'
+      fullPath: '/app/$type/$business/setup'
+      preLoaderRoute: typeof AppTypeBusinessSetupRouteImport
+      parentRoute: typeof AppTypeBusinessRoute
+    }
     '/app/$type/$business/subscription': {
       id: '/app/$type/$business/subscription'
       path: '/subscription'
@@ -1238,6 +1257,7 @@ interface AppTypeBusinessRouteChildren {
   AppTypeBusinessReviewBoosterRoute: typeof AppTypeBusinessReviewBoosterRoute
   AppTypeBusinessServicesRoute: typeof AppTypeBusinessServicesRoute
   AppTypeBusinessSettingsRoute: typeof AppTypeBusinessSettingsRoute
+  AppTypeBusinessSetupRoute: typeof AppTypeBusinessSetupRoute
   AppTypeBusinessSubscriptionRoute: typeof AppTypeBusinessSubscriptionRoute
   AppTypeBusinessTablesRoute: typeof AppTypeBusinessTablesRoute
   AppTypeBusinessTeamRoute: typeof AppTypeBusinessTeamRoute
@@ -1278,6 +1298,7 @@ const AppTypeBusinessRouteChildren: AppTypeBusinessRouteChildren = {
   AppTypeBusinessReviewBoosterRoute: AppTypeBusinessReviewBoosterRoute,
   AppTypeBusinessServicesRoute: AppTypeBusinessServicesRoute,
   AppTypeBusinessSettingsRoute: AppTypeBusinessSettingsRoute,
+  AppTypeBusinessSetupRoute: AppTypeBusinessSetupRoute,
   AppTypeBusinessSubscriptionRoute: AppTypeBusinessSubscriptionRoute,
   AppTypeBusinessTablesRoute: AppTypeBusinessTablesRoute,
   AppTypeBusinessTeamRoute: AppTypeBusinessTeamRoute,

@@ -22,6 +22,16 @@ class RestaurantTableRepository:
         )
         return self.db.scalar(stmt)
 
+    def get_by_name_and_area(
+        self, business_id: uuid.UUID, dining_area_id: uuid.UUID, table_name: str
+    ) -> RestaurantTable | None:
+        stmt = select(RestaurantTable).where(
+            RestaurantTable.business_id == business_id,
+            RestaurantTable.dining_area_id == dining_area_id,
+            func.lower(RestaurantTable.table_name) == func.lower(table_name.strip()),
+        )
+        return self.db.scalar(stmt)
+
     def list_by_business(
         self, business_id: uuid.UUID, dining_area_id: uuid.UUID | None = None
     ) -> list[RestaurantTable]:

@@ -2,7 +2,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_optional_user
 from app.db.database import get_db
 from app.models.user import User
 from app.schemas.menu import (
@@ -24,7 +24,7 @@ router = APIRouter(tags=["Menu"])
 
 @router.get("/menu/categories", response_model=list[MenuCategoryResponse], summary="List menu categories (with nested items)")
 def list_categories(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     return MenuService(db).list_categories(current_user)
@@ -42,7 +42,7 @@ def create_category(
 @router.get("/menu/categories/{category_id}", response_model=MenuCategoryResponse, summary="Get menu category details")
 def get_category(
     category_id: UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     return MenuService(db).get_category(current_user, category_id)
@@ -76,7 +76,7 @@ def delete_category(
 def list_items(
     category_id: UUID | None = Query(default=None),
     available_only: bool = Query(default=False),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     return MenuService(db).list_items(current_user, category_id=category_id, available_only=available_only)
@@ -94,7 +94,7 @@ def create_item(
 @router.get("/menu/items/{item_id}", response_model=MenuItemResponse, summary="Get menu item details")
 def get_item(
     item_id: UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     return MenuService(db).get_item(current_user, item_id)

@@ -1,23 +1,25 @@
 import { AppLink } from "@/lib/app-nav";
 import { motion } from "framer-motion";
-import { Cake, Gift, Phone, MessageCircle, Send, Bell, Sparkles, Edit } from "lucide-react";
+import { Cake, Gift, Phone, MessageCircle, Sparkles, Search, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { AiGenerateDialog } from "@/components/ai-generate-dialog";
+import { CampaignSendModal } from "@/components/campaign-send-modal";
 import { EmptyState } from "@/components/empty-state";
 import { PageTransition } from "@/components/page-transition";
 import { logWhatsApp } from "@/lib/whatsapp-history";
 import { toast } from "sonner";
-import { Link } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/auth";
 import {
   couponFor,
   formatDateLabel,
-  getCelebrants,
   groupByDate,
   messageFor,
   openWhatsApp,
@@ -31,11 +33,45 @@ interface Props {
 }
 
 export function CelebrationDetailPage({ kind, bucket }: Props) {
-  const [opening, setOpening] = useState(false);
+  const params = useParams({ strict: false });
+  const type = params.type || "restaurant";
+  const business = params.business || "my-business";
+
+  const [aiFor, setAiFor] = useState<any | null>(null);
+  const [sendCampaignOpen, setSendCampaignOpen] = useState(false);
   const [customMessages, setCustomMessages] = useState<Record<string, string>>({});
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("name");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
   const isBday = kind === "birthday";
   const emoji = isBday ? "🎂" : "❤️";
-  const list = getCelebrants(kind, bucket);
+  const listEndpoint = isBday ? "/api/v1/customers/birthday-list" : "/api/v1/customers/anniversary-list";
+
+  // Fetch real database celebration customer list with server-side pagination
+  const { data: celData, isLoading } = useQuery({
+    queryKey: [isBday ? "birthday-list" : "anniversary-list", bucket, page, search, sortBy, sortOrder],
+    queryFn: async () => {
+      const query = new URLSearchParams({
+        bucket,
+        page: page.toString(),
+        page_size: "20",
+        sort_by: sortBy,
+        sort_order: sortOrder,
+      });
+      if (search ? search.trim() : "") query.append("search", search.trim());
+
+      const res = await apiFetch(`${listEndpoint}?${query.toString()}`);
+      if (!res.ok) throw new Error("Failed to fetch celebration customer list");
+      return res.json();
+    },
+    placeholderData: (prev) => prev,
+  });
+
+  const list = celData?.items ?? [];
+  const totalItems = celData?.total_items ?? 0;
+  const totalPages = celData?.total_pages ?? 1;
 
   const titleMap = {
     today: isBday ? "Today's Birthdays" : "Today's Anniversaries",
@@ -43,26 +79,24 @@ export function CelebrationDetailPage({ kind, bucket }: Props) {
     week: isBday ? "This Week Birthdays" : "This Week Anniversaries",
     month: isBday ? "This Month Birthdays" : "This Month Anniversaries",
   } as const;
+
   const descMap = {
-    today: `${emoji} Reach out to ${list.length} guest${list.length === 1 ? "" : "s"} celebrating today.`,
-    tomorrow: `${emoji} Prepare tomorrow's outreach — ${list.length} guest${list.length === 1 ? "" : "s"}.`,
-    week: `${emoji} ${list.length} guest${list.length === 1 ? "" : "s"} in the next 7 days.`,
-    month: `${emoji} ${list.length} guest${list.length === 1 ? "" : "s"} in the next 30 days.`,
+    today: `${emoji} Reach out to ${totalItems} guest${totalItems === 1 ? "" : "s"} celebrating today.`,
+    tomorrow: `${emoji} Prepare tomorrow's outreach — ${totalItems} guest${totalItems === 1 ? "" : "s"}.`,
+    week: `${emoji} ${totalItems} guest${totalItems === 1 ? "" : "s"} in the next 7 days.`,
+    month: `${emoji} ${totalItems} guest${totalItems === 1 ? "" : "s"} in the next 30 days.`,
   } as const;
 
-  const backHref = isBday ? "/app/birthdays" : "/app/anniversaries";
+  const campaignPath = isBday ? "birthday-campaigns" : "anniversary-campaigns";
+  const backHref = `/app/${type}/${business}/${campaignPath}`;
 
   function handleSend(c: any) {
-    setOpening(true);
     const msg = customMessages[c.id] ?? messageFor(kind, c.name);
-    setTimeout(() => {
-      openWhatsApp(c.phone, msg);
-      logWhatsApp({ customerId: c.id, kind, message: msg });
-      setOpening(false);
-    }, 650);
+    openWhatsApp(c.phone, msg);
+    logWhatsApp({ customerId: c.id, kind, message: msg });
   }
 
-  const grouped = bucket === "week" || bucket === "month" ? groupByDate(list, kind) : [[null, list] as const];
+  const grouped = groupByDate(list, kind);
 
   return (
     <PageTransition>
@@ -70,16 +104,70 @@ export function CelebrationDetailPage({ kind, bucket }: Props) {
         title={titleMap[bucket]}
         description={descMap[bucket]}
         actions={
-          <Button asChild variant="outline" size="sm" className="rounded-full">
-            <Link to={backHref as any}>← Back to campaigns</Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link to={backHref}>
+              <Button variant="outline" className="rounded-full text-xs">
+                Back to Overview
+              </Button>
+            </Link>
+
+            <Button
+              className="rounded-full bg-primary text-primary-foreground font-semibold text-xs px-4"
+              disabled={list.length === 0}
+              onClick={() => setSendCampaignOpen(true)}
+            >
+              <MessageCircle className="mr-1.5 h-3.5 w-3.5" /> Launch {isBday ? "Birthday" : "Anniversary"} Campaign ({list.length})
+            </Button>
+          </div>
         }
       />
 
-      {list.length === 0 ? (
+      {/* SEARCH AND SORT BAR */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="relative w-72">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search name, phone..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            className="h-9 rounded-full pl-8 text-xs"
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 rounded-full text-xs"
+            onClick={() => {
+              setSortBy((s) => (s === "name" ? "date" : "name"));
+              setPage(1);
+            }}
+          >
+            <ArrowUpDown className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
+            Sort: {sortBy === "name" ? "Name" : "Date"}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 rounded-full text-xs font-mono"
+            onClick={() => setSortOrder((o) => (o === "asc" ? "desc" : "asc"))}
+          >
+            {sortOrder.toUpperCase()}
+          </Button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="py-16 text-center text-sm text-muted-foreground">Loading celebration customers…</div>
+      ) : list.length === 0 ? (
         <EmptyState
-          title={isBday ? "No birthdays today" : "No anniversaries today"}
-          description="Check back soon — new customers are added every day."
+          title={isBday ? "No birthday customers found" : "No anniversary customers found"}
+          description="Check back soon — customer special dates update automatically."
           icon={isBday ? <Cake className="h-7 w-7" /> : <Gift className="h-7 w-7" />}
         />
       ) : (
@@ -94,7 +182,7 @@ export function CelebrationDetailPage({ kind, bucket }: Props) {
                 </div>
               )}
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {group.map((c, i) => (
+                {group.map((c: any, i: number) => (
                   <CelebrantCard
                     key={c.id}
                     c={c}
@@ -103,26 +191,73 @@ export function CelebrationDetailPage({ kind, bucket }: Props) {
                     bucket={bucket}
                     customMessage={customMessages[c.id]}
                     onSetMessage={(m) => setCustomMessages((prev) => ({ ...prev, [c.id]: m }))}
+                    onOpenAi={() => setAiFor(c)}
                     onSend={() => handleSend(c)}
                   />
                 ))}
               </div>
             </div>
           ))}
+
+          {/* SERVER SIDE PAGINATION BAR */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t pt-4 text-xs text-muted-foreground">
+              <p>Showing Page {page} of {totalPages} ({totalItems} total customers)</p>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 rounded-full px-3 text-xs"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft className="mr-1 h-3.5 w-3.5" /> Previous
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 rounded-full px-3 text-xs"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      <Dialog open={opening} onOpenChange={setOpening}>
-        <DialogContent className="rounded-2xl sm:max-w-sm">
-          <DialogHeader>
-            <div className="mx-auto mb-2 grid h-14 w-14 place-items-center rounded-2xl gradient-brand text-primary-foreground shadow-glow">
-              <MessageCircle className="h-7 w-7 animate-pulse" />
-            </div>
-            <DialogTitle className="text-center font-display">Opening WhatsApp…</DialogTitle>
-            <p className="text-center text-sm text-muted-foreground">Your message is prefilled — just press Send inside WhatsApp.</p>
-          </DialogHeader>
-        </DialogContent>
-      </Dialog>
+      {/* AI GENERATE DIALOG WITH ALL CONTROLS */}
+      {aiFor && (
+        <AiGenerateDialog
+          open={!!aiFor}
+          onOpenChange={(o) => !o && setAiFor(null)}
+          title={`AI ${isBday ? "Birthday" : "Anniversary"} Wish Generator`}
+          description={aiFor ? `Generating Gemini AI wish for ${aiFor.name}` : ""}
+          customerId={aiFor.id}
+          campaignType={kind}
+          couponCode={couponFor(kind)}
+          discountPercent="20%"
+          onUse={(m) => {
+            setCustomMessages((prev) => ({ ...prev, [aiFor.id]: m }));
+            toast.success("AI wish template applied!");
+          }}
+        />
+      )}
+
+      {/* MULTI-CUSTOMER WHATSAPP SEND MODAL WITH RESUME STATE & LOGS */}
+      <CampaignSendModal
+        open={sendCampaignOpen}
+        onOpenChange={setSendCampaignOpen}
+        campaignId={`${kind}_campaign_${bucket}`}
+        campaignTitle={`${isBday ? "Birthday" : "Anniversary"} Campaign (${titleMap[bucket]})`}
+        campaignType={kind}
+        templateMessage={`Hi {name}! ${isBday ? "🎂 Happy Birthday!" : "💖 Happy Anniversary!"} Celebrate with us — use coupon {coupon} for {discount} on your special meal ❤️`}
+        couponCode={couponFor(kind)}
+        discountPercent="20%"
+        customers={list}
+      />
     </PageTransition>
   );
 }
@@ -134,6 +269,7 @@ function CelebrantCard({
   bucket,
   customMessage,
   onSetMessage,
+  onOpenAi,
   onSend,
 }: {
   c: any;
@@ -142,120 +278,58 @@ function CelebrantCard({
   bucket: Bucket;
   customMessage?: string;
   onSetMessage: (m: string) => void;
+  onOpenAi: () => void;
   onSend: () => void;
 }) {
   const isBday = kind === "birthday";
-  const emoji = isBday ? "🎂" : "❤️";
-  const code = couponFor(kind);
-  const preview = customMessage ?? messageFor(kind, c.name);
-  const disabled = bucket === "tomorrow";
-  const [aiOpen, setAiOpen] = useState(false);
+  const coupon = couponFor(kind);
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.04 }}
-      whileHover={{ scale: 1.02 }}
+      transition={{ delay: index * 0.03 }}
+      whileHover={{ y: -2 }}
     >
-      <Card className="overflow-hidden rounded-2xl transition-all duration-200 hover:shadow-glow">
+      <Card className="overflow-hidden rounded-2xl border transition-all hover:shadow-glow bg-card">
         <div className="h-1.5 gradient-brand" />
-        <CardContent className="p-5">
+        <CardContent className="space-y-3 p-4">
           <div className="flex items-center gap-3">
-            <Avatar className="h-12 w-12"><AvatarFallback className="gradient-brand text-primary-foreground">{c.initials}</AvatarFallback></Avatar>
+            <Avatar className="h-10 w-10 border">
+              <AvatarFallback className="bg-primary/10 text-primary font-bold text-xs">
+                {c.name ? c.name.slice(0, 2).toUpperCase() : "CU"}
+              </AvatarFallback>
+            </Avatar>
+
             <div className="min-w-0 flex-1">
-              <AppLink path="customers/$id" params={{ id: c.id }} className="truncate font-semibold hover:text-primary block">{c.name}</AppLink>
-              <p className="text-xs text-muted-foreground">{c.phone}</p>
+              <AppLink path="customers/$id" params={{ id: c.id }} className="truncate font-semibold hover:text-primary block text-xs">
+                {c.name}
+              </AppLink>
+              <p className="text-[11px] text-muted-foreground font-mono">{c.phone}</p>
             </div>
-            <Badge variant="outline" className="rounded-full text-[10px]">{code}</Badge>
+
+            <Badge variant="outline" className="rounded-full font-mono text-[10px] shrink-0">
+              {coupon}
+            </Badge>
           </div>
-          <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
-            <div className="rounded-lg bg-muted/60 p-2"><p className="font-display font-semibold">{c.visits}</p><p className="text-[10px] text-muted-foreground">Visits</p></div>
-            <div className="rounded-lg bg-muted/60 p-2"><p className="font-display font-semibold">${c.spent}</p><p className="text-[10px] text-muted-foreground">Spent</p></div>
-            <div className="rounded-lg bg-muted/60 p-2"><p className="font-display font-semibold">{c.lastVisit.slice(5)}</p><p className="text-[10px] text-muted-foreground">Last</p></div>
+
+          <div className="rounded-xl border bg-muted/40 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
+            {customMessage ?? messageFor(kind, c.name)}
           </div>
-          <p className="mt-2 truncate text-xs text-muted-foreground"><span className="text-foreground/70">Favorite:</span> {c.favorites?.[0] || "—"}</p>
-          <div className="mt-4 max-h-28 overflow-y-auto rounded-xl bg-muted/40 p-3 font-mono text-xs leading-relaxed whitespace-pre-line">
-            {preview}
-          </div>
-          <div className="mt-4 flex flex-wrap gap-1.5">
-            {disabled ? (
-              <>
-                <Button size="sm" disabled variant="secondary" className="h-8 rounded-full text-xs opacity-70">
-                  Available Tomorrow
-                </Button>
-                <Button size="sm" variant="outline" className="h-8 rounded-full text-xs transition-transform active:scale-95" onClick={() => toast.success(`Reminder set for ${c.name}`)}>
-                  <Bell className="mr-1 h-3 w-3" /> Schedule Reminder
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  size="sm"
-                  className="h-8 rounded-full gradient-brand text-primary-foreground text-xs transition-transform hover:scale-105 active:scale-95"
-                  onClick={onSend}
-                >
-                  {emoji} Send WhatsApp
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 rounded-full text-xs transition-transform active:scale-95"
-                  onClick={() => setAiOpen(true)}
-                >
-                  <Sparkles className="mr-1 h-3 w-3 text-primary" /> AI Generate
-                </Button>
-              </>
-            )}
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 rounded-full text-xs transition-transform active:scale-95"
-              onClick={() => toast.success(`Coupon ${code} sent to ${c.name}`)}
-            >
-              <Gift className="mr-1 h-3 w-3" /> Send Coupon
+
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            <Button size="sm" className="h-7 rounded-full bg-primary text-primary-foreground text-xs font-medium" onClick={onSend}>
+              <MessageCircle className="mr-1 h-3 w-3" /> WhatsApp
             </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8 rounded-full"
-              onClick={() => window.open(`tel:${c.phone.replace(/[^\d+]/g, "")}`)}
-            >
+            <Button size="sm" variant="outline" className="h-7 rounded-full text-xs" onClick={onOpenAi}>
+              <Sparkles className="mr-1 h-3 w-3 text-primary" /> AI Wish
+            </Button>
+            <Button size="icon" variant="ghost" className="h-7 w-7 rounded-full ml-auto" onClick={() => window.open(`tel:${c.phone.replace(/[^\d+]/g, "")}`)}>
               <Phone className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8 rounded-full"
-              onClick={() => toast("Edit dialog (demo)")}
-            >
-              <Edit className="h-3.5 w-3.5" />
             </Button>
           </div>
         </CardContent>
       </Card>
-      <AiGenerateDialog
-        open={aiOpen}
-        onOpenChange={setAiOpen}
-        title={isBday ? "AI birthday wish" : "AI anniversary wish"}
-        description={`Personalized for ${c.name} · ${c.visits} visits · $${c.spent} spent · last visit ${c.lastVisit}`}
-        generate={() => aiCelebrationDraft(kind, c, code)}
-        onUse={(m) => {
-          onSetMessage(m);
-          toast.success("AI message ready — press Send WhatsApp");
-        }}
-        useLabel="Use this message"
-      />
     </motion.div>
   );
 }
-
-function aiCelebrationDraft(kind: Kind, c: any, code: string) {
-  const first = c.name.split(" ")[0];
-  if (kind === "birthday") {
-    return `Happy Birthday, ${first}! 🎂\n\nWe still remember your last visit on ${c.lastVisit} — it's guests like you (${c.visits} visits and counting) who make our day.\n\nA little birthday gift from all of us: coupon ${code} unlocks a FREE dessert on your next visit.\n\nWishing you an amazing year ahead ❤️\n— Aroma Bistro`;
-  }
-  return `Cheers to another wonderful year, ${first} ❤️\n\nThank you for ${c.visits} visits and every memory in between. You mean a lot to our little family here.\n\nCelebrate with us — coupon ${code} takes 25% off your favourite table.\n\nSee you soon,\n— Aroma Bistro`;
-}
-
-export { Send };

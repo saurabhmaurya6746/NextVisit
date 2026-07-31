@@ -117,15 +117,34 @@ export function Topbar({
   const total = results.customers.length + results.orders.length + results.coupons.length + results.campaigns.length;
 
   // Profile data resolution
-  const displayName = isAdmin
-    ? (userName || session?.businessName || "Saurabh Maurya")
-    : (userName || session?.businessName || "NextVisit Business");
+  const isSuperAdmin = isAdmin || userRole === "Super Administrator" || userName === "NextVisit";
 
-  const displaySubtitle = isAdmin
-    ? (userRole || "Super Admin")
+  const displayName = isSuperAdmin
+    ? "NextVisit"
+    : userName &&
+      userName !== "null" &&
+      userName !== "undefined" &&
+      userName !== "Unknown"
+    ? userName
+    : session?.businessName && session.businessName !== "null"
+    ? session.businessName
+    : "NextVisit";
+
+  const displaySubtitle = isSuperAdmin
+    ? "Super Administrator"
     : `${businessType || "Restaurant"} • ${country || "India"}`;
 
-  const computedInitials = initials || displayName.split(/\s+/).map((s) => s[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+  const computedInitials = isSuperAdmin
+    ? "NV"
+    : initials && initials !== "null" && initials !== "undefined" && initials !== "NV"
+    ? initials
+    : displayName
+        .split(/\s+/)
+        .map((s) => s[0])
+        .filter(Boolean)
+        .slice(0, 2)
+        .join("")
+        .toUpperCase() || "NV";
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur-xl">

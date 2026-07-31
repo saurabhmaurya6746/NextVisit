@@ -7,9 +7,6 @@ export const Route = createFileRoute("/qr/$business/$table")({
 });
 
 function QrBizOrderPage() {
-  const { table } = Route.useParams();
-  // Business is encoded in the URL for per-client uniqueness. The current
-  // prototype only serves one business per browser session, so the table
-  // param is the sole routing key inside the view.
-  return <QrOrderView table={table} />;
+  const { business, table } = Route.useParams();
+  return <QrOrderView table={table} business={business} />;
 }

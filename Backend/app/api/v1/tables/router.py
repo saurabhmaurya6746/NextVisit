@@ -2,7 +2,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_optional_user
 from app.db.database import get_db
 from app.models.user import User
 from app.schemas.dining_area import DiningAreaMapResponse
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/tables", tags=["Restaurant Tables"])
 
 @router.get("/map", response_model=list[DiningAreaMapResponse], summary="Get grouped dining areas and table map")
 def get_tables_map(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     return RestaurantTableService(db).get_tables_map(current_user)
@@ -56,3 +56,12 @@ def delete_restaurant_table(
 ):
     RestaurantTableService(db).delete_table(current_user, id)
     return None
+
+
+@router.post("/{id}/release", summary="Force release table (Manager Override)")
+def force_release_table(
+    id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return RestaurantTableService(db).force_release_table(current_user, id)

@@ -391,6 +391,20 @@ function CustomersPage() {
               <Label htmlFor="edit-cust-email">Email Address</Label>
               <Input id="edit-cust-email" type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-cust-gender">Gender</Label>
+              <Select value={editGender} onValueChange={setEditGender}>
+                <SelectTrigger id="edit-cust-gender" className="w-full">
+                  <SelectValue placeholder="Select gender..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Male">Male</SelectItem>
+                  <SelectItem value="Female">Female</SelectItem>
+                  <SelectItem value="Other">Other</SelectItem>
+                  <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="edit-cust-dob">Birth Date</Label>

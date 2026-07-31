@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_optional_user
 from app.db.database import get_db
 from app.models.user import User
 from app.schemas.business import BusinessProfileResponse, BusinessProfileUpdate
@@ -23,7 +23,7 @@ router = APIRouter(
     summary="Get the authenticated business profile",
 )
 def get_business(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     """

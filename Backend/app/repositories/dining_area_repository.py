@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from app.models.dining_area import DiningArea
 
@@ -19,6 +19,13 @@ class DiningAreaRepository:
         stmt = select(DiningArea).where(
             DiningArea.id == area_id,
             DiningArea.business_id == business_id,
+        )
+        return self.db.scalar(stmt)
+
+    def get_by_name(self, business_id: uuid.UUID, name: str) -> DiningArea | None:
+        stmt = select(DiningArea).where(
+            DiningArea.business_id == business_id,
+            func.lower(DiningArea.name) == func.lower(name.strip()),
         )
         return self.db.scalar(stmt)
 

@@ -13,8 +13,11 @@ export function addDays(d: Date, n: number) {
 }
 
 export function formatDateLabel(key: string) {
-  const [m, day] = key.split("-").map(Number);
-  const d = new Date(DEMO_TODAY.getFullYear(), m - 1, day);
+  if (!key || key === "Unknown") return "Special Date";
+  const parts = key.split("-").map(Number);
+  if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) return key;
+  const [m, day] = parts;
+  const d = new Date(2026, m - 1, day);
   return d.toLocaleDateString("en-US", { day: "numeric", month: "long" });
 }
 
@@ -27,7 +30,9 @@ export function getCelebrants(kind: Kind, bucket: Bucket) {
   const weekKeys = Array.from({ length: 7 }, (_, i) => mmdd(addDays(DEMO_TODAY, i)));
   const monthKeys = Array.from({ length: 31 }, (_, i) => mmdd(addDays(DEMO_TODAY, i)));
   return customers.filter((c) => {
-    const k = (c as any)[kind].slice(5);
+    const raw = (c as any)[kind];
+    if (!raw) return false;
+    const k = raw.slice(5);
     if (bucket === "today") return k === todayKey;
     if (bucket === "tomorrow") return k === tomKey;
     if (bucket === "month") return monthKeys.includes(k);
@@ -36,15 +41,15 @@ export function getCelebrants(kind: Kind, bucket: Bucket) {
 }
 
 export function couponFor(kind: Kind) {
-  return kind === "birthday" ? "BDAY20" : "ANNI25";
+  return kind === "birthday" ? "BDAYSPECIAL" : "ANNISPECIAL";
 }
 
 export function messageFor(kind: Kind, name: string) {
   const code = couponFor(kind);
   const first = name.split(" ")[0];
   return kind === "birthday"
-    ? `Happy Birthday ${first} 🎉\nWishing you a wonderful year ahead. Enjoy a FREE Dessert on your next visit.\nCoupon Code: ${code}\nSee you soon ❤️\n— Aroma Bistro`
-    : `Cheers to another year, ${first} ❤️\nCelebrate with us — coupon ${code} unlocks 25% off your favourite.\nCan't wait to have you back.\n— Aroma Bistro`;
+    ? `Happy Birthday ${first} 🎉\nWishing you a wonderful year ahead. Enjoy a FREE Dessert on your next visit.\nCoupon Code: ${code}\nSee you soon ❤️`
+    : `Cheers to another year, ${first} ❤️\nCelebrate with us — coupon ${code} unlocks 20% off your favourite.\nCan't wait to have you back.`;
 }
 
 export function openWhatsApp(phone: string, message: string) {
@@ -52,10 +57,25 @@ export function openWhatsApp(phone: string, message: string) {
   window.open(`https://wa.me/${clean}?text=${encodeURIComponent(message)}`, "_blank");
 }
 
-export function groupByDate<T extends { birthday: string; anniversary: string }>(list: T[], kind: Kind) {
-  const map = new Map<string, T[]>();
+export function groupByDate(list: any[], kind: Kind) {
+  const map = new Map<string, any[]>();
   for (const c of list) {
-    const k = (c as any)[kind].slice(5);
+    let rawDate: string | null = null;
+    if (kind === "birthday") {
+      rawDate = c.birth_date || c.event_date || c.birthday || null;
+    } else {
+      rawDate = c.anniversary_date || c.event_date || c.anniversary || null;
+    }
+
+    if (!rawDate) {
+      const k = "Unknown";
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(c);
+      continue;
+    }
+
+    const dStr = typeof rawDate === "string" ? rawDate.slice(0, 10) : "";
+    const k = dStr.length >= 10 ? dStr.slice(5) : "Unknown";
     if (!map.has(k)) map.set(k, []);
     map.get(k)!.push(c);
   }

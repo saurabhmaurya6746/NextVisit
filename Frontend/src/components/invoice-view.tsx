@@ -1,48 +1,243 @@
-import { useProfile } from "@/lib/business-profile";
-import { orderCode, invoiceNumber, type Order } from "@/lib/orders-store";
+import { Button } from "@/components/ui/button";
+import { Printer } from "lucide-react";
 import { fmt } from "@/lib/currency";
 
-export function InvoiceView({ order }: { order: Order }) {
-  const profile = useProfile("restaurant");
-  const gst = profile.gstEnabled;
-  const d = new Date(order.createdAt);
-  const date = d.toLocaleDateString();
-  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+export interface InvoiceData {
+  order_number: string;
+  invoice_number?: string;
+  created_at: string;
+  table_name?: string;
+  customer_name?: string;
+  customer_phone?: string;
+  staff_name?: string;
+  payment_method?: string;
+  items: Array<{
+    id?: string;
+    item_name: string;
+    quantity: number;
+    unit_price: number;
+    subtotal: number;
+    notes?: string | null;
+  }>;
+  subtotal: number;
+  tax_amount?: number;
+  discount_amount?: number;
+  total_amount: number;
+  business?: {
+    restaurant_name?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+    gst_number?: string;
+  };
+  loyalty?: {
+    current_points?: number;
+    earned_points?: number;
+    remaining_until_next_reward?: number;
+  } | null;
+}
+
+export function InvoiceView({
+  data,
+  order,
+  showPrintButton = true,
+}: {
+  data?: InvoiceData;
+  order?: any;
+  showPrintButton?: boolean;
+}) {
+  // Convert legacy order prop to InvoiceData if data is not directly provided
+  const invData: InvoiceData = data || {
+    order_number: order?.order_number || (order?.id ? `ORD-${order.id.slice(-4)}` : "ORD-1001"),
+    invoice_number: order?.invoice_number || `INV-${(order?.order_number || order?.id || "1001").replace("ORD-", "")}`,
+    created_at: order?.created_at || order?.createdAt || new Date().toISOString(),
+    table_name: order?.table_name || order?.table || "Table 1",
+    customer_name: order?.customer_name || order?.customerName,
+    customer_phone: order?.customer_phone || order?.customerPhone,
+    payment_method: order?.payment_method || order?.payment,
+    items: (order?.items || []).map((i: any) => ({
+      id: i.id,
+      item_name: i.item_name || i.name || "Dish",
+      quantity: i.quantity || i.qty || 1,
+      unit_price: i.unit_price || i.price || 0,
+      subtotal: i.subtotal || (i.price * i.qty) || 0,
+      notes: i.notes,
+    })),
+    subtotal: order?.subtotal || 0,
+    tax_amount: order?.tax_amount || order?.gst || 0,
+    discount_amount: order?.discount_amount || 0,
+    total_amount: order?.total_amount || order?.total || 0,
+    business: order?.business || {
+      restaurant_name: order?.restaurantName || "Aroma Bistro",
+    },
+    loyalty: order?.loyalty || null,
+  };
+
+  const invNum = invData.invoice_number || `INV-${invData.order_number.replace("ORD-", "")}`;
+  const d = new Date(invData.created_at);
+  const dateStr = d.toLocaleDateString("en-GB");
+  const timeStr = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
-    <div id="print-invoice" className="mx-auto max-w-md rounded-2xl border bg-background p-6 text-sm print:border-0 print:shadow-none">
-      <div className="text-center">
-        {profile.logo && <img src={profile.logo} alt="" className="mx-auto mb-2 h-12 object-contain" />}
-        <p className="font-display text-xl font-semibold">{profile.name}</p>
-        {profile.address && <p className="text-[11px] text-muted-foreground">{profile.address}</p>}
-        {gst && profile.gstNumber && <p className="text-xs text-muted-foreground">GSTIN: {profile.gstNumber}</p>}
+    <div className="space-y-4">
+      {showPrintButton && (
+        <div className="flex justify-end print:hidden">
+          <Button size="sm" variant="outline" className="rounded-full gap-1.5 text-xs" onClick={handlePrint}>
+            <Printer className="h-3.5 w-3.5" /> Print Invoice
+          </Button>
+        </div>
+      )}
+
+      <div
+        id="print-invoice"
+        className="mx-auto max-w-md rounded-2xl border bg-card p-6 text-card-foreground text-sm shadow-sm print:border-0 print:shadow-none print:max-w-none print:w-full"
+      >
+        {/* Restaurant Header */}
+        <div className="text-center space-y-0.5">
+          <p className="font-display text-xl font-bold tracking-tight">
+            {invData.business?.restaurant_name || "Aroma Bistro"}
+          </p>
+          {invData.business?.address && <p className="text-xs text-muted-foreground">{invData.business.address}</p>}
+          {invData.business?.phone && <p className="text-xs text-muted-foreground">Ph: {invData.business.phone}</p>}
+          {invData.business?.gst_number && (
+            <p className="text-[11px] font-mono text-muted-foreground">GSTIN: {invData.business.gst_number}</p>
+          )}
+        </div>
+
+        {/* Invoice Metadata */}
+        <div className="my-4 border-y py-2.5 text-xs space-y-1">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Invoice No:</span>
+            <span className="font-mono font-semibold">{invNum}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Order No:</span>
+            <span className="font-mono font-medium">{invData.order_number}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Date & Time:</span>
+            <span>
+              {dateStr} at {timeStr}
+            </span>
+          </div>
+          {invData.table_name && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Table:</span>
+              <span className="font-medium">{invData.table_name}</span>
+            </div>
+          )}
+          {invData.customer_name && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Customer:</span>
+              <span>{invData.customer_name}</span>
+            </div>
+          )}
+          {invData.customer_phone && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Phone:</span>
+              <span>{invData.customer_phone}</span>
+            </div>
+          )}
+          {invData.payment_method && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Payment Method:</span>
+              <span className="font-semibold uppercase text-primary">{invData.payment_method}</span>
+            </div>
+          )}
+          {invData.staff_name && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Cashier / Staff:</span>
+              <span>{invData.staff_name}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Items Table */}
+        <table className="w-full text-xs">
+          <thead className="text-muted-foreground border-b pb-1">
+            <tr className="text-left">
+              <th className="pb-1.5 font-medium">Item</th>
+              <th className="pb-1.5 text-right font-medium">Qty</th>
+              <th className="pb-1.5 text-right font-medium">Price</th>
+              <th className="pb-1.5 text-right font-medium">Total</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/40">
+            {invData.items.map((i, idx) => (
+              <tr key={i.id || idx}>
+                <td className="py-2 pr-2">
+                  <span className="font-medium">{i.item_name}</span>
+                  {i.notes && <div className="text-[10px] text-muted-foreground">Note: {i.notes}</div>}
+                </td>
+                <td className="py-2 text-right tabular-nums">{i.quantity}</td>
+                <td className="py-2 text-right tabular-nums text-muted-foreground">{fmt(i.unit_price)}</td>
+                <td className="py-2 text-right tabular-nums font-medium">{fmt(i.subtotal)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* Totals Section */}
+        <div className="mt-4 space-y-1.5 border-t pt-3 text-xs">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Subtotal</span>
+            <span className="tabular-nums">{fmt(invData.subtotal)}</span>
+          </div>
+
+          {invData.tax_amount && invData.tax_amount > 0 ? (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Tax / GST</span>
+              <span className="tabular-nums">{fmt(invData.tax_amount)}</span>
+            </div>
+          ) : null}
+
+          {invData.discount_amount && invData.discount_amount > 0 ? (
+            <div className="flex justify-between text-rose-500">
+              <span>Discount</span>
+              <span className="tabular-nums">-{fmt(invData.discount_amount)}</span>
+            </div>
+          ) : null}
+
+          <div className="flex justify-between border-t pt-2 font-display text-base font-bold">
+            <span>Grand Total</span>
+            <span className="tabular-nums text-primary">{fmt(invData.total_amount)}</span>
+          </div>
+        </div>
+
+        {/* Loyalty Section */}
+        {invData.loyalty && (
+          <div className="mt-4 rounded-xl bg-muted/50 p-3 text-xs space-y-1 border">
+            <p className="font-semibold text-primary">🎁 NextVisit Loyalty Rewards</p>
+            {invData.loyalty.earned_points ? (
+              <div className="flex justify-between">
+                <span>Points Earned Today:</span>
+                <span className="font-bold text-emerald-600">+{invData.loyalty.earned_points} pts</span>
+              </div>
+            ) : null}
+            {invData.loyalty.current_points !== undefined && (
+              <div className="flex justify-between">
+                <span>Current Total Points:</span>
+                <span className="font-semibold">{invData.loyalty.current_points} pts</span>
+              </div>
+            )}
+            {invData.loyalty.remaining_until_next_reward ? (
+              <p className="text-[11px] text-muted-foreground pt-0.5">
+                Earn {invData.loyalty.remaining_until_next_reward} more points for your next reward!
+              </p>
+            ) : null}
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="mt-6 text-center text-xs text-muted-foreground space-y-0.5">
+          <p className="font-medium text-foreground">Thank you for visiting!</p>
+          <p className="text-[11px]">We look forward to serving you again.</p>
+        </div>
       </div>
-      <div className="my-3 border-y py-2 text-xs">
-        <div className="flex justify-between"><span>Order</span><span className="font-mono">{orderCode(order)}</span></div>
-        <div className="flex justify-between"><span>Invoice</span><span className="font-mono">{invoiceNumber(order.createdAt, order.id)}</span></div>
-        <div className="flex justify-between"><span>Table</span><span>{order.table}</span></div>
-        <div className="flex justify-between"><span>Date</span><span>{date}</span></div>
-        <div className="flex justify-between"><span>Time</span><span>{time}</span></div>
-        {order.customerName && <div className="flex justify-between"><span>Customer</span><span>{order.customerName}</span></div>}
-        {order.customerPhone && <div className="flex justify-between"><span>Phone</span><span>{order.customerPhone}</span></div>}
-        {order.payment && <div className="flex justify-between"><span>Payment</span><span className="capitalize">{order.payment}</span></div>}
-        <div className="flex justify-between"><span>Status</span><span className="capitalize">{order.paymentStatus}</span></div>
-      </div>
-      <table className="w-full text-xs">
-        <thead className="text-muted-foreground">
-          <tr className="text-left"><th className="pb-1">Item</th><th className="pb-1 text-right">Qty</th><th className="pb-1 text-right">Price</th><th className="pb-1 text-right">Total</th></tr>
-        </thead>
-        <tbody>
-          {order.items.map((i) => (
-            <tr key={i.id}><td className="py-1">{i.name}{i.notes && <div className="text-[10px] text-muted-foreground">{i.notes}</div>}</td><td className="text-right">{i.qty}</td><td className="text-right">{fmt(i.price)}</td><td className="text-right">{fmt(i.price * i.qty)}</td></tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="mt-3 space-y-1 border-t pt-2 text-xs">
-        <div className="flex justify-between"><span>Subtotal</span><span>{fmt(order.subtotal)}</span></div>
-        {gst && <div className="flex justify-between"><span>GST ({profile.gstPercent}%)</span><span>{fmt(order.gst)}</span></div>}
-        <div className="flex justify-between border-t pt-1 font-semibold"><span>Total</span><span>{fmt(order.total)}</span></div>
-      </div>
-      <p className="mt-4 text-center text-[10px] text-muted-foreground">Thank you — visit again!</p>
     </div>
   );
 }

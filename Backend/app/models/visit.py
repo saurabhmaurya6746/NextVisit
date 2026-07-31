@@ -30,6 +30,8 @@ class PaymentStatus(str, enum.Enum):
 class PaymentMethod(str, enum.Enum):
     CASH = "CASH"
     ONLINE = "ONLINE"
+    UPI = "UPI"
+    CARD = "CARD"
 
 
 class Visit(BaseModel):

@@ -11,6 +11,7 @@ from .campaign import (
     TargetSegment,
 )
 from .customer import Customer
+from .festival import Festival, FestivalCampaign
 from .dining_area import DiningArea
 from .loyalty import CustomerLoyalty, LoyaltySettings
 from .menu_category import MenuCategory

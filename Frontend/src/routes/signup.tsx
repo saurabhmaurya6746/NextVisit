@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, type FormEvent } from "react";
-import { CheckCircle2, Clock, Eye, EyeOff } from "lucide-react";
+import { CheckCircle2, Clock, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -59,6 +59,7 @@ function SignupPage() {
       const typeId = selectedTypeId || businessTypes.find(t => t.name.toLowerCase() === form.type.toLowerCase())?.id || businessTypes[0]?.id;
       if (!typeId) {
         toast.error("Invalid business type. Please refresh and try again.");
+        setLoading(false);
         return;
       }
 
@@ -87,8 +88,6 @@ function SignupPage() {
       setLoading(false);
     }
   };
-
-  const [showPassword, setShowPassword] = useState(false);
 
   return (
     <div className="grid min-h-screen place-items-center bg-background p-6">
@@ -202,8 +201,9 @@ function SignupPage() {
               <p className="rounded-lg bg-primary/5 p-3 text-xs text-muted-foreground">
                 ✅ Once approved, you'll get a 14-day full-access free trial — no card required.
               </p>
-              <Button type="submit" className="w-full rounded-full gradient-brand text-primary-foreground shadow-glow">
-                Create account
+              <Button type="submit" disabled={loading} className="w-full rounded-full gradient-brand text-primary-foreground shadow-glow gap-2">
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {loading ? "Creating account..." : "Create account"}
               </Button>
               <p className="text-center text-xs text-muted-foreground">
                 Already have an account? <Link to="/login" className="text-primary hover:underline">Sign in</Link>

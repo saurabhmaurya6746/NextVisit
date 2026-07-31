@@ -22,6 +22,7 @@ class CampaignType(str, enum.Enum):
     RECOVERY = "RECOVERY"
     FESTIVAL = "FESTIVAL"
     VIP = "VIP"
+    REVIEW = "REVIEW"
     CUSTOM = "CUSTOM"
 
 
@@ -121,9 +122,41 @@ class CampaignLog(BaseModel):
         nullable=True,
     )
 
+    # Review Booster Tracking Fields
+    visit_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("visits.id"),
+        nullable=True,
+    )
+
+    tracking_token: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
+
+    clicked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
     campaign = relationship(
         "Campaign",
         back_populates="logs",
     )
 
     customer = relationship("Customer")
+    visit = relationship("Visit")
+    reviewer = relationship("User", foreign_keys=[reviewed_by])
+
