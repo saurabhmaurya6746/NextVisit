@@ -151,7 +151,7 @@ def generate_ai_message(
         f"3. Make it catchy for WhatsApp. Give a completely different creative variation than standard templates. Return ONLY the message text without quotes or markdown formatting."
     )
 
-    api_key = settings.GEMINI_API_KEY or "AQ.Ab8RN6K1gNUq0eoW1Rv6fYLWIiNk_2yz6BwQyZSW1cl-DILLBw"
+    api_key = settings.GEMINI_API_KEY.strip() if settings.GEMINI_API_KEY else ""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
 
     payload = json.dumps({
