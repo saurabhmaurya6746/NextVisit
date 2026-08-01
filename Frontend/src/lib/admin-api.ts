@@ -341,6 +341,17 @@ export async function updateSubscriptionPlanApi(planId: string, payload: Partial
   return await res.json();
 }
 
+export async function deleteSubscriptionPlanApi(planId: string): Promise<{ message: string }> {
+  const res = await apiFetch(`/api/v1/admin/subscriptions/plans/${planId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to delete subscription plan");
+  }
+  return await res.json();
+}
+
 export async function assignBusinessSubscriptionApi(
   businessId: string,
   payload: { plan_id: string; trial_days?: number; expiry_date?: string; notes?: string }

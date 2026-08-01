@@ -1,5 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { Check, Plus, Loader2, Edit2, Clock, CheckCircle2, XCircle, Search, Filter } from "lucide-react";
+import { createFileRoute } from '@tanstack/react-router'
+import { Check, Plus, Loader2, Edit2, Clock, CheckCircle2, XCircle, Search, Filter, Trash2 } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -18,6 +18,7 @@ import {
   listSubscriptionPlansApi,
   createSubscriptionPlanApi,
   updateSubscriptionPlanApi,
+  deleteSubscriptionPlanApi,
   listBusinessSubscriptionsApi,
   assignBusinessSubscriptionApi,
   listAdminUpgradeRequestsApi,
@@ -72,6 +73,7 @@ function SubscriptionsPage() {
   const [editMaxCampaigns, setEditMaxCampaigns] = useState("");
   const [editStorageLimit, setEditStorageLimit] = useState("");
   const [editSaving, setEditSaving] = useState(false);
+  const [deleteSaving, setDeleteSaving] = useState(false);
 
   // Form states for assigning plan
   const [selectedPlanId, setSelectedPlanId] = useState("");
@@ -174,6 +176,24 @@ function SubscriptionsPage() {
       toast.error(err.message || "Failed to update plan");
     } finally {
       setEditSaving(false);
+    }
+  };
+
+  const handleDeletePlan = async () => {
+    if (!editingPlan) return;
+    if (!confirm(`Are you sure you want to delete the '${editingPlan.name}' plan?`)) return;
+
+    setDeleteSaving(true);
+    try {
+      const res = await deleteSubscriptionPlanApi(editingPlan.id);
+      toast.success(res.message || `Plan '${editingPlan.name}' deleted successfully`);
+      setEditOpen(false);
+      setEditingPlan(null);
+      await loadData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete plan");
+    } finally {
+      setDeleteSaving(false);
     }
   };
 
@@ -539,9 +559,20 @@ function SubscriptionsPage() {
                 <Input type="number" value={editMaxDevices} onChange={(e) => setEditMaxDevices(e.target.value)} required />
               </div>
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={editSaving}>Save Changes</Button>
+            <DialogFooter className="flex items-center justify-between sm:justify-between">
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleDeletePlan}
+                disabled={deleteSaving || editSaving}
+              >
+                {deleteSaving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Trash2 className="mr-1.5 h-4 w-4" />}
+                Delete Plan
+              </Button>
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={editSaving || deleteSaving}>Save Changes</Button>
+              </div>
             </DialogFooter>
           </form>
         </DialogContent>

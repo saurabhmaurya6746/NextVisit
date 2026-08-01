@@ -158,6 +158,25 @@ class SubscriptionService:
         self.db.refresh(plan)
         return plan
 
+    def delete_plan(self, plan_id: UUID):
+        plan = self.db.scalar(select(SubscriptionPlan).where(SubscriptionPlan.id == plan_id))
+        if not plan:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Subscription plan with ID '{plan_id}' not found.",
+            )
+        assigned = self.db.scalar(
+            select(Business).where(Business.subscription_plan_id == plan_id, Business.is_deleted == False)
+        )
+        if assigned:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot delete plan '{plan.name}' because it is assigned to active merchant(s).",
+            )
+        self.db.delete(plan)
+        self.db.commit()
+        return {"message": f"Plan '{plan.name}' deleted successfully."}
+
     def assign_business_subscription(
         self, business_id: UUID, data: BusinessSubscriptionAssignRequest
     ) -> BusinessSubscriptionItemResponse:

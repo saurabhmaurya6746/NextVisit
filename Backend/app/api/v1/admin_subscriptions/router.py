@@ -70,6 +70,19 @@ def update_plan(
     return SubscriptionService(db).update_plan(plan_id, payload)
 
 
+@router.delete(
+    "/plans/{plan_id}",
+    summary="Delete a subscription plan",
+)
+def delete_plan(
+    plan_id: UUID,
+    current_admin: Admin = Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Deletes a subscription plan if not assigned to active merchants."""
+    return SubscriptionService(db).delete_plan(plan_id)
+
+
 @router.patch(
     "/business/{business_id}",
     response_model=BusinessSubscriptionItemResponse,
