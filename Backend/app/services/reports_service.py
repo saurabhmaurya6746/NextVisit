@@ -13,7 +13,7 @@ from app.models.business import Business
 from app.models.campaign import Campaign, CampaignLog, CampaignLogStatus
 from app.models.coupon import Coupon, CouponRedemption
 from app.models.customer import Customer
-from app.models.loyalty import CustomerLoyalty
+from app.models.loyalty import CustomerLoyalty, LoyaltySettings
 from app.models.menu_item import MenuItem
 from app.models.menu_category import MenuCategory
 from app.models.order import Order, OrderItem, OrderSource, OrderStatus
@@ -160,11 +160,11 @@ class ReportsService:
         # ---------------------------------------------------------------------------
         # 1. Base Query Filters Construction
         # ---------------------------------------------------------------------------
-        # Visits Query Base Filters
+        # Visits Query Base Filters (using completed_at / created_at date range)
         visit_conditions = [
             Visit.business_id == biz_id,
-            Visit.created_at >= start_dt,
-            Visit.created_at <= end_dt,
+            func.coalesce(Visit.completed_at, Visit.created_at) >= start_dt,
+            func.coalesce(Visit.completed_at, Visit.created_at) <= end_dt,
         ]
         if filter_params.payment_method and filter_params.payment_method.lower() != "all":
             try:
@@ -197,7 +197,7 @@ class ReportsService:
         if filter_params.status and filter_params.status.lower() != "all":
             st_upper = filter_params.status.upper()
             if st_upper == "COMPLETED":
-                order_conditions.append(Order.status.in_([OrderStatus.SERVED, OrderStatus.READY]))
+                order_conditions.append(Order.status.in_([OrderStatus.SERVED, OrderStatus.READY, OrderStatus.PAID]))
             elif st_upper == "CANCELLED":
                 order_conditions.append(Order.status == OrderStatus.CANCELLED)
             elif st_upper == "OPEN":
@@ -251,7 +251,7 @@ class ReportsService:
         num_days = max(1, (end_dt - start_dt).days + 1)
         avg_daily_rev = round(total_rev / num_days, 2)
 
-        # Customer & Loyalty Stats
+        # Customer Stats
         total_customers = self.db.scalar(
             select(func.count(Customer.id)).where(Customer.business_id == biz_id, Customer.is_active == True)
         ) or 0
@@ -267,11 +267,31 @@ class ReportsService:
         returning_customers = max(0, total_customers - new_customers)
         repeat_rate_pct = round((returning_customers / total_customers * 100), 1) if total_customers else 0.0
 
-        total_points_earned = self.db.scalar(
-            select(func.sum(CustomerLoyalty.lifetime_points))
-            .join(Customer, CustomerLoyalty.customer_id == Customer.id)
-            .where(Customer.business_id == biz_id)
-        ) or 0
+        # ---------------------------------------------------------------------------
+        # LOYALTY POINTS EARNED IN FILTER PERIOD (FILTERED QUERY)
+        # ---------------------------------------------------------------------------
+        loyalty_settings = self.db.scalar(
+            select(LoyaltySettings).where(LoyaltySettings.business_id == biz_id)
+        )
+        pts_per_amt = float(loyalty_settings.points_per_amount) if (loyalty_settings and loyalty_settings.is_active) else 10.0
+        amt_req = float(loyalty_settings.amount_required) if (loyalty_settings and loyalty_settings.is_active and loyalty_settings.amount_required > 0) else 100.0
+
+        if is_salon:
+            completed_visit_amounts = self.db.scalars(
+                select(Visit.total_amount).where(*visit_conditions, Visit.status == VisitStatus.COMPLETED)
+            ).all()
+            total_points_earned = sum(
+                int((float(v_amt or 0.0) / amt_req) * pts_per_amt)
+                for v_amt in completed_visit_amounts
+            )
+        else:
+            completed_order_amounts = self.db.scalars(
+                select(Order.total_amount).where(*order_conditions, Order.status.in_([OrderStatus.SERVED, OrderStatus.READY, OrderStatus.PAID]))
+            ).all()
+            total_points_earned = sum(
+                int((float(o_amt or 0.0) / amt_req) * pts_per_amt)
+                for o_amt in completed_order_amounts
+            )
 
         coupons_redeemed_count = self.db.scalar(
             select(func.count(CouponRedemption.id))
@@ -309,7 +329,6 @@ class ReportsService:
         appts_orders_trend: list[TimeSeriesPoint] = []
         customer_growth_trend: list[CustomerGrowthPoint] = []
 
-        # Generate day buckets
         day_buckets = []
         curr_d = start_dt.date()
         end_d = end_dt.date()
@@ -317,7 +336,6 @@ class ReportsService:
             day_buckets.append(curr_d)
             curr_d += timedelta(days=1)
 
-        # Cap buckets for charts if period is large (sample by day)
         for d in day_buckets:
             d_start = datetime(d.year, d.month, d.day, 0, 0, 0, tzinfo=timezone.utc)
             d_end = datetime(d.year, d.month, d.day, 23, 59, 59, tzinfo=timezone.utc)
@@ -331,8 +349,8 @@ class ReportsService:
                         func.count(Visit.id).label("cnt"),
                     ).where(
                         Visit.business_id == biz_id,
-                        Visit.created_at >= d_start,
-                        Visit.created_at <= d_end,
+                        func.coalesce(Visit.completed_at, Visit.created_at) >= d_start,
+                        func.coalesce(Visit.completed_at, Visit.created_at) <= d_end,
                         Visit.status == VisitStatus.COMPLETED,
                     )
                 ).first()
@@ -344,8 +362,8 @@ class ReportsService:
                 canc_val = self.db.scalar(
                     select(func.count(Visit.id)).where(
                         Visit.business_id == biz_id,
-                        Visit.created_at >= d_start,
-                        Visit.created_at <= d_end,
+                        func.coalesce(Visit.completed_at, Visit.created_at) >= d_start,
+                        func.coalesce(Visit.completed_at, Visit.created_at) <= d_end,
                         Visit.status == VisitStatus.CANCELLED,
                     )
                 ) or 0
@@ -445,7 +463,7 @@ class ReportsService:
                 )
                 .join(VisitService, Service.id == VisitService.service_id)
                 .join(Visit, VisitService.visit_id == Visit.id)
-                .where(Visit.business_id == biz_id, Visit.created_at >= start_dt, Visit.created_at <= end_dt)
+                .where(Visit.business_id == biz_id, func.coalesce(Visit.completed_at, Visit.created_at) >= start_dt, func.coalesce(Visit.completed_at, Visit.created_at) <= end_dt)
                 .group_by(Service.category)
                 .limit(6)
             ).all()
@@ -474,7 +492,6 @@ class ReportsService:
         # ---------------------------------------------------------------------------
         salon_reports = None
         if is_salon:
-            # Staff Performance
             staff_members = self.db.scalars(
                 select(User).where(User.business_id == biz_id, User.is_active == True)
             ).all()
@@ -488,8 +505,8 @@ class ReportsService:
                     ).where(
                         Visit.staff_id == stf.id,
                         Visit.business_id == biz_id,
-                        Visit.created_at >= start_dt,
-                        Visit.created_at <= end_dt,
+                        func.coalesce(Visit.completed_at, Visit.created_at) >= start_dt,
+                        func.coalesce(Visit.completed_at, Visit.created_at) <= end_dt,
                         Visit.status == VisitStatus.COMPLETED,
                     )
                 ).first()
@@ -514,7 +531,6 @@ class ReportsService:
                     )
                 )
 
-            # Service Performance
             svc_rows = self.db.execute(
                 select(
                     Service.id,
@@ -526,7 +542,7 @@ class ReportsService:
                 )
                 .join(VisitService, Service.id == VisitService.service_id)
                 .join(Visit, VisitService.visit_id == Visit.id)
-                .where(Visit.business_id == biz_id, Visit.created_at >= start_dt, Visit.created_at <= end_dt)
+                .where(Visit.business_id == biz_id, func.coalesce(Visit.completed_at, Visit.created_at) >= start_dt, func.coalesce(Visit.completed_at, Visit.created_at) <= end_dt)
                 .group_by(Service.id, Service.name, Service.category, Service.duration_minutes)
                 .order_by(func.sum(VisitService.total_price).desc())
             ).all()
@@ -546,7 +562,6 @@ class ReportsService:
                     )
                 )
 
-            # Workstation Utilization
             chairs = self.db.scalars(
                 select(SalonChair).options(joinedload(SalonChair.service_area)).where(SalonChair.business_id == biz_id, SalonChair.is_active == True)
             ).all()
@@ -561,7 +576,6 @@ class ReportsService:
                 for idx, c in enumerate(chairs)
             ]
 
-            # Demographics
             male_cnt = self.db.scalar(select(func.count(Customer.id)).where(Customer.business_id == biz_id, func.lower(Customer.gender) == "male")) or 0
             female_cnt = self.db.scalar(select(func.count(Customer.id)).where(Customer.business_id == biz_id, func.lower(Customer.gender) == "female")) or 0
             other_cnt = max(0, total_customers - male_cnt - female_cnt)
@@ -713,7 +727,7 @@ class ReportsService:
             )
 
         # ---------------------------------------------------------------------------
-        # 10. Loyalty Report Summary
+        # 10. Loyalty Report Summary (Filtered by Period)
         # ---------------------------------------------------------------------------
         top_loyalty = [
             TopCustomerReportItem(
@@ -731,8 +745,8 @@ class ReportsService:
 
         loyalty_reports = LoyaltyReportSummary(
             points_earned=int(total_points_earned),
-            points_redeemed=int(total_points_earned * 0.3),
-            points_expired=int(total_points_earned * 0.05),
+            points_redeemed=int(coupons_redeemed_count * 50),
+            points_expired=0,
             top_loyalty_customers=top_loyalty,
         )
 
@@ -799,6 +813,7 @@ class ReportsService:
             [Paragraph("Total Appointments / Orders", c_bold), Paragraph(str(kpi.total_appointments_or_orders), c_val), Paragraph("Completed / Cancelled", c_bold), Paragraph(f"{kpi.completed_visits} / {kpi.cancelled_visits}", c_val)],
             [Paragraph("Average Ticket Value", c_bold), Paragraph(f"₹{kpi.average_order_or_service_value:,.2f}", c_val), Paragraph("Average Daily Revenue", c_bold), Paragraph(f"₹{kpi.average_daily_revenue:,.2f}", c_val)],
             [Paragraph("Total Customers", c_bold), Paragraph(str(kpi.total_customers), c_val), Paragraph("New / Returning", c_bold), Paragraph(f"{kpi.new_customers} / {kpi.returning_customers} ({kpi.repeat_rate_pct}%)", c_val)],
+            [Paragraph("Loyalty Points Earned (Period)", c_bold), Paragraph(str(kpi.total_loyalty_points_earned), c_val), Paragraph("Coupons Redeemed", c_bold), Paragraph(str(kpi.coupons_redeemed), c_val)],
             [Paragraph("Discount Given", c_bold), Paragraph(f"₹{kpi.discount_given:,.2f}", c_val), Paragraph("GST Collected", c_bold), Paragraph(f"₹{kpi.gst_collected:,.2f}", c_val)],
         ]
         t_kpi = Table(kpi_data, colWidths=[135, 135, 135, 135])
@@ -841,7 +856,7 @@ class ReportsService:
     # ---------------------------------------------------------------------------
     def export_excel_report(self, current_user: User, filter_params: ReportFilterParams) -> io.BytesIO:
         import openpyxl
-        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.styles import Font, PatternFill
 
         analytics = self.get_bi_reports_analytics(current_user, filter_params)
 
@@ -881,6 +896,7 @@ class ReportsService:
             ("New Customers", kpi.new_customers),
             ("Returning Customers", kpi.returning_customers),
             ("Repeat Rate %", f"{kpi.repeat_rate_pct}%"),
+            ("Loyalty Points Earned (Period)", kpi.total_loyalty_points_earned),
             ("Coupons Redeemed", kpi.coupons_redeemed),
             ("GST Collected", f"₹{kpi.gst_collected:,.2f}"),
             ("Discount Given", f"₹{kpi.discount_given:,.2f}"),
@@ -949,6 +965,7 @@ class ReportsService:
         writer.writerow(["New Customers", kpi.new_customers])
         writer.writerow(["Returning Customers", kpi.returning_customers])
         writer.writerow(["Repeat Rate %", kpi.repeat_rate_pct])
+        writer.writerow(["Loyalty Points Earned (Period)", kpi.total_loyalty_points_earned])
         writer.writerow(["Discount Given", kpi.discount_given])
         writer.writerow([])
 
