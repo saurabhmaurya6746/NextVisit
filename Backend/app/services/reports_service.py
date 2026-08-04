@@ -1,9 +1,14 @@
 import csv
 import io
+import os
 import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional, Tuple
 from uuid import UUID
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 from fastapi import HTTPException
 from sqlalchemy import extract, func, or_, select, and_
@@ -50,6 +55,185 @@ from app.schemas.reports import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Helper: Register TTF Unicode Fonts for PDF (ReportLab)
+# ---------------------------------------------------------------------------
+def _register_unicode_fonts() -> Tuple[str, str]:
+    font_candidates = [
+        ("C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/segoeuib.ttf", "SegoeUI", "SegoeUI-Bold"),
+        ("C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/arialbd.ttf", "Arial", "Arial-Bold"),
+        ("C:/Windows/Fonts/calibri.ttf", "C:/Windows/Fonts/calibrib.ttf", "Calibri", "Calibri-Bold"),
+        ("C:/Windows/Fonts/tahoma.ttf", "C:/Windows/Fonts/tahomabd.ttf", "Tahoma", "Tahoma-Bold"),
+    ]
+    
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    reg_font = "Helvetica"
+    bold_font = "Helvetica-Bold"
+
+    for reg_path, bold_path, reg_name, bold_name in font_candidates:
+        if os.path.exists(reg_path) and os.path.exists(bold_path):
+            try:
+                pdfmetrics.registerFont(TTFont(reg_name, reg_path))
+                pdfmetrics.registerFont(TTFont(bold_name, bold_path))
+                reg_font = reg_name
+                bold_font = bold_name
+                logger.info("Registered TTF Fonts for PDF: %s, %s", reg_name, bold_name)
+                break
+            except Exception as e:
+                logger.warning("Could not register font %s: %s", reg_name, e)
+
+    return reg_font, bold_font
+
+
+# ---------------------------------------------------------------------------
+# Matplotlib Chart Generators for PDF
+# ---------------------------------------------------------------------------
+from reportlab.platypus import Image as RLImage
+
+def _chart_revenue_trend(series: list[TimeSeriesPoint]) -> Optional[RLImage]:
+    if not series:
+        return None
+    try:
+        fig, ax = plt.subplots(figsize=(6.8, 2.2), dpi=150)
+        labels = [s.label for s in series]
+        revs = [s.revenue for s in series]
+        nets = [s.net_revenue for s in series]
+
+        ax.plot(labels, revs, marker='o', color='#4F46E5', linewidth=2, label='Gross Revenue')
+        ax.fill_between(labels, revs, color='#4F46E5', alpha=0.12)
+        ax.plot(labels, nets, marker='s', color='#10B981', linewidth=1.5, linestyle='--', label='Net Revenue')
+
+        ax.set_title('Revenue Trend (₹)', fontsize=9, fontweight='bold', color='#1F2937', pad=6)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_color('#E5E7EB')
+        ax.spines['bottom'].set_color('#E5E7EB')
+        ax.tick_params(colors='#6B7280', labelsize=7)
+        ax.grid(axis='y', linestyle='--', alpha=0.4)
+        ax.legend(loc='upper left', fontsize=7, frameon=False)
+
+        plt.tight_layout()
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+        return RLImage(buf, width=540, height=175)
+    except Exception as e:
+        logger.warning("Failed rendering revenue trend chart: %s", e)
+        return None
+
+
+def _chart_payment_pie(pm_list: list[BreakdownPieItem]) -> Optional[RLImage]:
+    if not pm_list:
+        return None
+    try:
+        valid_items = [p for p in pm_list if p.value > 0]
+        if not valid_items:
+            return None
+
+        fig, ax = plt.subplots(figsize=(3.2, 2.2), dpi=150)
+        labels = [p.name for p in valid_items]
+        values = [p.value for p in valid_items]
+        colors_list = ['#4F46E5', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6']
+
+        wedges, texts, autotexts = ax.pie(
+            values, labels=labels, autopct='%1.0f%%',
+            startangle=140, colors=colors_list[:len(values)],
+            textprops=dict(fontsize=7, color='#374151'),
+            wedgeprops=dict(width=0.4, edgecolor='w')
+        )
+        plt.setp(autotexts, size=7, weight="bold", color="white")
+        ax.set_title('Payment Method Breakdown', fontsize=9, fontweight='bold', color='#1F2937', pad=6)
+
+        plt.tight_layout()
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+        return RLImage(buf, width=255, height=175)
+    except Exception as e:
+        logger.warning("Failed rendering payment pie chart: %s", e)
+        return None
+
+
+def _chart_top_items(items_list: list[CategoryBreakdownItem], is_salon: bool = True) -> Optional[RLImage]:
+    if not items_list:
+        return None
+    try:
+        valid_items = [it for it in items_list if it.revenue > 0]
+        if not valid_items:
+            return None
+
+        fig, ax = plt.subplots(figsize=(3.2, 2.2), dpi=150)
+        top = valid_items[:5][::-1]
+        names = [it.name[:18] for it in top]
+        revs = [it.revenue for it in top]
+
+        ax.barh(names, revs, color='#6366F1', height=0.55)
+        ax.set_title('Top Services Revenue (₹)' if is_salon else 'Top Categories Revenue (₹)', fontsize=9, fontweight='bold', color='#1F2937', pad=6)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_color('#E5E7EB')
+        ax.spines['bottom'].set_color('#E5E7EB')
+        ax.tick_params(colors='#6B7280', labelsize=7)
+        ax.grid(axis='x', linestyle='--', alpha=0.4)
+
+        plt.tight_layout()
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+        return RLImage(buf, width=255, height=175)
+    except Exception as e:
+        logger.warning("Failed rendering top items chart: %s", e)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Numbered Canvas for Dynamic Page Numbering in ReportLab
+# ---------------------------------------------------------------------------
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+
+class ExecutiveNumberedCanvas(canvas.Canvas):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_page_decorations(num_pages)
+            super().showPage()
+        super().save()
+
+    def draw_page_decorations(self, page_count: int):
+        self.saveState()
+        
+        # Footer line
+        self.setStrokeColor(colors.HexColor("#E5E7EB"))
+        self.setLineWidth(0.5)
+        self.line(36, 34, 612 - 36, 34)
+
+        # Footer Text
+        font_name = getattr(self, "_regular_font", "Helvetica")
+        self.setFont(font_name, 8)
+        self.setFillColor(colors.HexColor("#6B7280"))
+        
+        now_str = datetime.now().strftime("%d %b %Y, %I:%M %p")
+        self.drawString(36, 20, f"NextVisit Executive BI Report  |  Confidential  |  {now_str}")
+        self.drawRightString(612 - 36, 20, f"Page {self._pageNumber} of {page_count}")
+        
+        self.restoreState()
 
 
 class ReportsService:
@@ -207,7 +391,6 @@ class ReportsService:
         # 2. KPI Summary Calculation
         # ---------------------------------------------------------------------------
         if is_salon:
-            # Salon uses Visit model
             completed_stmt = select(
                 func.count(Visit.id).label("count"),
                 func.sum(Visit.total_amount).label("total_rev"),
@@ -225,9 +408,8 @@ class ReportsService:
             total_appts_or_orders = completed_count + cancelled_count
             net_rev = total_rev - total_disc
             avg_ticket = round(total_rev / completed_count, 2) if completed_count else 0.0
-            gst_calc = round(total_rev * 0.05, 2)  # GST estimated at 5%
+            gst_calc = round(total_rev * 0.05, 2)
         else:
-            # Restaurant uses Order model
             completed_stmt = select(
                 func.count(Order.id).label("count"),
                 func.sum(Order.total_amount).label("total_rev"),
@@ -267,9 +449,7 @@ class ReportsService:
         returning_customers = max(0, total_customers - new_customers)
         repeat_rate_pct = round((returning_customers / total_customers * 100), 1) if total_customers else 0.0
 
-        # ---------------------------------------------------------------------------
-        # LOYALTY POINTS EARNED IN FILTER PERIOD (FILTERED QUERY)
-        # ---------------------------------------------------------------------------
+        # Loyalty Points Earned (Filtered Query)
         loyalty_settings = self.db.scalar(
             select(LoyaltySettings).where(LoyaltySettings.business_id == biz_id)
         )
@@ -771,83 +951,221 @@ class ReportsService:
         )
 
     # ---------------------------------------------------------------------------
-    # PDF Export Engine (ReportLab)
+    # Premium Executive PDF Export Engine (ReportLab + Matplotlib Charts)
     # ---------------------------------------------------------------------------
     def export_pdf_report(self, current_user: User, filter_params: ReportFilterParams) -> io.BytesIO:
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import letter
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle, HRFlowable
 
+        reg_font, bold_font = _register_unicode_fonts()
         analytics = self.get_bi_reports_analytics(current_user, filter_params)
+        is_salon = (analytics.business_type == "salon")
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(
             buffer,
             pagesize=letter,
-            rightMargin=36,
             leftMargin=36,
+            rightMargin=36,
             topMargin=36,
-            bottomMargin=36,
+            bottomMargin=50,
         )
 
         styles = getSampleStyleSheet()
-        title_style = ParagraphStyle("T", parent=styles["Heading1"], fontSize=18, leading=22, textColor=colors.HexColor("#4F46E5"), spaceAfter=4)
-        sub_style = ParagraphStyle("S", parent=styles["Normal"], fontSize=9, leading=12, textColor=colors.HexColor("#6B7280"), spaceAfter=12)
-        h2_style = ParagraphStyle("H2", parent=styles["Heading2"], fontSize=11, leading=15, textColor=colors.HexColor("#1F2937"), spaceBefore=10, spaceAfter=4)
-        c_bold = ParagraphStyle("CB", parent=styles["Normal"], fontSize=8, leading=11, textColor=colors.HexColor("#111827"), fontName="Helvetica-Bold")
-        c_val = ParagraphStyle("CV", parent=styles["Normal"], fontSize=8, leading=11, textColor=colors.HexColor("#374151"))
+        title_style = ParagraphStyle("T", fontName=bold_font, fontSize=20, leading=24, textColor=colors.HexColor("#4F46E5"), spaceAfter=2)
+        subtitle_style = ParagraphStyle("ST", fontName=bold_font, fontSize=10, leading=14, textColor=colors.HexColor("#1F2937"), spaceAfter=8)
+        meta_style = ParagraphStyle("M", fontName=reg_font, fontSize=8, leading=11, textColor=colors.HexColor("#6B7280"), spaceAfter=10)
+        h2_style = ParagraphStyle("H2", fontName=bold_font, fontSize=11, leading=15, textColor=colors.HexColor("#1F2937"), spaceBefore=10, spaceAfter=4)
+        summary_bullet_style = ParagraphStyle("SB", fontName=reg_font, fontSize=8.5, leading=12, textColor=colors.HexColor("#374151"))
+
+        c_bold = ParagraphStyle("CB", fontName=bold_font, fontSize=8, leading=11, textColor=colors.HexColor("#111827"))
+        c_val = ParagraphStyle("CV", fontName=reg_font, fontSize=8, leading=11, textColor=colors.HexColor("#374151"))
+        c_val_right = ParagraphStyle("CVR", fontName=reg_font, fontSize=8, leading=11, textColor=colors.HexColor("#374151"), alignment=2)
+        c_bold_right = ParagraphStyle("CBR", fontName=bold_font, fontSize=8, leading=11, textColor=colors.HexColor("#111827"), alignment=2)
+
+        kpi_title_style = ParagraphStyle("KT", fontName=reg_font, fontSize=7.5, leading=9, textColor=colors.HexColor("#6B7280"))
+        kpi_val_style = ParagraphStyle("KV", fontName=bold_font, fontSize=12, leading=14, textColor=colors.HexColor("#4F46E5"), alignment=0)
+        kpi_sub_style = ParagraphStyle("KS", fontName=reg_font, fontSize=7, leading=9, textColor=colors.HexColor("#9CA3AF"))
 
         elements = []
         now_str = datetime.now().strftime("%d %b %Y, %I:%M %p")
 
-        # Header
-        elements.append(Paragraph(f"<b>{analytics.business_name}</b> — BI Performance Report", title_style))
-        elements.append(Paragraph(f"Period: <b>{analytics.applied_period_label}</b> | Generated on: {now_str} | Business Type: <b>{analytics.business_type.upper()}</b>", sub_style))
+        # 1. Executive Cover Header
+        module_label = "SALON MODULE" if is_salon else "RESTAURANT MODULE"
+        elements.append(Paragraph(f"<b>{analytics.business_name.upper()}</b>", title_style))
+        elements.append(Paragraph(f"Executive Business Intelligence Performance Report — <b>{module_label}</b>", subtitle_style))
+        elements.append(Paragraph(f"Generated on: {now_str}  |  Generated By: {current_user.name}  |  Status: Verified Confidential", meta_style))
+        elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#E5E7EB"), spaceAfter=10))
 
-        # KPI Summary Table
-        elements.append(Paragraph("Executive KPI Summary", h2_style))
-        kpi = analytics.kpi_summary
-        kpi_data = [
-            [Paragraph("Total Revenue", c_bold), Paragraph(f"₹{kpi.total_revenue:,.2f}", c_val), Paragraph("Net Revenue", c_bold), Paragraph(f"₹{kpi.net_revenue:,.2f}", c_val)],
-            [Paragraph("Total Appointments / Orders", c_bold), Paragraph(str(kpi.total_appointments_or_orders), c_val), Paragraph("Completed / Cancelled", c_bold), Paragraph(f"{kpi.completed_visits} / {kpi.cancelled_visits}", c_val)],
-            [Paragraph("Average Ticket Value", c_bold), Paragraph(f"₹{kpi.average_order_or_service_value:,.2f}", c_val), Paragraph("Average Daily Revenue", c_bold), Paragraph(f"₹{kpi.average_daily_revenue:,.2f}", c_val)],
-            [Paragraph("Total Customers", c_bold), Paragraph(str(kpi.total_customers), c_val), Paragraph("New / Returning", c_bold), Paragraph(f"{kpi.new_customers} / {kpi.returning_customers} ({kpi.repeat_rate_pct}%)", c_val)],
-            [Paragraph("Loyalty Points Earned (Period)", c_bold), Paragraph(str(kpi.total_loyalty_points_earned), c_val), Paragraph("Coupons Redeemed", c_bold), Paragraph(str(kpi.coupons_redeemed), c_val)],
-            [Paragraph("Discount Given", c_bold), Paragraph(f"₹{kpi.discount_given:,.2f}", c_val), Paragraph("GST Collected", c_bold), Paragraph(f"₹{kpi.gst_collected:,.2f}", c_val)],
+        # 2. Filter Summary Context Box
+        pm_str = filter_params.payment_method if filter_params.payment_method and filter_params.payment_method != "all" else "All Payments"
+        stf_str = filter_params.staff_id if filter_params.staff_id and filter_params.staff_id != "all" else "All Staff"
+        st_str = filter_params.status if filter_params.status and filter_params.status != "all" else "All Statuses"
+
+        filter_summary_data = [
+            [Paragraph(f"<b>Applied Date Range:</b> {analytics.applied_period_label} ({analytics.start_date} to {analytics.end_date})", c_val), Paragraph(f"<b>Payment Method:</b> {pm_str}", c_val)],
+            [Paragraph(f"<b>Staff / Waiter Filter:</b> {stf_str}", c_val), Paragraph(f"<b>Status Filter:</b> {st_str}", c_val)],
         ]
-        t_kpi = Table(kpi_data, colWidths=[135, 135, 135, 135])
-        t_kpi.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F9FAFB")),
-            ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#E5E7EB")),
-            ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E5E7EB")),
+        t_filter = Table(filter_summary_data, colWidths=[270, 270])
+        t_filter.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+            ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#E2E8F0")),
             ("PADDING", (0, 0), (-1, -1), 6),
         ]))
-        elements.append(t_kpi)
+        elements.append(t_filter)
         elements.append(Spacer(1, 10))
 
-        # Top Customers Table
-        elements.append(Paragraph("Top Customers Performance", h2_style))
-        cust_headers = [Paragraph("<b>Customer Name</b>", c_bold), Paragraph("<b>Phone</b>", c_bold), Paragraph("<b>Visits</b>", c_bold), Paragraph("<b>Lifetime Spend</b>", c_bold), Paragraph("<b>Avg Spend</b>", c_bold)]
+        # 3. Data-Driven Executive Highlights Bulletins
+        elements.append(Paragraph("Executive Highlights", h2_style))
+        kpi = analytics.kpi_summary
+        vol_label = "appointments" if is_salon else "orders"
+        
+        exec_summary_bullets = [
+            f"• <b>Total Revenue</b> generated this period: <b>₹{kpi.total_revenue:,.2f}</b> across <b>{kpi.completed_visits} completed {vol_label}</b>.",
+            f"• <b>Average Ticket Value</b> per completed {vol_label[:-1]} stood at <b>₹{kpi.average_order_or_service_value:,.2f}</b> with an average daily revenue of <b>₹{kpi.average_daily_revenue:,.2f}</b>.",
+            f"• Customer retention remains strong with a <b>{kpi.repeat_rate_pct}% repeat customer rate</b> ({kpi.returning_customers} returning out of {kpi.total_customers} total).",
+            f"• Loyalty program awarded <b>{kpi.total_loyalty_points_earned:,} points</b> with <b>{kpi.coupons_redeemed} coupons redeemed</b> driving ₹{kpi.campaign_revenue:,.2f} in campaign revenue.",
+        ]
+        for b in exec_summary_bullets:
+            elements.append(Paragraph(b, summary_bullet_style))
+            elements.append(Spacer(1, 2))
+        elements.append(Spacer(1, 10))
+
+        # 4. Executive KPI Dashboard Cards Grid (4-Column Layout)
+        elements.append(Paragraph("Executive KPI Dashboard", h2_style))
+
+        def make_kpi_cell(title: str, value: str, sub: str):
+            p_t = Paragraph(title, kpi_title_style)
+            p_v = Paragraph(value, kpi_val_style)
+            p_s = Paragraph(sub, kpi_sub_style)
+            t = Table([[p_t], [p_v], [p_s]], colWidths=[125])
+            t.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+                ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#E2E8F0")),
+                ("PADDING", (0, 0), (-1, -1), 5),
+            ]))
+            return t
+
+        kpi_grid_data = [
+            [
+                make_kpi_cell("TOTAL REVENUE", f"₹{kpi.total_revenue:,.2f}", "Gross billings"),
+                make_kpi_cell("NET REVENUE", f"₹{kpi.net_revenue:,.2f}", "After discounts"),
+                make_kpi_cell(vol_label.upper(), str(kpi.total_appointments_or_orders), f"{kpi.completed_visits} comp / {kpi.cancelled_visits} canc"),
+                make_kpi_cell("AVG TICKET SIZE", f"₹{kpi.average_order_or_service_value:,.2f}", f"Per {vol_label[:-1]}"),
+            ],
+            [
+                make_kpi_cell("DAILY AVG REVENUE", f"₹{kpi.average_daily_revenue:,.2f}", "Per active day"),
+                make_kpi_cell("TOTAL CLIENTS", str(kpi.total_customers), f"{kpi.repeat_rate_pct}% repeat rate"),
+                make_kpi_cell("NEW CLIENTS", str(kpi.new_customers), f"{kpi.returning_customers} returning"),
+                make_kpi_cell("LOYALTY POINTS", f"{kpi.total_loyalty_points_earned:,} pts", "Points awarded"),
+            ],
+        ]
+        t_kpi_grid = Table(kpi_grid_data, colWidths=[135, 135, 135, 135])
+        t_kpi_grid.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("PADDING", (0, 0), (-1, -1), 2),
+        ]))
+        elements.append(t_kpi_grid)
+        elements.append(Spacer(1, 12))
+
+        # 5. Embedded High-Res Charts Section
+        elements.append(Paragraph("Performance Trends & Visual Breakdown", h2_style))
+        img_trend = _chart_revenue_trend(analytics.revenue_trend)
+        if img_trend:
+            elements.append(img_trend)
+            elements.append(Spacer(1, 8))
+
+        img_pie = _chart_payment_pie(analytics.revenue_by_payment_method)
+        img_items = _chart_top_items(analytics.top_categories_chart, is_salon=is_salon)
+        if img_pie and img_items:
+            t_side_charts = Table([[img_pie, img_items]], colWidths=[270, 270])
+            t_side_charts.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+            elements.append(t_side_charts)
+            elements.append(Spacer(1, 10))
+
+        # 6. Salon vs Restaurant Specific Widgets
+        if is_salon and analytics.salon_reports:
+            elements.append(Paragraph("Stylist & Staff Performance", h2_style))
+            staff_headers = [Paragraph("Staff Member", c_bold), Paragraph("Role", c_bold), Paragraph("Appointments", c_bold_right), Paragraph("Revenue", c_bold_right), Paragraph("Avg Ticket", c_bold_right), Paragraph("Rank", c_bold)]
+            staff_rows = [staff_headers]
+            for stf in analytics.salon_reports.staff_performance:
+                staff_rows.append([
+                    Paragraph(f"<b>{stf.name}</b>" if stf.rank == "Top Performer" else stf.name, c_val),
+                    Paragraph(stf.designation or "Stylist", c_val),
+                    Paragraph(str(stf.appointments_completed), c_val_right),
+                    Paragraph(f"₹{stf.revenue_generated:,.2f}", c_val_right),
+                    Paragraph(f"₹{stf.average_ticket_size:,.2f}", c_val_right),
+                    Paragraph(f"<b>{stf.rank}</b>" if stf.rank == "Top Performer" else stf.rank, c_val),
+                ])
+            t_staff = Table(staff_rows, colWidths=[140, 90, 75, 85, 80, 70], repeatRows=1)
+            t_staff.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F46E5")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#E2E8F0")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#FFFFFF"), colors.HexColor("#F8FAFC")]),
+                ("PADDING", (0, 0), (-1, -1), 5),
+            ]))
+            for c_idx in range(6):
+                t_staff.setStyle(TableStyle([("TEXTCOLOR", (c_idx, 0), (c_idx, 0), colors.white)]))
+            elements.append(t_staff)
+            elements.append(Spacer(1, 10))
+
+        elif not is_salon and analytics.restaurant_reports:
+            elements.append(Paragraph("Table Utilization & Performance", h2_style))
+            tbl_headers = [Paragraph("Table Name", c_bold), Paragraph("Area", c_bold), Paragraph("Orders Count", c_bold_right), Paragraph("Total Revenue", c_bold_right), Paragraph("Avg Mins", c_bold_right)]
+            tbl_rows = [tbl_headers]
+            for tbl in analytics.restaurant_reports.table_utilization:
+                tbl_rows.append([
+                    Paragraph(tbl.table_name, c_val),
+                    Paragraph(tbl.dining_area_name, c_val),
+                    Paragraph(str(tbl.orders_count), c_val_right),
+                    Paragraph(f"₹{tbl.total_revenue:,.2f}", c_val_right),
+                    Paragraph(f"{tbl.avg_dining_minutes}m", c_val_right),
+                ])
+            t_tbl = Table(tbl_rows, colWidths=[130, 110, 90, 110, 100], repeatRows=1)
+            t_tbl.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F46E5")),
+                ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#E2E8F0")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#FFFFFF"), colors.HexColor("#F8FAFC")]),
+                ("PADDING", (0, 0), (-1, -1), 5),
+            ]))
+            for c_idx in range(5):
+                t_tbl.setStyle(TableStyle([("TEXTCOLOR", (c_idx, 0), (c_idx, 0), colors.white)]))
+            elements.append(t_tbl)
+            elements.append(Spacer(1, 10))
+
+        # 7. Top Customers Table (Zebra Striped)
+        elements.append(Paragraph("Top High-Value Clients", h2_style))
+        cust_headers = [Paragraph("Client Name", c_bold), Paragraph("Phone", c_bold), Paragraph("Visits", c_bold_right), Paragraph("Lifetime Spend", c_bold_right), Paragraph("Avg Spend", c_bold_right), Paragraph("Membership", c_bold)]
         cust_rows = [cust_headers]
-        for c in analytics.top_customers[:5]:
+        for c in analytics.top_customers[:7]:
             cust_rows.append([
                 Paragraph(c.name, c_val),
                 Paragraph(c.phone, c_val),
-                Paragraph(str(c.visits), c_val),
-                Paragraph(f"₹{c.lifetime_spend:,.2f}", c_val),
-                Paragraph(f"₹{c.average_spend:,.2f}", c_val),
+                Paragraph(str(c.visits), c_val_right),
+                Paragraph(f"₹{c.lifetime_spend:,.2f}", c_val_right),
+                Paragraph(f"₹{c.average_spend:,.2f}", c_val_right),
+                Paragraph(c.membership or "Regular", c_val),
             ])
-        t_cust = Table(cust_rows, colWidths=[130, 100, 60, 120, 130])
+        t_cust = Table(cust_rows, colWidths=[150, 90, 45, 95, 95, 65], repeatRows=1)
         t_cust.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EEF2FF")),
-            ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#E5E7EB")),
-            ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E5E7EB")),
+            ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#E2E8F0")),
+            ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#FFFFFF"), colors.HexColor("#F8FAFC")]),
             ("PADDING", (0, 0), (-1, -1), 5),
         ]))
         elements.append(t_cust)
 
-        doc.build(elements)
+        # Attach canvas class
+        canvas_maker = lambda *args, **kwargs: ExecutiveNumberedCanvas(*args, **kwargs)
+        ExecutiveNumberedCanvas._regular_font = reg_font
+
+        doc.build(elements, canvasmaker=canvas_maker)
         buffer.seek(0)
         return buffer
 
