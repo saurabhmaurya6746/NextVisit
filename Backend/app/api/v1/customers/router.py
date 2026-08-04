@@ -19,6 +19,7 @@ from app.schemas.customer import (
     CustomerUpdate,
     PaginatedWelcomeResponse,
     PaginatedVipResponse,
+    PaginatedCustomersResponse,
 )
 from app.services.customer_segmentation_service import CustomerSegmentationService
 from app.services.customer_service import CustomerService
@@ -181,17 +182,31 @@ def get_vip_customers(
 
 @router.get(
     "",
-    response_model=list[CustomerResponse],
-    summary="Get all customers of the authenticated business",
+    response_model=PaginatedCustomersResponse | list[CustomerResponse],
+    summary="Get customers of the authenticated business (supports server-side pagination)",
 )
 def list_customers(
+    page: int | None = Query(None, ge=1),
+    limit: int = Query(10, ge=1, le=100),
+    search: str | None = None,
+    sort: str | None = "newest",
+    filter: str | None = "all",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Returns all customers belonging to the authenticated user's business.
-    Requires a valid Bearer JWT.
+    Returns customers belonging to the authenticated user's business.
+    If page parameter is provided, returns server-side paginated response.
     """
+    if page is not None:
+        return CustomerService(db).get_paginated_customers(
+            current_user=current_user,
+            page=page,
+            limit=limit,
+            search=search,
+            sort=sort,
+            filter=filter,
+        )
     return CustomerService(db).list_customers(current_user)
 
 
@@ -297,6 +312,38 @@ def update_customer(
     Updates editable fields of a customer belonging to the authenticated user's business.
     Returns HTTP 404 if not found or belongs to another business.
     Returns HTTP 409 if phone number conflicts with another customer in the business.
-    Requires a valid Bearer JWT.
     """
     return CustomerService(db).update_customer(current_user, customer_id, data)
+
+
+@router.delete(
+    "/{customer_id}",
+    summary="Delete a customer permanently from backend database",
+)
+def delete_customer(
+    customer_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Deletes a customer belonging to the authenticated user's business.
+    Returns HTTP 404 if not found or belongs to another business.
+    """
+    return CustomerService(db).delete_customer(current_user, customer_id)
+
+
+@router.post(
+    "/{customer_id}/record-visit",
+    response_model=CustomerResponse,
+    summary="Record a completed visit & spend for a customer to update stats and loyalty",
+)
+def record_customer_visit(
+    customer_id: UUID,
+    amount_spent: float = Query(..., ge=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Increments customer's visit_count by 1, adds amount_spent to total_spent, and awards loyalty points.
+    """
+    return CustomerService(db).record_customer_visit(current_user, customer_id, amount_spent)

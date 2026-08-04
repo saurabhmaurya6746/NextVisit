@@ -54,6 +54,7 @@ import { Route as AppTypeBusinessVipRouteImport } from './routes/app.$type.$busi
 import { Route as AppTypeBusinessWelcomeRouteImport } from './routes/app.$type.$business.welcome'
 import { Route as AppTypeBusinessWhatsappCampaignsRouteImport } from './routes/app.$type.$business.whatsapp-campaigns'
 import { Route as AppTypeBusinessWhatsappHistoryRouteImport } from './routes/app.$type.$business.whatsapp-history'
+import { Route as AppTypeBusinessWorkstationsRouteImport } from './routes/app.$type.$business.workstations'
 import { Route as AppTypeBusinessAnniversaryCampaignsIndexRouteImport } from './routes/app.$type.$business.anniversary-campaigns.index'
 import { Route as AppTypeBusinessAnniversaryCampaignsMonthRouteImport } from './routes/app.$type.$business.anniversary-campaigns.month'
 import { Route as AppTypeBusinessAnniversaryCampaignsTodayRouteImport } from './routes/app.$type.$business.anniversary-campaigns.today'
@@ -304,6 +305,12 @@ const AppTypeBusinessWhatsappHistoryRoute =
     path: '/whatsapp-history',
     getParentRoute: () => AppTypeBusinessRoute,
   } as any)
+const AppTypeBusinessWorkstationsRoute =
+  AppTypeBusinessWorkstationsRouteImport.update({
+    id: '/workstations',
+    path: '/workstations',
+    getParentRoute: () => AppTypeBusinessRoute,
+  } as any)
 const AppTypeBusinessAnniversaryCampaignsIndexRoute =
   AppTypeBusinessAnniversaryCampaignsIndexRouteImport.update({
     id: '/anniversary-campaigns/',
@@ -434,6 +441,7 @@ export interface FileRoutesByFullPath {
   '/app/$type/$business/welcome': typeof AppTypeBusinessWelcomeRoute
   '/app/$type/$business/whatsapp-campaigns': typeof AppTypeBusinessWhatsappCampaignsRoute
   '/app/$type/$business/whatsapp-history': typeof AppTypeBusinessWhatsappHistoryRoute
+  '/app/$type/$business/workstations': typeof AppTypeBusinessWorkstationsRoute
   '/app/$type/$business/anniversary-campaigns/month': typeof AppTypeBusinessAnniversaryCampaignsMonthRoute
   '/app/$type/$business/anniversary-campaigns/today': typeof AppTypeBusinessAnniversaryCampaignsTodayRoute
   '/app/$type/$business/anniversary-campaigns/tomorrow': typeof AppTypeBusinessAnniversaryCampaignsTomorrowRoute
@@ -494,6 +502,7 @@ export interface FileRoutesByTo {
   '/app/$type/$business/welcome': typeof AppTypeBusinessWelcomeRoute
   '/app/$type/$business/whatsapp-campaigns': typeof AppTypeBusinessWhatsappCampaignsRoute
   '/app/$type/$business/whatsapp-history': typeof AppTypeBusinessWhatsappHistoryRoute
+  '/app/$type/$business/workstations': typeof AppTypeBusinessWorkstationsRoute
   '/app/$type/$business/anniversary-campaigns/month': typeof AppTypeBusinessAnniversaryCampaignsMonthRoute
   '/app/$type/$business/anniversary-campaigns/today': typeof AppTypeBusinessAnniversaryCampaignsTodayRoute
   '/app/$type/$business/anniversary-campaigns/tomorrow': typeof AppTypeBusinessAnniversaryCampaignsTomorrowRoute
@@ -556,6 +565,7 @@ export interface FileRoutesById {
   '/app/$type/$business/welcome': typeof AppTypeBusinessWelcomeRoute
   '/app/$type/$business/whatsapp-campaigns': typeof AppTypeBusinessWhatsappCampaignsRoute
   '/app/$type/$business/whatsapp-history': typeof AppTypeBusinessWhatsappHistoryRoute
+  '/app/$type/$business/workstations': typeof AppTypeBusinessWorkstationsRoute
   '/app/$type/$business/anniversary-campaigns/month': typeof AppTypeBusinessAnniversaryCampaignsMonthRoute
   '/app/$type/$business/anniversary-campaigns/today': typeof AppTypeBusinessAnniversaryCampaignsTodayRoute
   '/app/$type/$business/anniversary-campaigns/tomorrow': typeof AppTypeBusinessAnniversaryCampaignsTomorrowRoute
@@ -619,6 +629,7 @@ export interface FileRouteTypes {
     | '/app/$type/$business/welcome'
     | '/app/$type/$business/whatsapp-campaigns'
     | '/app/$type/$business/whatsapp-history'
+    | '/app/$type/$business/workstations'
     | '/app/$type/$business/anniversary-campaigns/month'
     | '/app/$type/$business/anniversary-campaigns/today'
     | '/app/$type/$business/anniversary-campaigns/tomorrow'
@@ -679,6 +690,7 @@ export interface FileRouteTypes {
     | '/app/$type/$business/welcome'
     | '/app/$type/$business/whatsapp-campaigns'
     | '/app/$type/$business/whatsapp-history'
+    | '/app/$type/$business/workstations'
     | '/app/$type/$business/anniversary-campaigns/month'
     | '/app/$type/$business/anniversary-campaigns/today'
     | '/app/$type/$business/anniversary-campaigns/tomorrow'
@@ -740,6 +752,7 @@ export interface FileRouteTypes {
     | '/app/$type/$business/welcome'
     | '/app/$type/$business/whatsapp-campaigns'
     | '/app/$type/$business/whatsapp-history'
+    | '/app/$type/$business/workstations'
     | '/app/$type/$business/anniversary-campaigns/month'
     | '/app/$type/$business/anniversary-campaigns/today'
     | '/app/$type/$business/anniversary-campaigns/tomorrow'
@@ -1089,6 +1102,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTypeBusinessWhatsappHistoryRouteImport
       parentRoute: typeof AppTypeBusinessRoute
     }
+    '/app/$type/$business/workstations': {
+      id: '/app/$type/$business/workstations'
+      path: '/workstations'
+      fullPath: '/app/$type/$business/workstations'
+      preLoaderRoute: typeof AppTypeBusinessWorkstationsRouteImport
+      parentRoute: typeof AppTypeBusinessRoute
+    }
     '/app/$type/$business/anniversary-campaigns/': {
       id: '/app/$type/$business/anniversary-campaigns/'
       path: '/anniversary-campaigns'
@@ -1266,6 +1286,7 @@ interface AppTypeBusinessRouteChildren {
   AppTypeBusinessWelcomeRoute: typeof AppTypeBusinessWelcomeRoute
   AppTypeBusinessWhatsappCampaignsRoute: typeof AppTypeBusinessWhatsappCampaignsRoute
   AppTypeBusinessWhatsappHistoryRoute: typeof AppTypeBusinessWhatsappHistoryRoute
+  AppTypeBusinessWorkstationsRoute: typeof AppTypeBusinessWorkstationsRoute
   AppTypeBusinessAnniversaryCampaignsMonthRoute: typeof AppTypeBusinessAnniversaryCampaignsMonthRoute
   AppTypeBusinessAnniversaryCampaignsTodayRoute: typeof AppTypeBusinessAnniversaryCampaignsTodayRoute
   AppTypeBusinessAnniversaryCampaignsTomorrowRoute: typeof AppTypeBusinessAnniversaryCampaignsTomorrowRoute
@@ -1307,6 +1328,7 @@ const AppTypeBusinessRouteChildren: AppTypeBusinessRouteChildren = {
   AppTypeBusinessWelcomeRoute: AppTypeBusinessWelcomeRoute,
   AppTypeBusinessWhatsappCampaignsRoute: AppTypeBusinessWhatsappCampaignsRoute,
   AppTypeBusinessWhatsappHistoryRoute: AppTypeBusinessWhatsappHistoryRoute,
+  AppTypeBusinessWorkstationsRoute: AppTypeBusinessWorkstationsRoute,
   AppTypeBusinessAnniversaryCampaignsMonthRoute:
     AppTypeBusinessAnniversaryCampaignsMonthRoute,
   AppTypeBusinessAnniversaryCampaignsTodayRoute:

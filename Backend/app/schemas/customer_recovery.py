@@ -40,11 +40,14 @@ class RecoverableCustomerItem(BaseModel):
     name: str
     phone: str
     email: str | None = None
+    gender: str | None = None          # NEW
     last_visit_at: datetime | None = None
     days_since_last_visit: int
+    avg_spend: float = 0.0             # NEW - total_spent / visit_count
     total_spent: float
     visit_count: int
     loyalty_points: int = 0
+    membership: str | None = None      # NEW - e.g. "Gold", "Silver" or None
     favorite_item: str = "No favorite yet"
     is_vip: bool = False
     recovery_stage: str  # "15_days" | "30_days" | "45_days" | "60_days" | "90_days"
@@ -187,4 +190,20 @@ class RecoveryAiGenerateResponse(BaseModel):
     title: str
     message: str
     cta: str
+
+
+# ---------------------------------------------------------------------------
+# Mark Recovered / Exclude
+# ---------------------------------------------------------------------------
+
+class MarkRecoveredResponse(BaseModel):
+    success: bool
+    customer_id: UUID
+    message: str
+
+
+class ExcludeCustomerResponse(BaseModel):
+    success: bool
+    customer_id: UUID
+    message: str
 

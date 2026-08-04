@@ -10,6 +10,23 @@ function read(): BusinessType {
   return v === "salon" ? "salon" : "restaurant";
 }
 
+export function resolveBusinessType(
+  bizProfile?: { type?: string; name?: string } | null,
+  session?: { businessType?: string; businessName?: string } | null,
+  routeType?: string | null
+): BusinessType {
+  const pType = (bizProfile?.type || "").toLowerCase();
+  const sType = (session?.businessType || "").toLowerCase();
+  const rType = (routeType || "").toLowerCase();
+
+  if (pType === "salon" || sType === "salon" || rType === "salon") return "salon";
+
+  const name = (bizProfile?.name || session?.businessName || "").toLowerCase();
+  if (name.includes("salon")) return "salon";
+
+  return read();
+}
+
 export function setBusinessType(t: BusinessType) {
   localStorage.setItem(KEY, t);
   window.dispatchEvent(new Event("growthos:type-changed"));

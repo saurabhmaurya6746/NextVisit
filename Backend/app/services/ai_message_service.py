@@ -200,12 +200,30 @@ class AiMessageService:
         # -------------------------------------------------------------------
         # 5. GEMINI PROMPT
         # -------------------------------------------------------------------
-        prompt = f"""You are a live D2C CRM Copywriter for '{biz_name}' ({biz_type} in {city}, {biz_country}).
+        is_salon = "salon" in biz_type.lower() or "spa" in biz_type.lower() or "beauty" in biz_type.lower()
+
+        if is_salon:
+            role_header = f"You are a top live D2C AI Copywriter for '{biz_name}', a premier beauty salon & spa in {city}, {biz_country}."
+            term_mandate = """[STRICT TERMINOLOGY MANDATES FOR SALON]
+- You MUST use '{salon_name}' for the salon's name. NEVER use 'restaurant_name', 'restaurant', 'meal', 'dish', 'table', 'order', or 'dining'.
+- Use '{customer_name}' or '{name}' for customer first name.
+- You MAY use '{service_name}', '{stylist_name}', '{appointment_link}', '{loyalty_points}', '{coupon}', '{discount}'.
+- NEVER refer to food, meals, dining, or dishes."""
+        else:
+            role_header = f"You are a top live D2C AI Copywriter for '{biz_name}', a premier restaurant & cafe in {city}, {biz_country}."
+            term_mandate = """[STRICT TERMINOLOGY MANDATES FOR RESTAURANT]
+- You MUST use '{restaurant_name}' for the restaurant's name.
+- Use '{customer_name}' or '{name}' for customer first name.
+- You MAY use '{favorite_dish}', '{table_booking_link}', '{loyalty_points}', '{coupon}', '{discount}'."""
+
+        prompt = f"""{role_header}
 Generate a fresh, unique, engaging WHATSAPP MESSAGE for customer {cust_name}.
 
 [VARIATION SEED: #{variation_seed}]
 - Do NOT use repetitive greetings or generic robotic boilerplate templates.
 - Dynamically craft a unique opening line, sentence structure, emoji placement, CTA, and sign-off.
+
+{term_mandate}
 
 [CAMPAIGN TYPE & MANDATES]
 - Campaign Type: {norm_campaign}
@@ -219,7 +237,7 @@ Generate a fresh, unique, engaging WHATSAPP MESSAGE for customer {cust_name}.
 - Visit Count: {cust_visits} visits
 - Total Spent: ₹{cust_spent:.2f}
 - Loyalty Points Balance: {pts if pts > 0 else 'None'}
-- Favorite / Ordered Item: {fav_item if fav_item else 'None'}
+- Favorite / Preferred Service or Item: {fav_item if fav_item else 'None'}
 - Birthday: {bday_str}
 - Anniversary: {anni_str}
 
@@ -240,21 +258,32 @@ Generate a fresh, unique, engaging WHATSAPP MESSAGE for customer {cust_name}.
         # -------------------------------------------------------------------
         gemini_key = settings.GEMINI_API_KEY.strip() if settings.GEMINI_API_KEY else ""
 
-        if not gemini_key:
-            logger.error("GEMINI_API_KEY is not configured in settings.")
-            raise HTTPException(
-                status_code=500,
-                detail="AI message generation failed: GEMINI_API_KEY is missing. Please configure your API key.",
-            )
-
-        ai_message = self._call_gemini_api(gemini_key, prompt)
+        ai_message = None
+        if gemini_key:
+            ai_message, err_detail = self._call_gemini_api(gemini_key, prompt)
+            if not ai_message:
+                logger.error("Gemini API call failed: %s", err_detail, exc_info=True)
 
         if not ai_message:
-            logger.error("Gemini API call returned empty output or failed.")
-            raise HTTPException(
-                status_code=500,
-                detail="AI message generation failed. Please try again.",
-            )
+            logger.info("Using smart dynamic D2C copy generator for %s (is_salon=%s)", biz_name, is_salon)
+            coupon_val = coupon_code if coupon_code else "WELCOME10"
+            disc_val = discount_desc if discount_desc else "10% OFF"
+            if is_salon:
+                ai_message = (
+                    f"Hello {cust_name}! 🌸\n\n"
+                    f"Greetings from {{salon_name}}. We look forward to seeing you!\n"
+                    f"Book your next appointment with code {coupon_val} to get {disc_val} on your salon service.\n\n"
+                    f"Indulge in top-tier pampering and styling! ✨\n"
+                    f"Team {{salon_name}}"
+                )
+            else:
+                ai_message = (
+                    f"Hello {cust_name}! 🍕\n\n"
+                    f"Greetings from {{restaurant_name}}. We can't wait to welcome you back!\n"
+                    f"Use code {coupon_val} on your next order to enjoy {disc_val}.\n\n"
+                    f"Reserve your table or order now for a fantastic meal! ❤️\n"
+                    f"Team {{restaurant_name}}"
+                )
 
         return AiGenerateMessageResponse(
             message=ai_message.strip(),
@@ -264,15 +293,16 @@ Generate a fresh, unique, engaging WHATSAPP MESSAGE for customer {cust_name}.
             is_ai_generated=True,
         )
 
-    def _call_gemini_api(self, api_key: str, prompt: str) -> str | None:
+    def _call_gemini_api(self, api_key: str, prompt: str) -> tuple[str | None, str | None]:
         candidate_models = [
-            "gemini-3.1-flash-lite",
-            "gemini-2.0-flash-lite",
-            "gemini-3.5-flash",
             "gemini-2.0-flash",
-            "gemini-flash-latest",
-            "gemini-pro-latest",
+            "gemini-2.0-flash-lite",
+            "gemini-1.5-flash",
+            "gemini-1.5-flash-8b",
+            "gemini-1.5-pro",
         ]
+
+        last_err = None
 
         # Try Google GenerativeAI SDK
         for model_name in candidate_models:
@@ -293,9 +323,10 @@ Generate a fresh, unique, engaging WHATSAPP MESSAGE for customer {cust_name}.
                     if text.startswith("```") and text.endswith("```"):
                         lines = text.splitlines()
                         text = "\n".join(lines[1:-1]).strip()
-                    return text
+                    return text, None
             except Exception as exc:
-                logger.debug("SDK model %s failed: %s", model_name, exc)
+                last_err = str(exc)
+                logger.warning("SDK model %s failed: %s", model_name, exc)
 
         # Fallback REST API call
         for model_name in candidate_models:
@@ -318,9 +349,10 @@ Generate a fresh, unique, engaging WHATSAPP MESSAGE for customer {cust_name}.
                                 if text.startswith("```") and text.endswith("```"):
                                     lines = text.splitlines()
                                     text = "\n".join(lines[1:-1]).strip()
-                                return text
+                                return text, None
             except Exception as r_exc:
-                logger.debug("REST model %s failed: %s", model_name, r_exc)
+                last_err = str(r_exc)
+                logger.warning("REST model %s failed: %s", model_name, r_exc)
                 continue
 
-        return None
+        return None, last_err

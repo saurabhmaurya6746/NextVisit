@@ -140,15 +140,16 @@ export function findCustomerByPhone(phone: string) {
   const n = normPhone(phone);
   if (!n) return null;
   const seed = seedCustomers.find((c) => normPhone(c.phone).endsWith(n) || n.endsWith(normPhone(c.phone)));
-  if (seed) return { id: seed.id, name: seed.name, phone: seed.phone, source: "seed" as const };
+  if (seed) return { id: seed.id, name: seed.name, phone: seed.phone, birthday: seed.birthday, anniversary: seed.anniversary, gender: (seed as any).gender, points: seed.points || Math.floor((seed.spent || 0) / 10), source: "seed" as const };
   const extra = readExtras().find((c) => normPhone(c.phone) === n);
-  if (extra) return { id: extra.id, name: extra.name, phone: extra.phone, source: "extra" as const };
+  if (extra) return { id: extra.id, name: extra.name, phone: extra.phone, birthday: extra.birthday, anniversary: extra.anniversary, gender: (extra as any).gender, points: Math.floor((extra.spent || 0) / 10), source: "extra" as const };
   return null;
 }
 
 export function createCustomerFromOrder(input: {
   phone: string;
   name?: string;
+  gender?: string;
   birthday?: string;
   anniversary?: string;
   spent: number;
@@ -162,6 +163,7 @@ export function createCustomerFromOrder(input: {
     id: `x${Date.now().toString(36)}`,
     name,
     phone: input.phone,
+    gender: input.gender,
     birthday: input.birthday,
     anniversary: input.anniversary,
     visits: 0,

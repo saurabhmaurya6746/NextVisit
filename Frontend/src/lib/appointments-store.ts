@@ -14,6 +14,7 @@ export interface AppointmentService {
 export interface Appointment {
   id: string;
   code?: string;
+  businessKey?: string;
   /** Primary service name (back-compat) — derived from services[0] when present. */
   service: string;
   /** Multi-service list (new). */
@@ -24,6 +25,13 @@ export interface Appointment {
   customerId?: string;
   customerName?: string;
   customerPhone?: string;
+  customerGender?: string;
+  customerDob?: string;
+  customerAnniversary?: string;
+  serviceAreaId?: string;
+  serviceAreaName?: string;
+  chairId?: string;
+  chairName?: string;
   notes?: string;
   price: number;
   duration?: number;
@@ -53,11 +61,13 @@ function write(a: Appointment[]) {
   window.dispatchEvent(new Event("growthos:appointments-changed"));
 }
 
-function nextApptCode(): string {
-  if (typeof window === "undefined") return "APP-00000";
-  const n = (parseInt(localStorage.getItem(CODE_KEY) || "0", 10) || 0) + 1;
-  localStorage.setItem(CODE_KEY, String(n));
-  return `APP-${String(n).padStart(5, "0")}`;
+export function nextApptCode(businessKey?: string): string {
+  if (typeof window === "undefined") return "APP-00001";
+  const key = businessKey && businessKey.trim() ? `${CODE_KEY}:${businessKey.trim().toLowerCase()}` : CODE_KEY;
+  const n = (parseInt(localStorage.getItem(key) || "0", 10) || 0) + 1;
+  localStorage.setItem(key, String(n));
+  const padLen = n > 99999 ? String(n).length : 5;
+  return `APP-${String(n).padStart(padLen, "0")}`;
 }
 
 export function apptCode(a: Appointment) {
@@ -84,7 +94,7 @@ export function getAppointment(id: string) {
   return read().find((a) => a.id === id) || null;
 }
 
-export function saveAppointment(input: Omit<Appointment, "id" | "code">) {
+export function saveAppointment(input: Omit<Appointment, "id" | "code"> & { businessKey?: string }) {
   const services = input.services && input.services.length ? input.services : [{ name: input.service, price: input.price || 0, duration: input.duration || 30 }];
   const price = services.reduce((s, x) => s + (x.price || 0), 0);
   const duration = services.reduce((s, x) => s + (x.duration || 0), 0);
@@ -95,7 +105,7 @@ export function saveAppointment(input: Omit<Appointment, "id" | "code">) {
     price,
     duration,
     id: `A-${Date.now().toString(36).toUpperCase()}`,
-    code: nextApptCode(),
+    code: nextApptCode(input.businessKey),
     status: input.status || "pending",
     paymentStatus: input.paymentStatus || "unpaid",
   };

@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
@@ -90,12 +90,35 @@ import {
 } from "@/lib/menu-api";
 import { fmt } from "@/lib/currency";
 import { API_BASE_URL } from "@/lib/auth";
+import {
+  listSalonServiceAreasApi,
+  createSalonServiceAreaApi,
+  updateSalonServiceAreaApi,
+  deleteSalonServiceAreaApi,
+  listSalonChairsApi,
+  createSalonChairApi,
+  updateSalonChairApi,
+  deleteSalonChairApi,
+  type SalonServiceArea,
+  type SalonChair,
+} from "@/lib/salon-chairs-api";
+import {
+  listSalonServiceCategoriesApi,
+  createSalonServiceCategoryApi,
+  updateSalonServiceCategoryApi,
+  deleteSalonServiceCategoryApi,
+  reorderSalonServiceCategoriesApi,
+  type SalonServiceCategory,
+} from "@/lib/salon-categories-api";
+import { Scissors } from "lucide-react";
 
 export const Route = createFileRoute("/app/$type/$business/setup")({
   component: RestaurantSetupPage,
 });
 
 function RestaurantSetupPage() {
+  const { type } = Route.useParams();
+  const isSalon = type === "salon";
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState("settings");
 
@@ -111,13 +134,17 @@ function RestaurantSetupPage() {
     queryFn: getRestaurantSetupSettingsApi,
   });
 
-  const isSettingsSaved = !!setupSettings?.is_saved;
+  const isSettingsSaved = !!setupSettings?.is_saved || !!setupSettings?.name || isSalon;
 
   return (
     <PageTransition>
       <PageHeader
-        title="Restaurant Setup"
-        description="Configure your business profile, dining areas, tables, menu, and payment QR."
+        title={isSalon ? "Salon Setup" : "Restaurant Setup"}
+        description={
+          isSalon
+            ? "Configure your business profile, service areas, chairs & workstations, services catalog, and payment QR."
+            : "Configure your business profile, dining areas, tables, menu, and payment QR."
+        }
         actions={
           <Badge variant="outline" className="rounded-full flex items-center gap-1.5 px-3 py-1">
             {isSettingsSaved ? (
@@ -143,22 +170,36 @@ function RestaurantSetupPage() {
             disabled={!isSettingsSaved}
             className="rounded-full text-xs flex items-center gap-1.5 disabled:opacity-50"
           >
-            {!isSettingsSaved ? <Lock className="h-3 w-3" /> : <Layers className="h-3.5 w-3.5" />} 2. Dining Areas
+            {!isSettingsSaved ? <Lock className="h-3 w-3" /> : <Layers className="h-3.5 w-3.5" />}{" "}
+            {isSalon ? "2. Service Areas" : "2. Dining Areas"}
           </TabsTrigger>
           <TabsTrigger
             value="tables"
             disabled={!isSettingsSaved}
             className="rounded-full text-xs flex items-center gap-1.5 disabled:opacity-50"
           >
-            {!isSettingsSaved ? <Lock className="h-3 w-3" /> : <Utensils className="h-3.5 w-3.5" />} 3. Tables
+            {!isSettingsSaved ? <Lock className="h-3 w-3" /> : isSalon ? <Scissors className="h-3.5 w-3.5" /> : <Utensils className="h-3.5 w-3.5" />}{" "}
+            {isSalon ? "3. Workstations" : "3. Tables"}
           </TabsTrigger>
-          <TabsTrigger
-            value="menu"
-            disabled={!isSettingsSaved}
-            className="rounded-full text-xs flex items-center gap-1.5 disabled:opacity-50"
-          >
-            {!isSettingsSaved ? <Lock className="h-3 w-3" /> : <BookOpen className="h-3.5 w-3.5" />} 4. Menu
-          </TabsTrigger>
+          {isSalon ? (
+            <TabsTrigger
+              value="categories"
+              disabled={!isSettingsSaved}
+              className="rounded-full text-xs flex items-center gap-1.5 disabled:opacity-50"
+            >
+              {!isSettingsSaved ? <Lock className="h-3 w-3" /> : <Layers className="h-3.5 w-3.5" />}{" "}
+              4. Service Categories
+            </TabsTrigger>
+          ) : (
+            <TabsTrigger
+              value="menu"
+              disabled={!isSettingsSaved}
+              className="rounded-full text-xs flex items-center gap-1.5 disabled:opacity-50"
+            >
+              {!isSettingsSaved ? <Lock className="h-3 w-3" /> : <BookOpen className="h-3.5 w-3.5" />}{" "}
+              4. Menu
+            </TabsTrigger>
+          )}
           <TabsTrigger
             value="payment"
             disabled={!isSettingsSaved}
@@ -189,17 +230,20 @@ function RestaurantSetupPage() {
           )}
         </TabsContent>
 
-        {/* STEP 2: DINING AREAS */}
+        {/* STEP 2: DINING / SERVICE AREAS */}
         <TabsContent value="areas">
-          <DiningAreasStep />
+          {isSalon ? <SalonServiceAreasStep /> : <DiningAreasStep />}
         </TabsContent>
 
-        {/* STEP 3: TABLES */}
+        {/* STEP 3: TABLES / CHAIRS */}
         <TabsContent value="tables">
-          <TablesStep />
+          {isSalon ? <SalonChairsStep /> : <TablesStep />}
         </TabsContent>
 
-        {/* STEP 4: MENU */}
+        {/* STEP 4: SERVICE CATEGORIES FOR SALON / MENU FOR RESTAURANT */}
+        <TabsContent value="categories">
+          <SalonServiceCategoriesStep />
+        </TabsContent>
         <TabsContent value="menu">
           <MenuStep />
         </TabsContent>
@@ -223,6 +267,8 @@ function BusinessSettingsStep({
   initialData: RestaurantSetupSettings;
   onSuccess: () => void;
 }) {
+  const routerParams = useParams({ strict: false }) as Record<string, string>;
+  const isSalon = routerParams?.type === "salon";
   const [formData, setFormData] = useState<RestaurantSetupSettings>(initialData);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -243,7 +289,7 @@ function BusinessSettingsStep({
 
   const validate = () => {
     const errs: Record<string, string> = {};
-    if (!formData.name.trim()) errs.name = "Restaurant Name is required.";
+    if (!formData.name.trim()) errs.name = isSalon ? "Salon Name is required." : "Restaurant Name is required.";
     if (!formData.phone.trim()) errs.phone = "Phone Number is required.";
     if (!formData.email.trim()) errs.email = "Email Address is required.";
     if (!formData.address.trim()) errs.address = "Address is required.";
@@ -272,7 +318,9 @@ function BusinessSettingsStep({
             <Store className="h-5 w-5 text-primary" /> Step 1: Business Settings
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            Configure your core restaurant details, features, tax settings, and operating hours.
+            {isSalon
+              ? "Configure your salon details, services, business information, tax settings, and operating hours."
+              : "Configure your core restaurant details, features, tax settings, and operating hours."}
           </p>
         </CardHeader>
 
@@ -280,16 +328,16 @@ function BusinessSettingsStep({
           {/* Section 1: Core Details */}
           <div>
             <h4 className="font-display text-sm font-semibold mb-3 uppercase tracking-wider text-muted-foreground">
-              Restaurant Details
+              {isSalon ? "SALON DETAILS" : "RESTAURANT DETAILS"}
             </h4>
             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
               <div>
-                <Label className="text-xs">Restaurant Name *</Label>
+                <Label className="text-xs">{isSalon ? "Salon Name *" : "Restaurant Name *"}</Label>
                 <Input
                   className="mt-1"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g. Royal Spice Bistro"
+                  placeholder={isSalon ? "e.g. Royal Glow Salon & Spa" : "e.g. Royal Spice Bistro"}
                 />
                 {errors.name && <span className="text-[11px] text-destructive">{errors.name}</span>}
               </div>
@@ -312,7 +360,7 @@ function BusinessSettingsStep({
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="contact@restaurant.com"
+                  placeholder={isSalon ? "contact@salon.com" : "contact@restaurant.com"}
                 />
                 {errors.email && <span className="text-[11px] text-destructive">{errors.email}</span>}
               </div>
@@ -413,16 +461,20 @@ function BusinessSettingsStep({
             </div>
           </div>
 
-          {/* Section 2: Restaurant Features */}
+          {/* Section 2: Features */}
           <div className="border-t pt-4">
             <h4 className="font-display text-sm font-semibold mb-3 uppercase tracking-wider text-muted-foreground">
-              Restaurant Features
+              {isSalon ? "SALON FEATURES" : "RESTAURANT FEATURES"}
             </h4>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="flex items-center justify-between rounded-xl border p-3">
                 <div>
-                  <p className="text-sm font-medium">QR Self Ordering</p>
-                  <p className="text-xs text-muted-foreground">Allow customers to scan QR and order directly.</p>
+                  <p className="text-sm font-medium">{isSalon ? "Online Booking" : "QR Self Ordering"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {isSalon
+                      ? "Allow customers to book appointments online."
+                      : "Allow customers to scan QR and order directly."}
+                  </p>
                 </div>
                 <Switch
                   checked={formData.enable_qr_ordering}
@@ -432,8 +484,12 @@ function BusinessSettingsStep({
 
               <div className="flex items-center justify-between rounded-xl border p-3">
                 <div>
-                  <p className="text-sm font-medium">Staff POS Ordering</p>
-                  <p className="text-xs text-muted-foreground">Allow staff to take orders at tables.</p>
+                  <p className="text-sm font-medium">{isSalon ? "Receptionist Desk Booking" : "Staff POS Ordering"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {isSalon
+                      ? "Allow receptionist to book & manage appointments."
+                      : "Allow staff to take orders at tables."}
+                  </p>
                 </div>
                 <Switch
                   checked={formData.enable_staff_ordering}
@@ -443,8 +499,10 @@ function BusinessSettingsStep({
 
               <div className="flex items-center justify-between rounded-xl border p-3">
                 <div>
-                  <p className="text-sm font-medium">Parcel Service</p>
-                  <p className="text-xs text-muted-foreground">Enable parcel packing and orders.</p>
+                  <p className="text-sm font-medium">{isSalon ? "Home Visit Appointments" : "Parcel Service"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {isSalon ? "Allow home visit appointment bookings." : "Enable parcel packing and orders."}
+                  </p>
                 </div>
                 <Switch
                   checked={formData.enable_parcel}
@@ -454,8 +512,10 @@ function BusinessSettingsStep({
 
               <div className="flex items-center justify-between rounded-xl border p-3">
                 <div>
-                  <p className="text-sm font-medium">Take Away Service</p>
-                  <p className="text-xs text-muted-foreground">Enable takeaway counter orders.</p>
+                  <p className="text-sm font-medium">{isSalon ? "Express Service Counter" : "Take Away Service"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {isSalon ? "Enable quick service appointments." : "Enable takeaway counter orders."}
+                  </p>
                 </div>
                 <Switch
                   checked={formData.enable_takeaway}
@@ -2468,6 +2528,828 @@ function PaymentQrStep() {
           </DialogContent>
         </Dialog>
       </CardContent>
+    </Card>
+  );
+}
+
+// =============================================================================
+// SALON SERVICE AREAS STEP
+// =============================================================================
+function SalonServiceAreasStep() {
+  const qc = useQueryClient();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingArea, setEditingArea] = useState<SalonServiceArea | null>(null);
+  const [name, setName] = useState("");
+  const [isActive, setIsActive] = useState(true);
+
+  const { data: areas = [], isLoading } = useQuery<SalonServiceArea[]>({
+    queryKey: ["salon-service-areas"],
+    queryFn: listSalonServiceAreasApi,
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!name.trim()) throw new Error("Service area name is required.");
+      if (editingArea) {
+        return updateSalonServiceAreaApi(editingArea.id, { name: name.trim(), is_active: isActive });
+      } else {
+        return createSalonServiceAreaApi({ name: name.trim(), is_active: isActive });
+      }
+    },
+    onSuccess: () => {
+      toast.success(editingArea ? "Service area updated!" : "Service area created!");
+      qc.invalidateQueries({ queryKey: ["salon-service-areas"] });
+      setDialogOpen(false);
+      setName("");
+      setEditingArea(null);
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to save service area");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteSalonServiceAreaApi,
+    onSuccess: () => {
+      toast.success("Service area deleted!");
+      qc.invalidateQueries({ queryKey: ["salon-service-areas"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to delete service area");
+    },
+  });
+
+  const openNew = () => {
+    setEditingArea(null);
+    setName("");
+    setIsActive(true);
+    setDialogOpen(true);
+  };
+
+  const openEdit = (area: SalonServiceArea) => {
+    setEditingArea(area);
+    setName(area.name);
+    setIsActive(area.is_active);
+    setDialogOpen(true);
+  };
+
+  return (
+    <Card className="rounded-2xl border border-border/80 shadow-xs">
+      <CardHeader className="flex flex-row items-center justify-between pb-4">
+        <div>
+          <CardTitle className="text-lg font-semibold flex items-center gap-2">
+            <Layers className="h-5 w-5 text-primary" /> Service Areas & Sections
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Create salon sections such as Hair Section, Bridal Room, Facial Room, Nail Studio.
+          </p>
+        </div>
+        <Button onClick={openNew} size="sm" className="rounded-full gradient-brand text-primary-foreground">
+          <Plus className="mr-1.5 h-4 w-4" /> Add Service Area
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <SkeletonRows rows={4} cols={2} />
+        ) : areas.length === 0 ? (
+          <div className="text-center py-12 border border-dashed rounded-xl p-6">
+            <Layers className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-50" />
+            <h4 className="font-semibold text-base">No Service Areas Created</h4>
+            <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+              Create your first service section (e.g. Hair Section, Bridal Room, Facial Room) to organize your salon chairs and workstations.
+            </p>
+            <Button onClick={openNew} size="sm" className="mt-4 rounded-full gradient-brand text-primary-foreground">
+              <Plus className="mr-1.5 h-4 w-4" /> Create Service Area
+            </Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {areas.map((area) => (
+              <div
+                key={area.id}
+                className="flex items-center justify-between p-3.5 rounded-xl border bg-card hover:bg-accent/40 transition-colors"
+              >
+                <div>
+                  <h4 className="font-semibold text-sm text-foreground">{area.name}</h4>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge variant={area.is_active ? "outline" : "secondary"} className="text-[10px] rounded-full">
+                      {area.is_active ? "Active" : "Inactive"}
+                    </Badge>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => openEdit(area)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 rounded-full text-destructive hover:bg-destructive/10"
+                    onClick={() => deleteMutation.mutate(area.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent className="sm:max-w-md rounded-2xl p-6">
+            <DialogHeader>
+              <DialogTitle>{editingArea ? "Edit Service Area" : "Add Service Area"}</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label>Service Area Name *</Label>
+                <Input
+                  placeholder="e.g. Hair Section, Bridal Room, Facial Room, Nail Studio"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="rounded-xl"
+                />
+              </div>
+
+              <div className="flex items-center justify-between border p-3 rounded-xl">
+                <div>
+                  <Label className="font-medium">Active Status</Label>
+                  <p className="text-xs text-muted-foreground">Allow booking chairs in this section</p>
+                </div>
+                <Switch checked={isActive} onCheckedChange={setIsActive} />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" className="rounded-full" onClick={() => setDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => saveMutation.mutate()}
+                disabled={saveMutation.isPending}
+                className="rounded-full gradient-brand text-primary-foreground"
+              >
+                {saveMutation.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+                {editingArea ? "Save Changes" : "Create Area"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </CardContent>
+    </Card>
+  );
+}
+
+// =============================================================================
+// SALON CHAIRS & WORKSTATIONS STEP
+// =============================================================================
+function SalonChairsStep() {
+  const qc = useQueryClient();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingChair, setEditingChair] = useState<SalonChair | null>(null);
+
+  const [serviceAreaId, setServiceAreaId] = useState("");
+  const [chairName, setChairName] = useState("");
+  const [chairNumber, setChairNumber] = useState("");
+  const [workstationType, setWorkstationType] = useState("Chair");
+  const [statusVal, setStatusVal] = useState("Available");
+  const [isActive, setIsActive] = useState(true);
+
+  const { data: areas = [] } = useQuery<SalonServiceArea[]>({
+    queryKey: ["salon-service-areas"],
+    queryFn: listSalonServiceAreasApi,
+  });
+
+  const { data: chairs = [], isLoading } = useQuery<SalonChair[]>({
+    queryKey: ["salon-chairs"],
+    queryFn: () => listSalonChairsApi(),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!serviceAreaId) throw new Error("Please select a Service Area.");
+      if (!chairName.trim()) throw new Error("Chair / Workstation name is required.");
+      if (editingChair) {
+        return updateSalonChairApi(editingChair.id, {
+          service_area_id: serviceAreaId,
+          chair_name: chairName.trim(),
+          chair_number: chairNumber.trim() || undefined,
+          workstation_type: workstationType,
+          status: statusVal,
+          is_active: isActive,
+        });
+      } else {
+        return createSalonChairApi({
+          service_area_id: serviceAreaId,
+          chair_name: chairName.trim(),
+          chair_number: chairNumber.trim() || undefined,
+          workstation_type: workstationType,
+          status: statusVal,
+          is_active: isActive,
+        });
+      }
+    },
+    onSuccess: () => {
+      toast.success(editingChair ? "Chair updated!" : "Chair created!");
+      qc.invalidateQueries({ queryKey: ["salon-chairs"] });
+      setDialogOpen(false);
+      resetForm();
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to save chair");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteSalonChairApi,
+    onSuccess: () => {
+      toast.success("Chair deleted!");
+      qc.invalidateQueries({ queryKey: ["salon-chairs"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to delete chair");
+    },
+  });
+
+  const resetForm = () => {
+    setEditingChair(null);
+    setServiceAreaId(areas[0]?.id || "");
+    setChairName("");
+    setChairNumber("");
+    setWorkstationType("Chair");
+    setStatusVal("Available");
+    setIsActive(true);
+  };
+
+  const openNew = () => {
+    resetForm();
+    if (areas.length > 0) setServiceAreaId(areas[0].id);
+    setDialogOpen(true);
+  };
+
+  const openEdit = (c: SalonChair) => {
+    setEditingChair(c);
+    setServiceAreaId(c.service_area_id);
+    setChairName(c.chair_name);
+    setChairNumber(c.chair_number || "");
+    setWorkstationType(c.workstation_type || "Chair");
+    setStatusVal(c.status || "Available");
+    setIsActive(c.is_active);
+    setDialogOpen(true);
+  };
+
+  return (
+    <Card className="rounded-2xl border border-border/80 shadow-xs">
+      <CardHeader className="flex flex-row items-center justify-between pb-4">
+        <div>
+          <CardTitle className="text-lg font-semibold flex items-center gap-2">
+            <Scissors className="h-5 w-5 text-primary" /> Chair & Workstation Management
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Manage individual chairs, facial beds, spa rooms, and workstations assigned to your service areas.
+          </p>
+        </div>
+        <Button onClick={openNew} size="sm" className="rounded-full gradient-brand text-primary-foreground">
+          <Plus className="mr-1.5 h-4 w-4" /> Add Chair / Workstation
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <SkeletonRows rows={6} cols={3} />
+        ) : chairs.length === 0 ? (
+          <div className="text-center py-12 border border-dashed rounded-xl p-6">
+            <Scissors className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-50" />
+            <h4 className="font-semibold text-base">No Chairs or Workstations Configured</h4>
+            <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+              Add chairs, beds, or stations to your service areas so customers can select them during appointment booking.
+            </p>
+            <Button onClick={openNew} size="sm" className="mt-4 rounded-full gradient-brand text-primary-foreground">
+              <Plus className="mr-1.5 h-4 w-4" /> Add Chair / Workstation
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {areas.map((area) => {
+              const areaChairs = chairs.filter((c) => c.service_area_id === area.id);
+              if (areaChairs.length === 0) return null;
+
+              return (
+                <div key={area.id} className="space-y-3">
+                  <h4 className="font-semibold text-sm flex items-center gap-2 text-foreground border-b pb-1">
+                    <Layers className="h-4 w-4 text-primary" /> {area.name}
+                    <Badge variant="outline" className="text-[10px] rounded-full">
+                      {areaChairs.length} Workstation{areaChairs.length > 1 ? "s" : ""}
+                    </Badge>
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {areaChairs.map((c) => {
+                      const statusColors: Record<string, string> = {
+                        Available: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+                        Reserved: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+                        "In Service": "bg-blue-500/10 text-blue-600 border-blue-500/20",
+                        Completed: "bg-indigo-500/10 text-indigo-600 border-indigo-500/20",
+                        Cleaning: "bg-purple-500/10 text-purple-600 border-purple-500/20",
+                        Disabled: "bg-muted text-muted-foreground border-border",
+                      };
+
+                      return (
+                        <div
+                          key={c.id}
+                          className="flex items-center justify-between p-3.5 rounded-xl border bg-card hover:bg-accent/40 transition-colors"
+                        >
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h5 className="font-semibold text-sm text-foreground">{c.chair_name}</h5>
+                              {c.chair_number && (
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-muted">
+                                  #{c.chair_number}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <Badge variant="outline" className="text-[10px] rounded-full">
+                                {c.workstation_type}
+                              </Badge>
+                              <Badge variant="outline" className={`text-[10px] rounded-full ${statusColors[c.status] || ""}`}>
+                                {c.status}
+                              </Badge>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => openEdit(c)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 rounded-full text-destructive hover:bg-destructive/10"
+                              onClick={() => deleteMutation.mutate(c.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent className="sm:max-w-md rounded-2xl p-6">
+            <DialogHeader>
+              <DialogTitle>{editingChair ? "Edit Chair / Workstation" : "Add Chair / Workstation"}</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label>Service Area *</Label>
+                <Select value={serviceAreaId} onValueChange={setServiceAreaId}>
+                  <SelectTrigger className="rounded-xl">
+                    <SelectValue placeholder="Select Service Area" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {areas.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Chair / Workstation Name *</Label>
+                  <Input
+                    placeholder="e.g. Chair 1, Bed A"
+                    value={chairName}
+                    onChange={(e) => setChairName(e.target.value)}
+                    className="rounded-xl"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Number / Tag (Optional)</Label>
+                  <Input
+                    placeholder="e.g. 01, 02"
+                    value={chairNumber}
+                    onChange={(e) => setChairNumber(e.target.value)}
+                    className="rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Workstation Type</Label>
+                  <Select value={workstationType} onValueChange={setWorkstationType}>
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue placeholder="Type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Chair">Chair (Hair / Styling)</SelectItem>
+                      <SelectItem value="Bed">Bed (Facial / Massage)</SelectItem>
+                      <SelectItem value="Room">Room (Spa / Bridal)</SelectItem>
+                      <SelectItem value="Station">Station (Nail / Makeup)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Initial Status</Label>
+                  <Select value={statusVal} onValueChange={setStatusVal}>
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Available">Available</SelectItem>
+                      <SelectItem value="Reserved">Reserved</SelectItem>
+                      <SelectItem value="In Service">In Service</SelectItem>
+                      <SelectItem value="Cleaning">Cleaning</SelectItem>
+                      <SelectItem value="Disabled">Disabled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between border p-3 rounded-xl">
+                <div>
+                  <Label className="font-medium">Active Status</Label>
+                  <p className="text-xs text-muted-foreground">Allow selecting for new bookings</p>
+                </div>
+                <Switch checked={isActive} onCheckedChange={setIsActive} />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" className="rounded-full" onClick={() => setDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => saveMutation.mutate()}
+                disabled={saveMutation.isPending}
+                className="rounded-full gradient-brand text-primary-foreground"
+              >
+                {saveMutation.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+                {editingChair ? "Save Changes" : "Create Chair"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </CardContent>
+    </Card>
+  );
+}
+
+// =============================================================================
+// SALON SERVICE CATEGORIES STEP COMPONENT
+// =============================================================================
+function SalonServiceCategoriesStep() {
+  const qc = useQueryClient();
+
+  const { data: categories = [], isLoading, isError, error } = useQuery<SalonServiceCategory[]>({
+    queryKey: ["salon-service-categories"],
+    queryFn: listSalonServiceCategoriesApi,
+  });
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editCategory, setEditCategory] = useState<SalonServiceCategory | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const [name, setName] = useState("");
+  const [isActive, setIsActive] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  const defaultSuggestions = ["Hair", "Skin", "Nails", "Spa", "Bridal", "Makeup", "Grooming"];
+
+  function resetForm() {
+    setName("");
+    setIsActive(true);
+  }
+
+  async function handleCreateCategory(categoryName?: string) {
+    const nameToCreate = (categoryName || name).trim();
+    if (!nameToCreate) {
+      toast.error("Category name is required");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await createSalonServiceCategoryApi({
+        name: nameToCreate,
+        display_order: categories.length,
+        is_active: isActive,
+      });
+      toast.success(`Category "${nameToCreate}" created successfully!`);
+      qc.invalidateQueries({ queryKey: ["salon-service-categories"] });
+      resetForm();
+      setCreateOpen(false);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to create category");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleUpdateCategory() {
+    if (!editCategory) return;
+    if (!name.trim()) {
+      toast.error("Category name is required");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await updateSalonServiceCategoryApi(editCategory.id, {
+        name: name.trim(),
+        is_active: isActive,
+      });
+      toast.success("Category updated successfully!");
+      qc.invalidateQueries({ queryKey: ["salon-service-categories"] });
+      setEditCategory(null);
+      resetForm();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update category");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleToggleStatus(cat: SalonServiceCategory) {
+    try {
+      await updateSalonServiceCategoryApi(cat.id, { is_active: !cat.is_active });
+      toast.success(`Category "${cat.name}" ${!cat.is_active ? "enabled" : "disabled"}`);
+      qc.invalidateQueries({ queryKey: ["salon-service-categories"] });
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to toggle status");
+    }
+  }
+
+  async function handleDeleteCategory() {
+    if (!deleteId) return;
+    try {
+      await deleteSalonServiceCategoryApi(deleteId);
+      toast.success("Category deleted");
+      qc.invalidateQueries({ queryKey: ["salon-service-categories"] });
+      setDeleteId(null);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to delete category");
+    }
+  }
+
+  async function handleMove(index: number, direction: "up" | "down") {
+    const newCategories = [...categories];
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= newCategories.length) return;
+
+    const temp = newCategories[index];
+    newCategories[index] = newCategories[targetIndex];
+    newCategories[targetIndex] = temp;
+
+    const itemsToReorder = newCategories.map((c, i) => ({
+      id: c.id,
+      display_order: i,
+    }));
+
+    try {
+      await reorderSalonServiceCategoriesApi(itemsToReorder);
+      qc.invalidateQueries({ queryKey: ["salon-service-categories"] });
+      toast.success("Categories reordered!");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to reorder categories");
+    }
+  }
+
+  return (
+    <Card className="rounded-2xl border p-6 bg-card space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
+        <div>
+          <h3 className="font-display text-lg font-bold text-foreground flex items-center gap-2">
+            <Layers className="h-5 w-5 text-primary" /> Salon Service Categories
+          </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Organize your salon services into custom categories (e.g. Hair, Skin, Nails, Spa, Bridal)
+          </p>
+        </div>
+        <Button
+          size="sm"
+          className="rounded-full gradient-brand text-primary-foreground text-xs"
+          onClick={() => {
+            resetForm();
+            setCreateOpen(true);
+          }}
+        >
+          <Plus className="mr-1.5 h-4 w-4" /> Add Category
+        </Button>
+      </div>
+
+      {/* QUICK SUGGESTIONS PILLS */}
+      <div className="space-y-2">
+        <span className="text-xs font-semibold text-muted-foreground block">Quick Category Suggestions</span>
+        <div className="flex flex-wrap items-center gap-2">
+          {defaultSuggestions.map((sug) => {
+            const exists = categories.some((c) => c.name.toLowerCase() === sug.toLowerCase());
+            return (
+              <Badge
+                key={sug}
+                variant={exists ? "secondary" : "outline"}
+                className={`rounded-full px-3 py-1 text-xs transition-all ${
+                  exists
+                    ? "opacity-60 cursor-default"
+                    : "cursor-pointer hover:border-primary hover:bg-primary/10 text-primary font-medium"
+                }`}
+                onClick={() => {
+                  if (!exists) handleCreateCategory(sug);
+                }}
+              >
+                {exists ? `✓ ${sug}` : `+ ${sug}`}
+              </Badge>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* CATEGORIES LIST */}
+      {isLoading ? (
+        <SkeletonRows rows={5} cols={2} />
+      ) : isError ? (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-xs text-destructive flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {(error as Error)?.message || "Failed to load categories"}
+        </div>
+      ) : categories.length === 0 ? (
+        <div className="rounded-2xl border border-dashed p-8 text-center text-xs text-muted-foreground space-y-2">
+          <Layers className="h-8 w-8 mx-auto text-muted-foreground/60" />
+          <p className="font-semibold text-sm text-foreground">No Service Categories Created Yet</p>
+          <p>Click "Add Category" above or select a quick suggestion to create your first category.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {categories.map((cat, idx) => (
+            <div
+              key={cat.id}
+              className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all ${
+                cat.is_active ? "bg-card hover:border-primary/40" : "bg-muted/30 opacity-60"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex flex-col gap-0.5">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={idx === 0}
+                    onClick={() => handleMove(idx, "up")}
+                    className="h-5 w-5 rounded-md text-muted-foreground hover:text-foreground"
+                  >
+                    <ArrowUp className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={idx === categories.length - 1}
+                    onClick={() => handleMove(idx, "down")}
+                    className="h-5 w-5 rounded-md text-muted-foreground hover:text-foreground"
+                  >
+                    <ArrowDown className="h-3 w-3" />
+                  </Button>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-foreground">{cat.name}</span>
+                    <Badge variant="outline" className="rounded-full text-[10px]">Order: #{idx + 1}</Badge>
+                  </div>
+                  <span className="text-[11px] text-muted-foreground">
+                    Status: {cat.is_active ? "Active" : "Disabled"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{cat.is_active ? "Enabled" : "Disabled"}</span>
+                  <Switch checked={cat.is_active} onCheckedChange={() => handleToggleStatus(cat)} />
+                </div>
+
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setEditCategory(cat);
+                    setName(cat.name);
+                    setIsActive(cat.is_active);
+                  }}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-full text-destructive hover:text-destructive/80"
+                  onClick={() => setDeleteId(cat.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* CREATE DIALOG */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg">Add Service Category</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2 text-xs">
+            <div>
+              <Label className="text-xs font-semibold">Category Name *</Label>
+              <Input
+                placeholder="e.g. Hair, Skin, Nails, Spa"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="mt-1 rounded-xl"
+              />
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <Label className="text-xs font-semibold">Active Status</Label>
+              <Switch checked={isActive} onCheckedChange={setIsActive} />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" className="rounded-full" onClick={() => setCreateOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              className="rounded-full gradient-brand text-primary-foreground"
+              disabled={submitting}
+              onClick={() => handleCreateCategory()}
+            >
+              {submitting ? "Saving…" : "Save Category"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* EDIT DIALOG */}
+      <Dialog open={!!editCategory} onOpenChange={(o) => !o && setEditCategory(null)}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg">Edit Category</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2 text-xs">
+            <div>
+              <Label className="text-xs font-semibold">Category Name *</Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="mt-1 rounded-xl"
+              />
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <Label className="text-xs font-semibold">Active Status</Label>
+              <Switch checked={isActive} onCheckedChange={setIsActive} />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" className="rounded-full" onClick={() => setEditCategory(null)}>
+              Cancel
+            </Button>
+            <Button
+              className="rounded-full gradient-brand text-primary-foreground"
+              disabled={submitting}
+              onClick={handleUpdateCategory}
+            >
+              {submitting ? "Updating…" : "Update Category"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* DELETE DIALOG */}
+      <Dialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+        <DialogContent className="sm:max-w-sm rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg text-destructive">Delete Category?</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground py-2">
+            Are you sure you want to delete this service category? This action cannot be undone.
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" className="rounded-full" onClick={() => setDeleteId(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" className="rounded-full" onClick={handleDeleteCategory}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

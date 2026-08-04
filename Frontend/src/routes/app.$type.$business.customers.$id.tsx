@@ -6,6 +6,7 @@ import {
   Mail, User, ShieldCheck, CheckCircle2, QrCode, ShoppingBag, Star, Zap, Utensils
 } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,7 +25,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  getCustomerCrmDetailsApi, updateCustomerApi, formatCustomer,
+  getCustomerCrmDetailsApi, updateCustomerApi, formatCustomer, listCustomersApi,
   type CustomerCrmData, type CustomerModel
 } from "@/lib/customers-api";
 
@@ -37,11 +38,6 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 function CustomerProfile() {
   const { id } = Route.useLoaderData();
-
-  const [crmData, setCrmData] = useState<CustomerCrmData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [errorStatus, setErrorStatus] = useState<number | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
   const [noteText, setNoteText] = useState("");
@@ -60,34 +56,42 @@ function CustomerProfile() {
 
   const isValidUuidFormat = UUID_REGEX.test(id);
 
-  const fetchCustomerCrm = useCallback(async () => {
-    setLoading(true);
-    setErrorStatus(null);
-    setErrorMessage(null);
+  // Live CRM profile fetching with TanStack React Query for automatic real-time updates
+  const {
+    data: crmData = null,
+    isLoading: loading,
+    isError,
+    error: queryErr,
+    refetch: fetchCustomerCrm,
+  } = useQuery<CustomerCrmData | null>({
+    queryKey: ["customer-crm", id],
+    queryFn: async () => {
+      let targetUuid = id;
+      if (!isValidUuidFormat) {
+        const allCust = await listCustomersApi();
+        const cleanId = id.trim().toLowerCase().replace(/\D/g, "");
+        const match = allCust.find(
+          (c: CustomerModel) => c.id === id || (cleanId && (c.phone || "").replace(/\D/g, "").includes(cleanId)) || c.name.toLowerCase().includes(id.toLowerCase())
+        );
+        if (match) {
+          targetUuid = match.id;
+        } else if (allCust.length > 0) {
+          targetUuid = allCust[0].id;
+        } else {
+          const err = new Error(`Customer not found in database for ID '${id}'`);
+          (err as any).status = 404;
+          throw err;
+        }
+      }
+      const data = await getCustomerCrmDetailsApi(targetUuid);
+      if (data.profile?.notes) setNoteText(data.profile.notes);
+      return data;
+    },
+    staleTime: 5000,
+  });
 
-    if (!isValidUuidFormat) {
-      setErrorStatus(400);
-      setErrorMessage(`Invalid Customer ID format (${id})`);
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const data = await getCustomerCrmDetailsApi(id);
-      setCrmData(data);
-      if (data.profile.notes) setNoteText(data.profile.notes);
-    } catch (err: any) {
-      console.error(`❌ Error loading CRM details:`, err);
-      setErrorStatus(err.status || 500);
-      setErrorMessage(err.message || "Failed to load customer CRM profile");
-    } finally {
-      setLoading(false);
-    }
-  }, [id, isValidUuidFormat]);
-
-  useEffect(() => {
-    fetchCustomerCrm();
-  }, [fetchCustomerCrm]);
+  const errorMessage = isError ? (queryErr as any)?.message || "Failed to load customer profile" : null;
+  const errorStatus = isError ? (queryErr as any)?.status || 500 : null;
 
   if (loading) {
     return (
@@ -120,7 +124,7 @@ function CustomerProfile() {
           icon={<AlertTriangle className="h-8 w-8 text-warning" />}
           action={
             <div className="flex gap-2">
-              <Button variant="outline" className="rounded-full" onClick={fetchCustomerCrm}>Retry</Button>
+              <Button variant="outline" className="rounded-full" onClick={() => fetchCustomerCrm()}>Retry</Button>
               <AppLink path="customers">
                 <Button variant="secondary" className="rounded-full">Back to customers</Button>
               </AppLink>

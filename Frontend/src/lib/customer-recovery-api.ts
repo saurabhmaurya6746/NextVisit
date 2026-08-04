@@ -18,11 +18,14 @@ export interface RecoverableCustomerItem {
   name: string;
   phone: string;
   email: string | null;
+  gender: string | null;
   last_visit_at: string | null;
   days_since_last_visit: number;
+  avg_spend: number;
   total_spent: number;
   visit_count: number;
   loyalty_points: number;
+  membership: string | null;
   favorite_item: string;
   is_vip: boolean;
   recovery_stage: string;
@@ -118,27 +121,26 @@ function parseErrorDetail(errData: any, fallback: string): string {
   return fallback;
 }
 
-/**
-  * 1. GET /api/v1/customer-recovery/dashboard
-  */
+/** 1. GET /api/v1/customer-recovery/dashboard */
 export async function getRecoveryDashboardApi(): Promise<RecoveryDashboardResponse> {
   const res = await apiFetch("/api/v1/customer-recovery/dashboard");
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
     throw new Error(parseErrorDetail(errData, `Failed to fetch recovery dashboard (HTTP ${res.status})`));
   }
-  return await res.json();
+  return res.json();
 }
 
-/**
-  * 2. GET /api/v1/customer-recovery/customers
-  */
+/** 2. GET /api/v1/customer-recovery/customers */
 export async function getRecoverableCustomersApi(params: {
   bucket: number;
   page?: number;
   pageSize?: number;
   search?: string;
   sortBy?: string;
+  filterVip?: boolean;
+  filterGender?: string;
+  filterStage?: string;
 }): Promise<PaginatedRecoverableCustomersResponse> {
   const query = new URLSearchParams({
     bucket: String(params.bucket),
@@ -146,51 +148,52 @@ export async function getRecoverableCustomersApi(params: {
     page_size: String(params.pageSize || 20),
     sort_by: params.sortBy || "days_desc",
   });
-  if (params.search && params.search.trim()) {
-    query.set("search", params.search.trim());
-  }
+  if (params.search && params.search.trim()) query.set("search", params.search.trim());
 
   const res = await apiFetch(`/api/v1/customer-recovery/customers?${query.toString()}`);
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
     throw new Error(parseErrorDetail(errData, `Failed to fetch recoverable customers (HTTP ${res.status})`));
   }
-  return await res.json();
+  const data: PaginatedRecoverableCustomersResponse = await res.json();
+
+  // Client-side filter augmentation for fields not yet in backend filter query params
+  let items = data.items;
+  if (params.filterVip === true) items = items.filter((c) => c.is_vip);
+  if (params.filterGender && params.filterGender !== "all")
+    items = items.filter((c) => (c.gender || "").toLowerCase() === params.filterGender!.toLowerCase());
+  if (params.filterStage && params.filterStage !== "all")
+    items = items.filter((c) => c.recovery_stage === params.filterStage);
+
+  return { ...data, items };
 }
 
-/**
-  * 3. GET /api/v1/customer-recovery/analytics
-  */
+/** 3. GET /api/v1/customer-recovery/analytics */
 export async function getRecoveryAnalyticsApi(): Promise<RecoveryAnalyticsResponse> {
   const res = await apiFetch("/api/v1/customer-recovery/analytics");
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
     throw new Error(parseErrorDetail(errData, `Failed to fetch recovery analytics (HTTP ${res.status})`));
   }
-  return await res.json();
+  return res.json();
 }
 
-/**
-  * 4. GET /api/v1/customer-recovery/preview
-  */
+/** 4. GET /api/v1/customer-recovery/preview */
 export async function getRecoveryPreviewApi(
   bucket: number,
   couponCode?: string
 ): Promise<RecoveryPreviewResponse> {
   const query = new URLSearchParams({ bucket: String(bucket) });
   if (couponCode) query.set("coupon_code", couponCode);
-
   const res = await apiFetch(`/api/v1/customer-recovery/preview?${query.toString()}`);
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
     throw new Error(parseErrorDetail(errData, `Failed to fetch campaign preview (HTTP ${res.status})`));
   }
-  return await res.json();
+  return res.json();
 }
 
-/**
-  * 5. POST /api/v1/customer-recovery/launch
-  */
+/** 5. POST /api/v1/customer-recovery/launch */
 export async function launchRecoveryCampaignApi(
   payload: RecoveryLaunchPayload
 ): Promise<RecoveryLaunchResponse> {
@@ -202,48 +205,40 @@ export async function launchRecoveryCampaignApi(
     const errData = await res.json().catch(() => ({}));
     throw new Error(parseErrorDetail(errData, `Failed to launch recovery campaign (HTTP ${res.status})`));
   }
-  return await res.json();
+  return res.json();
 }
 
-/**
-  * 6. GET /api/v1/customer-recovery/offers
-  */
+/** 6. GET /api/v1/customer-recovery/offers */
 export async function getSuggestedOffersApi(): Promise<SuggestedOffersResponse> {
   const res = await apiFetch("/api/v1/customer-recovery/offers");
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
     throw new Error(parseErrorDetail(errData, `Failed to fetch suggested offers (HTTP ${res.status})`));
   }
-  return await res.json();
+  return res.json();
 }
 
-/**
-  * 7. GET /api/v1/customer-recovery/history
-  */
+/** 7. GET /api/v1/customer-recovery/history */
 export async function getRecoveryHistoryApi(): Promise<RecoveryHistoryResponse> {
   const res = await apiFetch("/api/v1/customer-recovery/history");
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
     throw new Error(parseErrorDetail(errData, `Failed to fetch recovery history (HTTP ${res.status})`));
   }
-  return await res.json();
+  return res.json();
 }
 
-/**
-  * 8. GET /api/v1/customer-recovery/settings
-  */
+/** 8. GET /api/v1/customer-recovery/settings */
 export async function getRecoverySettingsApi(): Promise<RecoverySettings> {
   const res = await apiFetch("/api/v1/customer-recovery/settings");
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
     throw new Error(parseErrorDetail(errData, `Failed to fetch recovery settings (HTTP ${res.status})`));
   }
-  return await res.json();
+  return res.json();
 }
 
-/**
-  * 9. PUT /api/v1/customer-recovery/settings
-  */
+/** 9. PUT /api/v1/customer-recovery/settings */
 export async function updateRecoverySettingsApi(
   settings: Partial<RecoverySettings>
 ): Promise<RecoverySettings> {
@@ -255,12 +250,10 @@ export async function updateRecoverySettingsApi(
     const errData = await res.json().catch(() => ({}));
     throw new Error(parseErrorDetail(errData, `Failed to update recovery settings (HTTP ${res.status})`));
   }
-  return await res.json();
+  return res.json();
 }
 
-/**
- * 10. POST /api/v1/customer-recovery/ai-generate
- */
+/** 10. POST /api/v1/customer-recovery/ai-generate */
 export async function generateRecoveryAiApi(payload: {
   bucket?: number;
   restaurant_name?: string;
@@ -276,6 +269,41 @@ export async function generateRecoveryAiApi(payload: {
     const errData = await res.json().catch(() => ({}));
     throw new Error(parseErrorDetail(errData, `Failed to generate AI recovery copy (HTTP ${res.status})`));
   }
-  return await res.json();
+  return res.json();
 }
 
+/** 11. POST /api/v1/customer-recovery/mark-recovered/{customer_id} */
+export async function markCustomerRecoveredApi(customerId: string): Promise<{ success: boolean; message: string }> {
+  const res = await apiFetch(`/api/v1/customer-recovery/mark-recovered/${customerId}`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(parseErrorDetail(errData, `Failed to mark customer as recovered (HTTP ${res.status})`));
+  }
+  return res.json();
+}
+
+/** 12. POST /api/v1/customer-recovery/exclude/{customer_id} */
+export async function excludeCustomerApi(customerId: string): Promise<{ success: boolean; message: string }> {
+  const res = await apiFetch(`/api/v1/customer-recovery/exclude/${customerId}`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(parseErrorDetail(errData, `Failed to exclude customer (HTTP ${res.status})`));
+  }
+  return res.json();
+}
+
+/** 13. DELETE /api/v1/customer-recovery/exclude/{customer_id} - undo exclusion */
+export async function unexcludeCustomerApi(customerId: string): Promise<{ success: boolean; message: string }> {
+  const res = await apiFetch(`/api/v1/customer-recovery/exclude/${customerId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(parseErrorDetail(errData, `Failed to re-include customer (HTTP ${res.status})`));
+  }
+  return res.json();
+}

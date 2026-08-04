@@ -20,9 +20,15 @@ class FestivalCampaignResponse(BaseModel):
     id: UUID
     festival_id: UUID
     festival_name: str
+    title: str | None = None
+    description: str | None = None
     festival_date: date
+    start_date: date | None = None
+    end_date: date | None = None
     days_remaining: int
     coupon_code: str | None = None
+    discount_percent: str | None = None
+    image_url: str | None = None
     language: str = "Hinglish"
     tone: str = "Festive"
     message: str | None = None
@@ -30,6 +36,7 @@ class FestivalCampaignResponse(BaseModel):
     last_generated: datetime | None = None
     last_sent: datetime | None = None
     enabled: bool = True
+    is_custom: bool = False
     eligible_customers: int = 0
     sent_count: int = 0
     pending_count: int = 0
@@ -38,21 +45,44 @@ class FestivalCampaignResponse(BaseModel):
         from_attributes = True
 
 
+class FestivalCampaignCreate(BaseModel):
+    festival_name: str
+    title: str | None = None
+    description: str | None = None
+    festival_date: date
+    start_date: date | None = None
+    end_date: date | None = None
+    coupon_code: str | None = None
+    discount_percent: str | None = None
+    image_url: str | None = None
+    language: str = "Hinglish"
+    tone: str = "Festive"
+    message: str | None = None
+    enabled: bool = True
+
+
+class FestivalCampaignUpdate(BaseModel):
+    festival_name: str | None = None
+    title: str | None = None
+    description: str | None = None
+    festival_date: date | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    coupon_code: str | None = None
+    discount_percent: str | None = None
+    image_url: str | None = None
+    language: str | None = None
+    tone: str | None = None
+    message: str | None = None
+    enabled: bool | None = None
+
+
 class UpcomingFestivalsResponse(BaseModel):
     next_festival: FestivalCampaignResponse | None = None
     this_month: list[FestivalCampaignResponse] = []
     next_30_days: list[FestivalCampaignResponse] = []
     next_90_days: list[FestivalCampaignResponse] = []
     total_campaigns: int = 0
-
-
-class FestivalCampaignUpdate(BaseModel):
-    festival_date: date | None = None
-    coupon_code: str | None = None
-    language: str | None = None
-    tone: str | None = None
-    message: str | None = None
-    enabled: bool | None = None
 
 
 class FestivalAiGenerateRequest(BaseModel):

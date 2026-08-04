@@ -41,6 +41,43 @@ class VisitService:
         )
         return self.repo.get_all_by_business(current_user.business_id)
 
+    def get_paginated_visits(
+        self,
+        current_user: User,
+        page: int = 1,
+        limit: int = 10,
+        search: str | None = None,
+        status: str | None = None,
+        payment_status: str | None = None,
+        staff_id: UUID | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        booking_source: str | None = None,
+        sort: str | None = "newest",
+    ) -> dict:
+        logger.info(
+            "Fetching paginated visits | business_id=%s page=%s limit=%s search=%s status=%s sort=%s",
+            current_user.business_id,
+            page,
+            limit,
+            search,
+            status,
+            sort,
+        )
+        return self.repo.get_paginated_by_business(
+            business_id=current_user.business_id,
+            page=page,
+            limit=limit,
+            search=search,
+            status=status,
+            payment_status=payment_status,
+            staff_id=staff_id,
+            date_from=date_from,
+            date_to=date_to,
+            booking_source=booking_source,
+            sort=sort,
+        )
+
     def list_open_visits(self, current_user: User) -> list[Visit]:
         logger.info(
             "Listing open visits | business_id=%s requested_by=%s",
@@ -258,4 +295,46 @@ class VisitService:
             visit.total_amount,
             earned_points,
         )
+        return visit
+
+    def update_visit_services(self, current_user: User, visit_id: UUID, items: list[dict]) -> Visit:
+        visit = self.get_visit(current_user, visit_id)
+        if visit.status == VisitStatus.COMPLETED or visit.status == VisitStatus.CANCELLED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot modify services for a completed or cancelled visit.",
+            )
+
+        # Clear existing VisitServices and recalculate
+        visit.services.clear()
+        subtotal = 0.0
+
+        for item in items:
+            sname = item.get("name", "Service")
+            sprice = float(item.get("price", 0.0))
+            sid_val = item.get("id") or item.get("service_id")
+
+            service_obj = None
+            if sid_val and isinstance(sid_val, UUID):
+                service_obj = self.service_repo.get_by_id(sid_val)
+
+            if not service_obj:
+                service_obj = self.service_repo.get_by_name(current_user.business_id, sname)
+
+            if service_obj:
+                vs = VisitServiceModel(
+                    service_id=service_obj.id,
+                    quantity=1,
+                    unit_price=sprice or service_obj.price,
+                    total_price=sprice or service_obj.price,
+                )
+                visit.services.append(vs)
+                subtotal += sprice or service_obj.price
+
+        visit.subtotal = subtotal
+        visit.total_amount = max(0.0, subtotal - visit.discount)
+        self.repo.update(visit)
+        self.db.commit()
+        self.db.refresh(visit)
+        logger.info("Visit services updated | visit_id=%s new_subtotal=%.2f total=%.2f", visit.id, visit.subtotal, visit.total_amount)
         return visit

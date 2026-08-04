@@ -4,13 +4,15 @@ import { LayoutDashboard, Users, ShoppingBag, Cake, Heart, MessageCircle, Ticket
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter } from "@/components/ui/sidebar";
 import { BrandLogo } from "@/components/brand-logo";
 import { clearSession, useSession, hasModulePermission } from "@/lib/auth";
-import { useBusinessType } from "@/lib/business-type";
+import { useBusinessType, resolveBusinessType } from "@/lib/business-type";
+import { useAuthenticatedBusiness } from "@/lib/business-profile";
 
 const moduleKeyMap: Record<string, string> = {
   // Workspace
   "dashboard": "dashboard",
   "setup": "setup",
   "tables": "tables",
+  "workstations": "tables",
   "orders": "orders",
   "appointments": "orders",
   "services": "menu",
@@ -54,6 +56,8 @@ const restaurantPrimary = [
 ];
 const salonPrimary = [
   { title: "Dashboard", path: "dashboard", icon: LayoutDashboard },
+  { title: "Salon Setup", path: "setup", icon: Settings },
+  { title: "Workstations", path: "workstations", icon: Scissors },
   { title: "Appointments", path: "appointments", icon: Scissors },
   { title: "Services", path: "services", icon: Sparkles },
   { title: "Customers", path: "customers", icon: Users },
@@ -121,10 +125,11 @@ function Group({ label, items, isActive }: { label: string; items: Item[]; isAct
 
 export function BusinessSidebar() {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
-  const type = useBusinessType();
   const scope = useAppScope();
   const session = useSession();
-  const prefix = `/app/${scope.type}/${scope.business}`;
+  const authBiz = useAuthenticatedBusiness();
+  const type = resolveBusinessType(authBiz.business, session, scope.type);
+  const prefix = `/app/${type}/${scope.business}`;
 
   const isActive = (path: string) => {
     const full = `${prefix}/${path}`;

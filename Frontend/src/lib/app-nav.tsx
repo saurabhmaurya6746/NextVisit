@@ -1,7 +1,8 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { forwardRef } from "react";
 import { readProfile } from "@/lib/business-profile";
-import { useBusinessType, type BusinessType } from "@/lib/business-type";
+import { getSession } from "@/lib/auth";
+import { useBusinessType, resolveBusinessType, type BusinessType } from "@/lib/business-type";
 
 export function slugify(input: string): string {
   return (input || "business")
@@ -18,8 +19,8 @@ export function slugify(input: string): string {
  */
 export function useAppScope(): { type: BusinessType; business: string } {
   const params = useParams({ strict: false }) as { type?: string; business?: string };
-  const storedType = useBusinessType();
-  const type = (params.type === "restaurant" || params.type === "salon" ? params.type : storedType) as BusinessType;
+  const session = getSession();
+  const type = resolveBusinessType(null, session, params.type);
   const profile = readProfile(type) as { name?: string };
   const business = params.business || slugify(profile?.name || type);
   return { type, business };

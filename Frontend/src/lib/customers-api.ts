@@ -52,10 +52,14 @@ export function formatCustomer(c: BackendCustomer): CustomerModel {
     .join("")
     .toUpperCase() || "CU";
 
-  let status = "Regular";
-  if (c.total_spent >= 500) {
+  let status = (c as any).status || "New";
+  const v = c.visit_count || 0;
+  const s = c.total_spent || 0;
+  if (v >= 5 || s >= 2500) {
     status = "VIP";
-  } else if (c.visit_count <= 1) {
+  } else if (v >= 2 || s >= 500) {
+    status = "Regular";
+  } else {
     status = "New";
   }
 
@@ -79,13 +83,56 @@ export function formatCustomer(c: BackendCustomer): CustomerModel {
     notes: c.notes || "",
     visits: c.visit_count || 0,
     spent: c.total_spent || 0,
-    points: c.loyalty_points ?? 0,
+    points: c.loyalty_points && c.loyalty_points > 0 ? c.loyalty_points : Math.floor((c.total_spent || 0) / 10),
     lastVisit,
     status,
     initials,
     isActive: c.is_active,
     favorites: [],
     raw: c,
+  };
+}
+
+export interface PaginatedCustomersResult {
+  items: CustomerModel[];
+  page: number;
+  limit: number;
+  total: number;
+  total_pages: number;
+  has_next: boolean;
+  has_previous: boolean;
+}
+
+export async function listPaginatedCustomersApi(params?: {
+  page?: number;
+  limit?: number;
+  search?: string;
+  sort?: string;
+  filter?: string;
+}): Promise<PaginatedCustomersResult> {
+  const query = new URLSearchParams();
+  if (params?.page) query.append("page", String(params.page));
+  if (params?.limit) query.append("limit", String(params.limit));
+  if (params?.search) query.append("search", params.search);
+  if (params?.sort) query.append("sort", params.sort);
+  if (params?.filter) query.append("filter", params.filter);
+
+  const queryString = query.toString();
+  const url = `/api/v1/customers${queryString ? `?${queryString}` : ""}`;
+  const res = await apiFetch(url);
+  if (!res.ok) {
+    throw new Error("Failed to fetch paginated customers");
+  }
+  const data = await res.json();
+  const rawItems = Array.isArray(data) ? data : data.items || [];
+  return {
+    items: rawItems.map(formatCustomer),
+    page: data.page || 1,
+    limit: data.limit || 10,
+    total: data.total || rawItems.length,
+    total_pages: data.total_pages || 1,
+    has_next: !!data.has_next,
+    has_previous: !!data.has_previous,
   };
 }
 
@@ -195,6 +242,16 @@ export async function updateCustomerApi(
   }
   const data: BackendCustomer = await res.json();
   return formatCustomer(data);
+}
+
+export async function deleteCustomerApi(id: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/customers/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to delete customer");
+  }
 }
 
 export async function getCustomerSegmentsApi() {
@@ -310,4 +367,19 @@ export async function getCustomerCrmDetailsApi(id: string): Promise<CustomerCrmD
     throw err;
   }
   return await res.json();
+}
+
+/**
+ * Record a completed visit & spend for a customer in PostgreSQL backend
+ */
+export async function recordCustomerVisitApi(customerId: string, amountSpent: number): Promise<CustomerModel> {
+  const res = await apiFetch(`/api/v1/customers/${customerId}/record-visit?amount_spent=${encodeURIComponent(amountSpent)}`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to record customer visit in backend");
+  }
+  const data: BackendCustomer = await res.json();
+  return formatCustomer(data);
 }

@@ -9,6 +9,8 @@ import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
+import { fmt } from "@/lib/currency";
+
 const statusColor: Record<string, string> = {
   VIP: "bg-gradient-to-r from-primary/20 to-accent/20 text-primary border-primary/30",
   Regular: "bg-muted text-foreground",
@@ -16,7 +18,17 @@ const statusColor: Record<string, string> = {
   "At Risk": "bg-destructive/15 text-destructive border-destructive/30",
 };
 
-export function CustomerCard({ c, index = 0, onEdit }: { c: any; index?: number; onEdit?: () => void }) {
+export function CustomerCard({
+  c,
+  index = 0,
+  onEdit,
+  onDelete,
+}: {
+  c: any;
+  index?: number;
+  onEdit?: () => void;
+  onDelete?: () => void;
+}) {
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03 }} whileHover={{ scale: 1.02 }}>
       <Card className="group h-full overflow-hidden rounded-2xl transition-all duration-200 hover:-translate-y-0.5 hover:shadow-glow">
@@ -33,7 +45,7 @@ export function CustomerCard({ c, index = 0, onEdit }: { c: any; index?: number;
           <div className="mt-3 grid grid-cols-3 gap-2 text-center">
             <Metric label="Points" value={c.points} />
             <Metric label="Visits" value={c.visits} />
-            <Metric label="Spent" value={`$${c.spent}`} />
+            <Metric label="Spent" value={fmt(c.spent)} />
           </div>
           <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3" /> {c.birthday}</span>
@@ -43,7 +55,7 @@ export function CustomerCard({ c, index = 0, onEdit }: { c: any; index?: number;
             <Button size="sm" variant="outline" className="h-8 rounded-full text-xs" onClick={() => toast.success(`WhatsApp sent to ${c.name}`)}><MessageCircle className="mr-1 h-3 w-3" /> WhatsApp</Button>
             <Button size="sm" variant="outline" className="h-8 rounded-full text-xs" onClick={() => window.open(`tel:${c.phone.replace(/[^\d+]/g, "")}`)}><Phone className="mr-1 h-3 w-3" /> Call</Button>
             <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full" title="Edit Customer" onClick={() => onEdit?.()}><Edit className="h-3.5 w-3.5" /></Button>
-            <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full text-destructive" onClick={() => toast.error("Removed (demo)")}><Trash2 className="h-3.5 w-3.5" /></Button>
+            <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full text-destructive" title="Delete Customer" onClick={() => onDelete?.()}><Trash2 className="h-3.5 w-3.5" /></Button>
           </div>
         </div>
       </Card>

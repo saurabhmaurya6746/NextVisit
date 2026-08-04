@@ -15,8 +15,10 @@ Endpoints:
   PUT    /settings           — update recovery settings
 """
 import logging
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user
@@ -35,6 +37,8 @@ from app.schemas.customer_recovery import (
     RecoveryHistoryResponse,
     RecoveryAiGenerateRequest,
     RecoveryAiGenerateResponse,
+    MarkRecoveredResponse,
+    ExcludeCustomerResponse,
 )
 from app.services.customer_recovery_service import CustomerRecoveryService
 
@@ -169,8 +173,14 @@ def get_suggested_offers(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Returns a list of standard recovery offer types for the UI."""
-    return CustomerRecoveryService(db).get_suggested_offers()
+    """Returns a list of standard recovery offer types for the UI, tailored to business type."""
+    from app.models.business import Business
+    from sqlalchemy.orm import joinedload
+    biz = db.scalar(
+        select(Business).options(joinedload(Business.business_type)).where(Business.id == current_user.business_id)
+    )
+    biz_type = biz.business_type.name if (biz and biz.business_type) else "restaurant"
+    return CustomerRecoveryService(db).get_suggested_offers(biz_type)
 
 
 @router.get(
@@ -251,3 +261,68 @@ def generate_recovery_ai(
         language=data.language,
     )
 
+
+@router.post(
+    "/mark-recovered/{customer_id}",
+    response_model=MarkRecoveredResponse,
+    summary="Manually mark a customer as recovered",
+)
+def mark_customer_recovered(
+    customer_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Marks a customer as manually recovered so they are excluded from future recovery campaigns.
+    Uses an internal Campaign record to track this without requiring a new DB table.
+    """
+    return CustomerRecoveryService(db).mark_recovered(customer_id, current_user)
+
+
+@router.post(
+    "/exclude/{customer_id}",
+    response_model=ExcludeCustomerResponse,
+    summary="Exclude a customer from recovery campaigns",
+)
+def exclude_customer_from_recovery(
+    customer_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Excludes a customer from the recovery list entirely.
+    They will no longer appear in any recovery bucket.
+    """
+    return CustomerRecoveryService(db).exclude_customer(customer_id, current_user)
+
+
+@router.delete(
+    "/exclude/{customer_id}",
+    summary="Remove exclusion for a customer (include back in recovery)",
+)
+def unexclude_customer(
+    customer_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Removes a customer's exclusion record so they appear again in recovery lists.
+    """
+    from app.models.campaign import Campaign, CampaignLog, CampaignType
+    from sqlalchemy import delete
+    business_id = current_user.business_id
+    excl_camp = db.scalar(
+        select(Campaign).where(
+            Campaign.business_id == business_id,
+            Campaign.name == "__recovery_excluded__",
+        )
+    )
+    if excl_camp:
+        db.execute(
+            delete(CampaignLog).where(
+                CampaignLog.campaign_id == excl_camp.id,
+                CampaignLog.customer_id == customer_id,
+            )
+        )
+        db.commit()
+    return {"success": True, "customer_id": customer_id, "message": "Customer re-included in recovery"}

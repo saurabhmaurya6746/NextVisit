@@ -164,3 +164,9 @@ class Business(BaseModel):
         cascade="all, delete-orphan",
         order_by="MenuItem.display_order",
     )
+    salon_service_areas = relationship(
+        "SalonServiceArea",
+        back_populates="business",
+        cascade="all, delete-orphan",
+        order_by="SalonServiceArea.display_order",
+    )

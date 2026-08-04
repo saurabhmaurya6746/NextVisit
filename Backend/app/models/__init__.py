@@ -20,6 +20,9 @@ from .message_template import MessageTemplate
 from .order import Order, OrderItem, OrderSource, OrderStatus
 from .platform_settings import PlatformSettings
 from .restaurant_table import RestaurantTable
+from .salon_service_area import SalonServiceArea
+from .salon_chair import SalonChair
+from .salon_service_category import SalonServiceCategory
 from .service import Service
 from .subscription_plan import SubscriptionPlan
 from .user import User

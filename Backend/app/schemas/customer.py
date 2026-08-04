@@ -43,10 +43,23 @@ class CustomerResponse(BaseModel):
     visit_count: int
     total_spent: float
     loyalty_points: int = 0
+    status: str = "New"
     first_visit_at: datetime | None
     last_visit_at: datetime | None
     is_active: bool
     created_at: datetime
+
+
+class PaginatedCustomersResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    items: list[CustomerResponse]
+    page: int
+    limit: int
+    total: int
+    total_pages: int
+    has_next: bool
+    has_previous: bool
 
 
 # ---------------------------------------------------------------------------

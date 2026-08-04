@@ -292,10 +292,10 @@ export function AiGenerateDialog({
         </div>
 
         {error && (
-          <div className="flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 p-2.5 text-xs text-amber-600 dark:text-amber-400">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span className="flex-1 truncate">{error}</span>
-            <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => fetchAiMessage()}>
+          <div className="flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 p-2.5 text-xs text-amber-600 dark:text-amber-400">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span className="flex-1 whitespace-pre-wrap break-words">{error}</span>
+            <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] shrink-0" onClick={() => fetchAiMessage()}>
               <RefreshCw className="mr-1 h-3 w-3" /> Retry
             </Button>
           </div>

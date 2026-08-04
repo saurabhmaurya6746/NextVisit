@@ -4,17 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Cake, Heart, CalendarDays, Megaphone, UserCog } from "lucide-react";
 
-export const Route = createFileRoute("/app/$type/$business/calendar")({ component: CalendarPage });
-
-const events = [
-  { day: 16, items: [{ icon: Cake, text: "Sarah Johnson · Birthday", tone: "warning" }, { icon: CalendarDays, text: "Table for 4 · Rahul V.", tone: "info" }] },
-  { day: 17, items: [{ icon: Cake, text: "Emily Zhang · Birthday", tone: "warning" }, { icon: Megaphone, text: "VIP campaign send", tone: "primary" }] },
-  { day: 18, items: [{ icon: Heart, text: "Luca & Sofia · Anniversary", tone: "accent" }] },
-  { day: 19, items: [{ icon: UserCog, text: "Kira off (annual leave)", tone: "muted" }, { icon: CalendarDays, text: "Bridal trial · Ananya", tone: "info" }] },
-  { day: 20, items: [] },
-  { day: 21, items: [{ icon: Cake, text: "Isabella Rossi · Birthday", tone: "warning" }] },
-  { day: 22, items: [{ icon: Megaphone, text: "Weekend brunch campaign", tone: "primary" }] },
-];
+import { useParams } from "@tanstack/react-router";
 
 const toneStyle: Record<string, string> = {
   warning: "bg-warning/20 text-warning-foreground",
@@ -24,7 +14,21 @@ const toneStyle: Record<string, string> = {
   muted: "bg-muted text-muted-foreground",
 };
 
+export const Route = createFileRoute("/app/$type/$business/calendar")({ component: CalendarPage });
+
 function CalendarPage() {
+  const routerParams = useParams({ strict: false }) as Record<string, string>;
+  const isSalon = routerParams?.type === "salon";
+
+  const events = [
+    { day: 16, items: [{ icon: Cake, text: "Sarah Johnson · Birthday", tone: "warning" }, { icon: CalendarDays, text: isSalon ? "Styling Booking · Rahul V." : "Table for 4 · Rahul V.", tone: "info" }] },
+    { day: 17, items: [{ icon: Cake, text: "Emily Zhang · Birthday", tone: "warning" }, { icon: Megaphone, text: "VIP campaign send", tone: "primary" }] },
+    { day: 18, items: [{ icon: Heart, text: "Luca & Sofia · Anniversary", tone: "accent" }] },
+    { day: 19, items: [{ icon: UserCog, text: "Kira off (annual leave)", tone: "muted" }, { icon: CalendarDays, text: "Bridal trial · Ananya", tone: "info" }] },
+    { day: 20, items: [] },
+    { day: 21, items: [{ icon: Cake, text: "Isabella Rossi · Birthday", tone: "warning" }] },
+    { day: 22, items: [{ icon: Megaphone, text: isSalon ? "Weekend Beauty Offer" : "Weekend brunch campaign", tone: "primary" }] },
+  ];
   return (
     <>
       <PageHeader title="Calendar" description="Birthdays, bookings, campaigns and staff — one view." />

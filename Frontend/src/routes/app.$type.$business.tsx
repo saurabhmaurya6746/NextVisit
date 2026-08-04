@@ -5,7 +5,7 @@ import { BusinessSidebar } from "@/components/business-sidebar";
 import { Topbar } from "@/components/topbar";
 import { OnboardingWizard } from "@/components/onboarding-wizard";
 import { ForbiddenView } from "@/components/forbidden-view";
-import { useBusinessType, useOnboarded, setBusinessType, type BusinessType } from "@/lib/business-type";
+import { useBusinessType, useOnboarded, setBusinessType, resolveBusinessType, type BusinessType } from "@/lib/business-type";
 import { AppLoader } from "@/components/app-loader";
 import { useAuthenticatedBusiness } from "@/lib/business-profile";
 import { TrialBanner } from "@/components/trial-banner";
@@ -63,21 +63,18 @@ function AppLayout() {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const session = useSession();
 
-  const urlType = params.type || "restaurant";
-  const normalizedType: BusinessType = urlType === "salon" ? "salon" : "restaurant";
+  const authBiz = useAuthenticatedBusiness();
+  const type = resolveBusinessType(authBiz.business, session, params.type);
   const storedType = useBusinessType();
 
   useEffect(() => {
-    if (storedType !== normalizedType) setBusinessType(normalizedType);
-  }, [storedType, normalizedType]);
+    if (storedType !== type) setBusinessType(type);
+  }, [storedType, type]);
 
-  const type = normalizedType;
   const onboarded = useOnboarded(type);
   const [wizard, setWizard] = useState(false);
   const [loading, setLoading] = useState(!appLoaderShown);
   const wizardState = useWizardState();
-
-  const authBiz = useAuthenticatedBusiness();
 
   useEffect(() => {
     if (!onboarded && !wizardState.paused) setWizard(true);
@@ -96,7 +93,7 @@ function AppLayout() {
   const displayType = type === "salon" ? "Salon" : "Restaurant";
 
   // Check Route Permission for Staff Members
-  const prefix = `/app/${urlType}/${params.business || ""}`;
+  const prefix = `/app/${params.type || type}/${params.business || ""}`;
   let relativePath = pathname.replace(prefix, "").replace(/^\//, "");
   const firstSegment = relativePath.split("/")[0] || "";
   const targetModuleKey = pathToModuleMap[firstSegment] || firstSegment;
@@ -125,7 +122,7 @@ function AppLayout() {
               initials={initials}
             />
             <TrialBanner />
-            {!onboarded && wizardState.paused && (
+            {type !== "salon" && !onboarded && wizardState.paused && (
               <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-primary/5 px-4 py-2 text-sm sm:px-6">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-primary" />

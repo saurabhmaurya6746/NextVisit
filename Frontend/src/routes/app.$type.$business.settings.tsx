@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useState, useEffect, useCallback } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -209,6 +209,8 @@ function SettingsPage() {
  * 1. GENERAL TAB
  * ────────────────────────────────────────────────────────────────────────────*/
 function GeneralTab({ profile, settings, onSaved }: { profile: BusinessProfile; settings: BusinessSettings; onSaved: () => void }) {
+  const routerParams = useParams({ strict: false }) as Record<string, string>;
+  const isSalon = routerParams?.type === "salon";
   const [logo, setLogo] = useState(settings.logo || profile.logo_url || "");
   const [coverImage, setCoverImage] = useState(settings.cover_image || "");
   const [name, setName] = useState(profile.name || "");
@@ -245,7 +247,7 @@ function GeneralTab({ profile, settings, onSaved }: { profile: BusinessProfile; 
   return (
     <Card className="rounded-2xl border shadow-sm">
       <CardHeader>
-        <CardTitle className="font-display text-base">General Restaurant Settings</CardTitle>
+        <CardTitle className="font-display text-base">{isSalon ? "General Salon Settings" : "General Restaurant Settings"}</CardTitle>
         <CardDescription>Brand logo, cover image, and primary contact info.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -255,7 +257,7 @@ function GeneralTab({ profile, settings, onSaved }: { profile: BusinessProfile; 
               {logo ? <img src={logo} alt="Logo" className="h-full w-full object-cover" /> : <Store className="h-7 w-7 text-muted-foreground" />}
             </div>
             <div className="space-y-1">
-              <Label className="text-xs font-semibold">Restaurant Logo URL</Label>
+              <Label className="text-xs font-semibold">{isSalon ? "Salon Logo URL" : "Restaurant Logo URL"}</Label>
               <Input className="w-64" placeholder="https://..." value={logo} onChange={(e) => setLogo(e.target.value)} />
             </div>
           </div>

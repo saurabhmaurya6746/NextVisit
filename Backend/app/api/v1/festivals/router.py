@@ -9,6 +9,7 @@ from app.db.database import get_db
 from app.models.user import User
 from app.schemas.festival import (
     FestivalAiGenerateRequest,
+    FestivalCampaignCreate,
     FestivalCampaignResponse,
     FestivalCampaignUpdate,
     FestivalSendRequest,
@@ -53,6 +54,23 @@ def get_upcoming_festivals(
     return FestivalService(db).get_upcoming_festivals(current_user)
 
 
+@router.post(
+    "/festival-campaigns",
+    response_model=FestivalCampaignResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new custom festival campaign for the authenticated business",
+)
+def create_festival_campaign(
+    data: FestivalCampaignCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Creates a new custom festival campaign for the business.
+    """
+    return FestivalService(db).create_campaign(current_user, data)
+
+
 @router.put(
     "/festival-campaigns/{campaign_id}",
     response_model=FestivalCampaignResponse,
@@ -68,6 +86,21 @@ def update_festival_campaign(
     Updates campaign template, coupon code, language, tone, enabled status, or date.
     """
     return FestivalService(db).update_campaign(current_user, campaign_id, data)
+
+
+@router.delete(
+    "/festival-campaigns/{campaign_id}",
+    summary="Delete a festival campaign",
+)
+def delete_festival_campaign(
+    campaign_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Deletes a festival campaign and its associated custom festival if owned by the business.
+    """
+    return FestivalService(db).delete_campaign(current_user, campaign_id)
 
 
 @router.post(

@@ -113,7 +113,7 @@ class BusinessSettingsService:
             raise HTTPException(status_code=404, detail="Business not found.")
         settings = self.get_settings(current_user)
 
-        is_saved = bool(business.address and business.phone and settings.city)
+        is_saved = bool(business.name and (business.phone or business.address))
 
         return {
             "name": business.name,

@@ -89,4 +89,15 @@ class Customer(BaseModel):
     def loyalty_points(self) -> int:
         if hasattr(self, "loyalty") and self.loyalty is not None:
             return self.loyalty.current_points
-        return 0
+        return int((self.total_spent or 0.0) // 10)
+
+    @property
+    def status(self) -> str:
+        v = self.visit_count or 0
+        s = self.total_spent or 0.0
+        if v >= 5 or s >= 2500:
+            return "VIP"
+        elif v >= 2 or s >= 500:
+            return "Regular"
+        else:
+            return "New"

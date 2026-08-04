@@ -39,6 +39,39 @@ class CustomerService:
                 c.loyalty = loyalty_service.get_customer_loyalty(current_user, c.id)
         return customers
 
+    def get_paginated_customers(
+        self,
+        current_user: User,
+        page: int = 1,
+        limit: int = 10,
+        search: str | None = None,
+        sort: str | None = "newest",
+        filter: str | None = "all",
+    ) -> dict:
+        logger.info(
+            "Fetching paginated customers | business_id=%s page=%s limit=%s search=%s sort=%s filter=%s",
+            current_user.business_id,
+            page,
+            limit,
+            search,
+            sort,
+            filter,
+        )
+        res = self.repo.get_paginated_by_business(
+            business_id=current_user.business_id,
+            page=page,
+            limit=limit,
+            search=search,
+            sort=sort,
+            filter=filter,
+        )
+        from app.services.loyalty_service import LoyaltyService
+        loyalty_service = LoyaltyService(self.db)
+        for c in res["items"]:
+            if not c.loyalty:
+                c.loyalty = loyalty_service.get_customer_loyalty(current_user, c.id)
+        return res
+
     def get_customer(self, current_user: User, customer_id: UUID) -> Customer:
         customer = self.repo.get_by_id(customer_id)
         if not customer or customer.business_id != current_user.business_id:
@@ -147,6 +180,53 @@ class CustomerService:
             customer.id,
             customer.business_id,
         )
+        return self._enrich_loyalty_points(current_user, customer)
+
+    def delete_customer(self, current_user: User, customer_id: UUID) -> dict:
+        customer = self.get_customer(current_user, customer_id)
+        self.repo.delete(customer)
+        self.db.commit()
+        logger.info(
+            "Customer deleted successfully | customer_id=%s business_id=%s",
+            customer_id,
+            current_user.business_id,
+        )
+        return {"message": "Customer deleted successfully", "id": str(customer_id)}
+
+    def record_customer_visit(self, current_user: User, customer_id: UUID, amount_spent: float) -> Customer:
+        from datetime import datetime, timezone
+        customer = self.get_customer(current_user, customer_id)
+        now_ts = datetime.now(timezone.utc)
+
+        customer.visit_count = (customer.visit_count or 0) + 1
+        customer.total_spent = (customer.total_spent or 0.0) + max(0.0, amount_spent)
+        if not customer.first_visit_at:
+            customer.first_visit_at = now_ts
+        customer.last_visit_at = now_ts
+
+        # Calculate and award loyalty points
+        from app.repositories.loyalty_repository import LoyaltyRepository
+        from app.models.loyalty import CustomerLoyalty
+        loyalty_repo = LoyaltyRepository(self.db)
+        loyalty_settings = loyalty_repo.get_settings(current_user.business_id)
+
+        points_per_amount = loyalty_settings.points_per_amount if (loyalty_settings and loyalty_settings.is_active) else 1
+        amount_req = loyalty_settings.amount_required if (loyalty_settings and loyalty_settings.is_active) else 10
+
+        earned = int((amount_spent / amount_req) * points_per_amount) if (amount_req > 0 and points_per_amount > 0) else int(amount_spent // 10)
+        if earned > 0:
+            cl = loyalty_repo.get_customer_loyalty(customer_id)
+            if not cl:
+                cl = CustomerLoyalty(customer_id=customer_id, current_points=0, lifetime_points=0, redeemed_points=0)
+                loyalty_repo.create_customer_loyalty(cl)
+            cl.current_points += earned
+            cl.lifetime_points += earned
+            loyalty_repo.update_customer_loyalty(cl)
+
+        self.repo.update(customer)
+        self.db.commit()
+        self.db.refresh(customer)
+        logger.info("Recorded customer visit | customer_id=%s visits=%d total_spent=%.2f points=%d", customer.id, customer.visit_count, customer.total_spent, customer.loyalty_points)
         return self._enrich_loyalty_points(current_user, customer)
 
     def get_customer_crm_details(self, current_user: User, customer_id: UUID) -> dict:

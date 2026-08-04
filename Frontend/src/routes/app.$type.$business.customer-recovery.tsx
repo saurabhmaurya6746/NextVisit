@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   RefreshCw, Gift, MessageCircle, Percent, ArrowRight, UserMinus, Sparkles,
-  TrendingUp, Users, DollarSign, Target, CheckCircle2, History, RotateCcw
+  TrendingUp, Users, DollarSign, Target, CheckCircle2, History, RotateCcw,
+  Scissors, UtensilsCrossed,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { PageTransition } from "@/components/page-transition";
@@ -23,21 +24,22 @@ import {
   getRecoveryAnalyticsApi,
   getRecoveryHistoryApi,
   getRecoverableCustomersApi,
-  getRecoveryPreviewApi,
   launchRecoveryCampaignApi,
 } from "@/lib/customer-recovery-api";
 
 export const Route = createFileRoute("/app/$type/$business/customer-recovery")({ component: RecoveryPage });
 
 const BUCKET_CONFIG = [
-  { key: 15, title: "15 Days", tone: "from-primary/25 to-primary/5 text-primary", coupon: "MISSYOU15", defaultOffer: "15% Discount" },
-  { key: 30, title: "30 Days", tone: "from-warning/25 to-warning/5 text-warning-foreground", coupon: "MISSYOU30", defaultOffer: "20% Discount" },
-  { key: 45, title: "45 Days", tone: "from-accent/25 to-accent/5 text-accent-foreground", coupon: "MISSYOU45", defaultOffer: "Free Drink" },
-  { key: 60, title: "60 Days", tone: "from-info/25 to-info/5 text-info", coupon: "MISSYOU60", defaultOffer: "Free Dessert" },
-  { key: 90, title: "90 Days", tone: "from-destructive/25 to-destructive/5 text-destructive", coupon: "COMEBACK90", defaultOffer: "20% Off + Dessert" },
+  { key: 15, title: "15 Days", subtext: "15–29 days away", tone: "from-primary/25 to-primary/5", badgeClass: "bg-primary/10 text-primary border-primary/20", coupon: "MISSYOU15", defaultOffer: "Free Drink On Us" },
+  { key: 30, title: "30 Days", subtext: "30–44 days away", tone: "from-amber-400/25 to-amber-400/5", badgeClass: "bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400", coupon: "MISSYOU30", defaultOffer: "Free Dessert On Us" },
+  { key: 45, title: "45 Days", subtext: "45–59 days away", tone: "from-violet-400/25 to-violet-400/5", badgeClass: "bg-violet-500/10 text-violet-600 border-violet-500/20 dark:text-violet-400", coupon: "MISSYOU45", defaultOffer: "10% Off + Free Drink" },
+  { key: 60, title: "60 Days", subtext: "60–89 days away", tone: "from-sky-400/25 to-sky-400/5", badgeClass: "bg-sky-500/10 text-sky-600 border-sky-500/20 dark:text-sky-400", coupon: "MISSYOU60", defaultOffer: "15% Off Next Visit" },
+  { key: 90, title: "90+ Days", subtext: "90+ days — at risk", tone: "from-destructive/25 to-destructive/5", badgeClass: "bg-destructive/10 text-destructive border-destructive/20", coupon: "COMEBACK90", defaultOffer: "20% Off + Free Dessert" },
 ] as const;
 
 function RecoveryPage() {
+  const { type } = Route.useParams();
+  const isSalon = type === "salon";
   const session = getSession();
   const queryClient = useQueryClient();
 
@@ -46,38 +48,30 @@ function RecoveryPage() {
   const [selectedBucket, setSelectedBucket] = useState<number>(30);
   const [activeCoupon, setActiveCoupon] = useState<string>("MISSYOU15");
   const [templateMsg, setTemplateMsg] = useState(
-    "Hi {name}! 👋 We miss having you around! Use coupon {coupon} for 15% off your next visit ❤️"
+    isSalon
+      ? "Hi {name}! 💇 We miss you at {salon_name}! Use coupon {coupon} for {offer} on your next appointment ❤️"
+      : "Hi {name}! 👋 We miss you at {restaurant_name}! Use coupon {coupon} for {offer} on your next visit ❤️"
   );
   const [sendCustomers, setSendCustomers] = useState<SendCustomerItem[]>([]);
   const [activeCampaignId, setActiveCampaignId] = useState<string>("recovery_campaign");
   const [isLaunching, setIsLaunching] = useState(false);
 
-  // 1. React Query: Dashboard bucket counts
-  const {
-    data: dashboard,
-    isLoading: isDashLoading,
-    refetch: refetchDashboard,
-  } = useQuery({
+  // 1. Dashboard bucket counts
+  const { data: dashboard, isLoading: isDashLoading, refetch: refetchDashboard } = useQuery({
     queryKey: ["customer-recovery", "dashboard", session?.clientId],
     queryFn: getRecoveryDashboardApi,
     refetchInterval: 30000,
   });
 
-  // 2. React Query: Analytics
-  const {
-    data: analytics,
-    isLoading: isAnalyticsLoading,
-  } = useQuery({
+  // 2. Analytics
+  const { data: analytics, isLoading: isAnalyticsLoading } = useQuery({
     queryKey: ["customer-recovery", "analytics", session?.clientId],
     queryFn: getRecoveryAnalyticsApi,
     refetchInterval: 30000,
   });
 
-  // 3. React Query: History
-  const {
-    data: historyData,
-    isLoading: isHistoryLoading,
-  } = useQuery({
+  // 3. History
+  const { data: historyData, isLoading: isHistoryLoading } = useQuery({
     queryKey: ["customer-recovery", "history", session?.clientId],
     queryFn: getRecoveryHistoryApi,
     refetchInterval: 30000,
@@ -93,41 +87,40 @@ function RecoveryPage() {
 
   const totalRecoverable = dashboard?.total_recoverable ?? 0;
 
-  // Handle Offer Click -> Fetch Preview + Launch Campaign on Backend
   async function handleLaunchOffer(bucketDays: number, couponCode: string, offerName: string) {
     setIsLaunching(true);
     setSelectedBucket(bucketDays);
     setActiveCoupon(couponCode);
-    const toastId = toast.loading(`Preparing ${offerName} for ${bucketDays}-day dormant guests…`);
+    const toastId = toast.loading(
+      `Preparing ${offerName} for ${isSalon ? "clients" : "guests"} absent ${bucketDays}+ days…`
+    );
 
     try {
-      // 1. Fetch preview & customer list from backend
-      const preview = await getRecoveryPreviewApi(bucketDays, couponCode);
       const custResp = await getRecoverableCustomersApi({ bucket: bucketDays, pageSize: 100 });
 
       if (custResp.items.length === 0) {
         toast.dismiss(toastId);
-        toast.info(`No recoverable customers found for the ${bucketDays}-day bucket.`);
+        toast.info(`No recoverable ${isSalon ? "clients" : "guests"} found for the ${bucketDays}-day bucket.`);
         setIsLaunching(false);
         return;
       }
 
-      // 2. Launch campaign on backend to persist Campaign & CampaignLog queue entries
-      const defaultMsg = `Hi {name}! 👋 We miss having you around at {restaurant}! Enjoy ${offerName} with coupon ${couponCode} on your next visit ❤️`;
+      const businessLabel = isSalon ? "{salon_name}" : "{restaurant_name}";
+      const actionLabel = isSalon ? "appointment" : "visit";
+      const defaultMsg = `Hi {name}! 👋 We miss you at ${businessLabel}! Enjoy ${offerName} with coupon ${couponCode} on your next ${actionLabel} ❤️`;
+
       const launchRes = await launchRecoveryCampaignApi({
         bucket: bucketDays,
         message: defaultMsg,
         coupon_code: couponCode,
       }).catch((err) => {
-        // If 409 conflict (cooldown), log warning and proceed with client campaign session
         console.warn("Launch campaign notice:", err);
         return { campaign_id: `recovery_${bucketDays}_${Date.now()}` };
       });
 
       setTemplateMsg(defaultMsg);
-      setActiveCampaignId(launchRes.campaign_id);
+      setActiveCampaignId(launchRes.campaign_id ?? `recovery_${bucketDays}`);
 
-      // Map backend customer items to SendCustomerItem format
       const formattedCustomers: SendCustomerItem[] = custResp.items.map((c) => ({
         id: c.id,
         name: c.name,
@@ -139,7 +132,7 @@ function RecoveryPage() {
 
       setSendCustomers(formattedCustomers);
       toast.dismiss(toastId);
-      toast.success(`Loaded ${formattedCustomers.length} guests for ${offerName}`);
+      toast.success(`Loaded ${formattedCustomers.length} ${isSalon ? "clients" : "guests"} for ${offerName}`);
       setSendOpen(true);
     } catch (e: any) {
       toast.dismiss(toastId);
@@ -154,11 +147,16 @@ function RecoveryPage() {
     toast.success("Recovery data refreshed!");
   }
 
+  const BusinessIcon = isSalon ? Scissors : UtensilsCrossed;
+  const guestLabel = isSalon ? "Clients" : "Guests";
+  const visitLabel = isSalon ? "appointments" : "visits";
+  const actionLabel = isSalon ? "rebook" : "dine";
+
   return (
     <PageTransition>
       <PageHeader
-        title="Lost customer recovery"
-        description="Bring dormant guests back with personalized Gemini AI copy & WhatsApp campaigns."
+        title={`Lost ${guestLabel.toLowerCase()} recovery`}
+        description={`Bring dormant ${guestLabel.toLowerCase()} back with personalized Gemini AI copy & WhatsApp campaigns.`}
         actions={
           <div className="flex gap-2">
             <Button variant="outline" className="rounded-full text-xs" onClick={() => setAiOpen(true)}>
@@ -167,9 +165,10 @@ function RecoveryPage() {
             <Button
               className="rounded-full bg-primary text-primary-foreground text-xs font-semibold"
               disabled={totalRecoverable === 0 || isLaunching}
-              onClick={() => handleLaunchOffer(30, "MISSYOU30", "30-Day Win-Back Offer")}
+              onClick={() => handleLaunchOffer(30, "MISSYOU30", `30-Day ${isSalon ? "Rebook" : "Win-Back"} Offer`)}
             >
-              <MessageCircle className="mr-1.5 h-3.5 w-3.5" /> Launch Recovery Campaign ({totalRecoverable})
+              <MessageCircle className="mr-1.5 h-3.5 w-3.5" />
+              Launch Recovery ({totalRecoverable})
             </Button>
           </div>
         }
@@ -184,16 +183,16 @@ function RecoveryPage() {
           subtext={`Avg spend: ${fmt(analytics?.average_spend ?? 0)}`}
         />
         <SummaryMetric
-          label="Recoverable Guests"
+          label={`Recoverable ${guestLabel}`}
           value={isDashLoading ? "…" : String(totalRecoverable)}
           icon={Users}
-          subtext="Not visited in 15+ days"
+          subtext={`Not ${visitLabel === "appointments" ? "visited" : "dined"} in 15+ days`}
         />
         <SummaryMetric
           label="Recovery Rate"
           value={isAnalyticsLoading ? "…" : `${analytics?.recovery_rate_pct ?? 0}%`}
           icon={Target}
-          subtext={`${analytics?.total_recovered ?? 0} guests returned`}
+          subtext={`${analytics?.total_recovered ?? 0} ${guestLabel.toLowerCase()} returned`}
         />
         <SummaryMetric
           label="Messages Sent"
@@ -203,46 +202,62 @@ function RecoveryPage() {
         />
       </div>
 
-      {/* INACTIVITY BUCKET CARDS */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {BUCKET_CONFIG.map((b, i) => {
-          const count = bucketCounts[b.key];
-          return (
-            <motion.div
-              key={b.key}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05 }}
-              whileHover={{ scale: 1.02 }}
-            >
-              <AppLink path="customer-recovery/$days" params={{ days: String(b.key) }} className="block">
-                <Card className="group relative overflow-hidden rounded-2xl p-5 shadow-elegant transition-all hover:-translate-y-0.5 hover:shadow-glow">
-                  <div className={cn("pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-gradient-to-br opacity-70 blur-2xl", b.tone)} />
-                  <div className="relative">
-                    <p className="text-xs uppercase tracking-wider text-muted-foreground">Not visited for</p>
-                    <p className="mt-2 font-display text-3xl font-semibold">{b.title}</p>
-                    <p className="mt-2 text-sm text-muted-foreground font-medium">
-                      {isDashLoading ? "Loading…" : `${count} customer${count === 1 ? "" : "s"}`}
-                    </p>
-                    <p className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
-                      View list <ArrowRight className="h-3 w-3" />
-                    </p>
-                  </div>
-                </Card>
-              </AppLink>
-            </motion.div>
-          );
-        })}
+      {/* INACTIVITY BUCKET CARDS — CLICKABLE */}
+      <div className="mb-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+          <BusinessIcon className="h-3.5 w-3.5" />
+          {isSalon ? "Clients by days since last appointment" : "Guests by days since last visit"} — click to view list
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {BUCKET_CONFIG.map((b, i) => {
+            const count = bucketCounts[b.key as keyof typeof bucketCounts];
+            return (
+              <motion.div
+                key={b.key}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05 }}
+                whileHover={{ scale: 1.02 }}
+              >
+                <AppLink path="customer-recovery/$days" params={{ days: String(b.key) }} className="block">
+                  <Card className="group relative overflow-hidden rounded-2xl p-5 shadow-elegant transition-all hover:-translate-y-0.5 hover:shadow-glow cursor-pointer">
+                    <div className={cn("pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-gradient-to-br opacity-70 blur-2xl", b.tone)} />
+                    <div className="relative">
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{b.subtext}</p>
+                      <p className="mt-1.5 font-display text-2xl font-bold">{b.title}</p>
+                      <p className="mt-2 text-sm font-semibold">
+                        {isDashLoading ? (
+                          <span className="text-muted-foreground">Loading…</span>
+                        ) : (
+                          <span className={count > 0 ? "text-foreground" : "text-muted-foreground"}>
+                            {count} {count === 1 ? (isSalon ? "client" : "guest") : (isSalon ? "clients" : "guests")}
+                          </span>
+                        )}
+                      </p>
+                      <Badge variant="outline" className={cn("mt-2 text-[10px] rounded-full", b.badgeClass)}>
+                        {b.defaultOffer}
+                      </Badge>
+                      <p className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
+                        View list <ArrowRight className="h-3 w-3" />
+                      </p>
+                    </div>
+                  </Card>
+                </AppLink>
+              </motion.div>
+            );
+          })}
+        </div>
       </div>
 
-      {/* QUICK OFFER LAUNCH BUTTONS */}
+      {/* QUICK OFFER LAUNCH BUTTONS — BUSINESS-TYPE AWARE */}
       <div className="mt-6 flex flex-wrap gap-2">
         <Button
-          className="rounded-full gradient-brand text-primary-foreground text-xs"
+          className="rounded-full gradient-brand text-primary-foreground text-xs font-medium"
           disabled={isLaunching}
-          onClick={() => handleLaunchOffer(30, "WINBACK30", "Win-Back Special")}
+          onClick={() => handleLaunchOffer(30, "WINBACK30", isSalon ? "Rebook Special" : "Win-Back Special")}
         >
-          <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Send Win-Back Offer
+          <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+          {isSalon ? "Send Rebook Offer" : "Send Win-Back Offer"}
         </Button>
         <Button
           variant="outline"
@@ -256,18 +271,31 @@ function RecoveryPage() {
           variant="outline"
           className="rounded-full text-xs"
           disabled={isLaunching}
-          onClick={() => handleLaunchOffer(60, "SWEET60", "Free Dessert Offer")}
+          onClick={() =>
+            handleLaunchOffer(60, isSalon ? "FREE60" : "SWEET60", isSalon ? "Free Hair Wash" : "Free Dessert Offer")
+          }
         >
-          <Gift className="mr-1.5 h-3.5 w-3.5" /> Send Free Dessert Offer
+          <Gift className="mr-1.5 h-3.5 w-3.5" />
+          {isSalon ? "Send Free Hair Wash" : "Send Free Dessert Offer"}
+        </Button>
+        <Button
+          variant="outline"
+          className="rounded-full text-xs"
+          disabled={isLaunching}
+          onClick={() => handleLaunchOffer(90, "COMEBACK90", isSalon ? "VIP Comeback Perk" : "VIP Come Back Offer")}
+        >
+          <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+          {isSalon ? "Send VIP Comeback Perk" : "Send VIP Come Back Offer"}
         </Button>
       </div>
 
       <p className="mt-4 text-xs text-muted-foreground inline-flex items-center gap-1.5">
-        <UserMinus className="h-3.5 w-3.5" /> Click a bucket above to view dormant guests, filter, and launch step-by-step WhatsApp campaigns.
+        <UserMinus className="h-3.5 w-3.5" />
+        Click a bucket above to view {isSalon ? "clients" : "guests"}, apply filters, and launch targeted WhatsApp campaigns.
       </p>
 
       {/* RECOVERY HISTORY SECTION */}
-      {historyData && historyData.items.length > 0 && (
+      {!isHistoryLoading && historyData && historyData.items.length > 0 && (
         <div className="mt-8 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="font-display font-semibold text-sm flex items-center gap-1.5">
@@ -307,8 +335,12 @@ function RecoveryPage() {
       <AiGenerateDialog
         open={aiOpen}
         onOpenChange={setAiOpen}
-        title="AI Recovery Campaign Generator"
-        description="Generates personalized win-back copy for dormant customers using Gemini AI."
+        title={isSalon ? "AI Client Recovery Generator" : "AI Recovery Campaign Generator"}
+        description={
+          isSalon
+            ? "Generates personalized rebook copy for dormant salon clients using Gemini AI."
+            : "Generates personalized win-back copy for dormant guests using Gemini AI."
+        }
         campaignType="recovery"
         couponCode="MISSYOU15"
         discountPercent="15%"

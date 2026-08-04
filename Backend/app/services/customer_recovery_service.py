@@ -148,7 +148,26 @@ class CustomerRecoveryService:
         If bucket is specified, only returns customers in that bucket window.
         Returns enriched dicts — avoids ORM object mutation.
         """
+        from app.models.campaign import Campaign as _Camp, CampaignLog as _CLog, CampaignType as _CType
+
         now = datetime.now(timezone.utc)
+
+        # Fetch IDs of customers manually recovered or excluded
+        skip_ids: set[UUID] = set()
+        for special_name in ["__manual_recovered__", "__recovery_excluded__"]:
+            special_camp = self.db.scalar(
+                select(_Camp).where(
+                    _Camp.business_id == business_id,
+                    _Camp.name == special_name,
+                )
+            )
+            if special_camp:
+                logs = self.db.scalars(
+                    select(_CLog.customer_id).where(
+                        _CLog.campaign_id == special_camp.id
+                    )
+                ).all()
+                skip_ids.update(logs)
 
         # 1. Load last completed visit per customer (single query)
         last_visit_map = self._get_last_completed_visit_per_customer(business_id)
@@ -167,6 +186,10 @@ class CustomerRecoveryService:
         # 3. Filter: only those whose last COMPLETED visit >= 15 days ago
         recoverable = []
         for c in all_customers:
+            # Skip manually recovered or excluded customers
+            if c.id in skip_ids:
+                continue
+
             last_dt = last_visit_map.get(c.id)
             if last_dt is None:
                 continue  # No completed visit → not a churned customer, skip
@@ -181,7 +204,6 @@ class CustomerRecoveryService:
 
             # Apply bucket filter if specified
             if bucket is not None:
-                bucket_upper = bucket
                 bucket_lower = {15: 15, 30: 30, 45: 45, 60: 60, 90: 90}[bucket]
                 bucket_next = {15: 30, 30: 45, 45: 60, 60: 90, 90: 99999}[bucket]
                 if not (bucket_lower <= days_since < bucket_next):
@@ -316,11 +338,14 @@ class CustomerRecoveryService:
                 "name": c.name,
                 "phone": c.phone or "",
                 "email": c.email,
+                "gender": c.gender,
                 "last_visit_at": r["last_visit_at"],
                 "days_since_last_visit": r["days_since"],
+                "avg_spend": round(spent / (c.visit_count or 1), 2),
                 "total_spent": spent,
                 "visit_count": c.visit_count or 0,
                 "loyalty_points": pts,
+                "membership": None,
                 "favorite_item": fav_map.get(c.id, "No favorite yet"),
                 "is_vip": is_vip,
                 "recovery_stage": self._classify_bucket(r["days_since"]),
@@ -542,8 +567,20 @@ class CustomerRecoveryService:
             "message": data.message,
         }
 
-    def get_suggested_offers(self) -> dict:
-        """Returns standard suggested recovery offers."""
+    def get_suggested_offers(self, business_type: str = "restaurant") -> dict:
+        """Returns standard suggested recovery offers, tailored to business type."""
+        is_salon = "salon" in business_type.lower() or "beauty" in business_type.lower() or "spa" in business_type.lower()
+        if is_salon:
+            return {
+                "offers": [
+                    {"title": "15% Off Next Appointment", "type": "percentage", "value": "15%"},
+                    {"title": "20% Off Any Service", "type": "percentage", "value": "20%"},
+                    {"title": "Free Hair Wash", "type": "free_item", "value": "Hair Wash"},
+                    {"title": "Buy One Get One Service", "type": "bogo", "value": None},
+                    {"title": "Flat ₹100 Off on Service", "type": "flat", "value": "₹100"},
+                    {"title": "Free Deep Conditioning on Rebook", "type": "free_item", "value": "Deep Conditioning"},
+                ]
+            }
         return {
             "offers": [
                 {"title": "15% Discount", "type": "percentage", "value": "15%"},
@@ -744,3 +781,127 @@ class CustomerRecoveryService:
             "cta": cta,
         }
 
+    def mark_recovered(self, customer_id: UUID, current_user: User) -> dict:
+        """
+        Marks a customer as manually recovered.
+        Uses a special Campaign named __manual_recovered__ with CampaignLog SENT status.
+        """
+        business_id = current_user.business_id
+
+        # Verify customer belongs to business
+        customer = self.db.scalar(
+            select(Customer).where(
+                Customer.id == customer_id,
+                Customer.business_id == business_id,
+            )
+        )
+        if not customer:
+            raise HTTPException(status_code=404, detail="Customer not found")
+
+        # Find or create a "manual recovery" campaign for this business
+        manual_camp = self.db.scalar(
+            select(Campaign).where(
+                Campaign.business_id == business_id,
+                Campaign.campaign_type == CampaignType.RECOVERY,
+                Campaign.name == "__manual_recovered__",
+            )
+        )
+        if not manual_camp:
+            manual_camp = Campaign(
+                business_id=business_id,
+                name="__manual_recovered__",
+                campaign_type=CampaignType.RECOVERY,
+                target_segment=TargetSegment.INACTIVE_30,
+                title="Manually Recovered Customers",
+                message="Manually marked as recovered",
+                is_active=True,
+            )
+            self.db.add(manual_camp)
+            self.db.flush()
+
+        # Upsert a CampaignLog entry with SENT status (marks them as "recovered")
+        existing_log = self.db.scalar(
+            select(CampaignLog).where(
+                CampaignLog.campaign_id == manual_camp.id,
+                CampaignLog.customer_id == customer_id,
+            )
+        )
+        if not existing_log:
+            log = CampaignLog(
+                campaign_id=manual_camp.id,
+                customer_id=customer_id,
+                status=CampaignLogStatus.SENT,
+                sent_at=datetime.now(timezone.utc),
+            )
+            self.db.add(log)
+        else:
+            existing_log.status = CampaignLogStatus.SENT
+            existing_log.sent_at = datetime.now(timezone.utc)
+
+        self.db.commit()
+        logger.info("MARK RECOVERED | business_id=%s customer_id=%s", business_id, customer_id)
+
+        return {
+            "success": True,
+            "customer_id": customer_id,
+            "message": f"Customer {customer.name} marked as recovered",
+        }
+
+    def exclude_customer(self, customer_id: UUID, current_user: User) -> dict:
+        """
+        Excludes a customer from recovery lists.
+        Uses a special Campaign named __recovery_excluded__ with CampaignLog FAILED status.
+        """
+        business_id = current_user.business_id
+
+        customer = self.db.scalar(
+            select(Customer).where(
+                Customer.id == customer_id,
+                Customer.business_id == business_id,
+            )
+        )
+        if not customer:
+            raise HTTPException(status_code=404, detail="Customer not found")
+
+        excl_camp = self.db.scalar(
+            select(Campaign).where(
+                Campaign.business_id == business_id,
+                Campaign.campaign_type == CampaignType.RECOVERY,
+                Campaign.name == "__recovery_excluded__",
+            )
+        )
+        if not excl_camp:
+            excl_camp = Campaign(
+                business_id=business_id,
+                name="__recovery_excluded__",
+                campaign_type=CampaignType.RECOVERY,
+                target_segment=TargetSegment.INACTIVE_30,
+                title="Excluded from Recovery",
+                message="Excluded from recovery campaigns",
+                is_active=False,
+            )
+            self.db.add(excl_camp)
+            self.db.flush()
+
+        existing = self.db.scalar(
+            select(CampaignLog).where(
+                CampaignLog.campaign_id == excl_camp.id,
+                CampaignLog.customer_id == customer_id,
+            )
+        )
+        if not existing:
+            log = CampaignLog(
+                campaign_id=excl_camp.id,
+                customer_id=customer_id,
+                status=CampaignLogStatus.FAILED,
+            )
+            self.db.add(log)
+
+        self.db.commit()
+        logger.info("EXCLUDE CUSTOMER | business_id=%s customer_id=%s", business_id, customer_id)
+
+        return {
+            "success": True,
+            "customer_id": customer_id,
+            "message": f"Customer {customer.name} excluded from recovery",
+        }

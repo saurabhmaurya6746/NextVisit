@@ -19,6 +19,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { fmt } from "@/lib/currency";
 import { getRevenueAnalyticsApi, type RevenueAnalyticsData } from "@/lib/orders-api";
 import { listDiningAreasApi, type DiningArea } from "@/lib/dining-area-api";
+import { SalonRevenueDashboard } from "@/components/business/salon/salon-revenue-dashboard";
 
 export const Route = createFileRoute("/app/$type/$business/revenue")({
   head: () => ({ meta: [{ title: "Revenue Analytics — NextVisit" }] }),
@@ -26,6 +27,11 @@ export const Route = createFileRoute("/app/$type/$business/revenue")({
 });
 
 function RevenuePage() {
+  const { type } = Route.useParams();
+
+  if (type === "salon") {
+    return <SalonRevenueDashboard />;
+  }
   const [data, setData] = useState<RevenueAnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
 
