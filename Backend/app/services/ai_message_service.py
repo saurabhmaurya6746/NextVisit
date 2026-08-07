@@ -43,6 +43,10 @@ class AiMessageService:
         req_coupon_expiry: str | None = None,
         festival_name: str | None = None,
     ) -> AiGenerateMessageResponse:
+        from app.services.subscription_limit_service import SubscriptionLimitService
+        sub_limit_svc = SubscriptionLimitService(self.db)
+        sub_limit_svc.check_ai_limit(current_user.business_id)
+
         logger.info(
             "Generating Live Gemini AI WhatsApp message | biz=%s cust=%s type=%s tone=%s lang=%s len=%s",
             current_user.business_id,
@@ -284,6 +288,8 @@ Generate a fresh, unique, engaging WHATSAPP MESSAGE for customer {cust_name}.
                     f"Reserve your table or order now for a fantastic meal! ❤️\n"
                     f"Team {{restaurant_name}}"
                 )
+
+        sub_limit_svc.consume_ai_credit(current_user.business_id)
 
         return AiGenerateMessageResponse(
             message=ai_message.strip(),

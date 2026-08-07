@@ -1,7 +1,7 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user
@@ -10,6 +10,9 @@ from app.models.user import User
 from app.schemas.campaign_execution import (
     CampaignLogItemResponse,
     CampaignLogMarkFailedRequest,
+    CampaignLogRecordSendRequest,
+    CampaignLogRecordSendResponse,
+    PaginatedCampaignLogHistoryResponse,
 )
 from app.services.campaign_execution_service import CampaignExecutionService
 
@@ -22,6 +25,34 @@ router = APIRouter(
 
 
 @router.get(
+    "/history",
+    response_model=PaginatedCampaignLogHistoryResponse,
+    summary="Get 100% database-driven WhatsApp History with search, filters, and pagination",
+)
+def get_campaign_history(
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=10, ge=1, le=100),
+    search: str | None = Query(default=None),
+    campaign_type: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    date_range: str | None = Query(default=None),
+    sort: str | None = Query(default="newest"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return CampaignExecutionService(db).get_campaign_history(
+        current_user=current_user,
+        page=page,
+        limit=limit,
+        search=search,
+        campaign_type=campaign_type,
+        status_filter=status,
+        date_range=date_range,
+        sort=sort,
+    )
+
+
+@router.get(
     "/pending",
     response_model=list[CampaignLogItemResponse],
     summary="Get all PENDING campaign execution logs",
@@ -30,10 +61,6 @@ def list_pending_logs(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Returns all PENDING campaign logs for manual WhatsApp / message delivery queue.
-    Requires a valid Bearer JWT.
-    """
     return CampaignExecutionService(db).list_pending_logs(current_user)
 
 
@@ -46,10 +73,6 @@ def list_sent_logs(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Returns all SENT campaign logs for the authenticated business.
-    Requires a valid Bearer JWT.
-    """
     return CampaignExecutionService(db).list_sent_logs(current_user)
 
 
@@ -62,11 +85,35 @@ def list_failed_logs(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Returns all FAILED campaign logs for the authenticated business.
-    Requires a valid Bearer JWT.
-    """
     return CampaignExecutionService(db).list_failed_logs(current_user)
+
+
+@router.post(
+    "/record-send",
+    response_model=CampaignLogRecordSendResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Record or update a campaign message as SENT when user dispatches WhatsApp",
+)
+def record_campaign_send(
+    data: CampaignLogRecordSendRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return CampaignExecutionService(db).record_send(current_user, data)
+
+
+@router.post(
+    "",
+    response_model=CampaignLogRecordSendResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Record or update a campaign message as SENT (backward compatibility)",
+)
+def record_campaign_send_base(
+    data: CampaignLogRecordSendRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return CampaignExecutionService(db).record_send(current_user, data)
 
 
 @router.post(
@@ -80,11 +127,6 @@ def mark_sent(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Marks a PENDING campaign log as SENT and records the current UTC sent_at timestamp.
-    Returns HTTP 400 if already marked SENT or not PENDING.
-    Requires a valid Bearer JWT.
-    """
     return CampaignExecutionService(db).mark_sent(current_user, log_id)
 
 
@@ -100,12 +142,5 @@ def mark_failed(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Marks a PENDING campaign log as FAILED and optionally records the failure reason.
-    Returns HTTP 400 if not PENDING.
-    Requires a valid Bearer JWT.
-    """
-    reason = body.failure_reason if body else None
-    return CampaignExecutionService(db).mark_failed(
-        current_user, log_id, failure_reason=reason
-    )
+    failure_reason = body.failure_reason if body else None
+    return CampaignExecutionService(db).mark_failed(current_user, log_id, failure_reason)

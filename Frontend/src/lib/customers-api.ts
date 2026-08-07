@@ -383,3 +383,74 @@ export async function recordCustomerVisitApi(customerId: string, amountSpent: nu
   const data: BackendCustomer = await res.json();
   return formatCustomer(data);
 }
+
+export async function exportCustomersApi(params?: {
+  search?: string;
+  filter?: string;
+  sort?: string;
+  format?: string;
+}): Promise<void> {
+  const query = new URLSearchParams();
+  if (params?.search) query.set("search", params.search);
+  if (params?.filter) query.set("filter", params.filter);
+  if (params?.sort) query.set("sort", params.sort);
+  if (params?.format) query.set("format", params.format);
+
+  const res = await apiFetch(`/api/v1/customers/export?${query.toString()}`);
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || `Failed to export customers (HTTP ${res.status})`);
+  }
+
+  const blob = await res.blob();
+  const contentDisposition = res.headers.get("Content-Disposition");
+  let filename = `customers_export_${new Date().toISOString().slice(0, 10)}.csv`;
+  if (contentDisposition && contentDisposition.includes("filename=")) {
+    const match = contentDisposition.match(/filename="?([^";]+)"?/);
+    if (match && match[1]) {
+      filename = match[1];
+    }
+  }
+
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+export interface CustomerImportErrorItem {
+  row: number;
+  field?: string;
+  reason: string;
+}
+
+export interface CustomerImportResponse {
+  total_rows: number;
+  imported_count: number;
+  skipped_count: number;
+  failed_count: number;
+  duplicate_count: number;
+  errors: CustomerImportErrorItem[];
+  message: string;
+}
+
+export async function importCustomersApi(file: File): Promise<CustomerImportResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await apiFetch(`/api/v1/customers/import`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || `Customer import failed (HTTP ${res.status})`);
+  }
+
+  return await res.json();
+}

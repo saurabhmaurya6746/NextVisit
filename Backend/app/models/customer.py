@@ -95,9 +95,19 @@ class Customer(BaseModel):
     def status(self) -> str:
         v = self.visit_count or 0
         s = self.total_spent or 0.0
-        if v >= 5 or s >= 2500:
-            return "VIP"
-        elif v >= 2 or s >= 500:
-            return "Regular"
-        else:
-            return "New"
+        # Check attached business.vip_settings if available
+        if hasattr(self, "business") and self.business is not None and getattr(self.business, "vip_settings", None) is not None:
+            v_set = self.business.vip_settings
+            conds = []
+            if v_set.min_lifetime_spend > 0:
+                conds.append(s >= v_set.min_lifetime_spend)
+            if v_set.min_visits > 0:
+                conds.append(v >= v_set.min_visits)
+            if conds:
+                is_v = any(conds) if str(v_set.rule_logic).upper() == "ANY" else all(conds)
+                if is_v:
+                    return "VIP"
+        # Default fallback
+        if v > 1:
+            return "Returning"
+        return "New"

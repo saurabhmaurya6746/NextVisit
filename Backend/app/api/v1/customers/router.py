@@ -1,7 +1,7 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, status, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user
@@ -17,6 +17,7 @@ from app.schemas.customer import (
     CustomerResponse,
     CustomerSegmentsResponse,
     CustomerUpdate,
+    CustomerImportResponse,
     PaginatedWelcomeResponse,
     PaginatedVipResponse,
     PaginatedCustomersResponse,
@@ -224,6 +225,48 @@ def get_customer_segments(
     Requires a valid Bearer JWT.
     """
     return CustomerSegmentationService(db).get_customer_segments(current_user)
+
+
+@router.get(
+    "/export",
+    summary="Export customers dataset matching current search, filters, and sorting to downloadable CSV",
+)
+def export_customers(
+    search: str | None = Query(None, description="Search term"),
+    sort: str | None = Query("newest", description="Sort order"),
+    filter: str | None = Query("all", description="Filter (all, active, inactive, VIP, New)"),
+    format: str = Query("csv", description="Export format (csv)"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Generates downloadable CSV file containing only the filtered, searched, and sorted customer dataset.
+    Preserves business isolation and includes UTF-8 encoding.
+    """
+    return CustomerService(db).export_customers(
+        current_user=current_user,
+        search=search,
+        sort=sort,
+        filter=filter,
+        file_format=format,
+    )
+
+
+@router.post(
+    "/import",
+    response_model=CustomerImportResponse,
+    summary="Import customers from CSV or Excel file with validation and summary",
+)
+def import_customers(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Imports customers from CSV/Excel file for the authenticated business.
+    Validates name/phone, ignores empty rows, prevents duplicates per business, and returns detailed summary.
+    """
+    return CustomerService(db).import_customers(current_user=current_user, file=file)
 
 
 @router.get(

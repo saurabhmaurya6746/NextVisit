@@ -20,8 +20,12 @@ export interface InvoiceData {
     notes?: string | null;
   }>;
   subtotal: number;
+  coupon_code?: string | null;
   tax_amount?: number;
   discount_amount?: number;
+  enable_gst?: boolean;
+  gst_percentage?: number;
+  price_includes_gst?: boolean;
   total_amount: number;
   business?: {
     restaurant_name?: string;
@@ -29,6 +33,9 @@ export interface InvoiceData {
     phone?: string;
     email?: string;
     gst_number?: string;
+    enable_gst?: boolean;
+    price_includes_gst?: boolean;
+    tax_percentage?: number;
   };
   loyalty?: {
     current_points?: number;
@@ -182,31 +189,70 @@ export function InvoiceView({
         </table>
 
         {/* Totals Section */}
-        <div className="mt-4 space-y-1.5 border-t pt-3 text-xs">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Subtotal</span>
-            <span className="tabular-nums">{fmt(invData.subtotal)}</span>
-          </div>
+        {(() => {
+          const subtotal = invData.subtotal || 0;
+          const discount = invData.discount_amount || 0;
+          const couponCode = invData.coupon_code;
+          const netSubtotal = Math.max(0, subtotal - discount);
+          
+          const enableGst = invData.enable_gst ?? invData.business?.enable_gst ?? (invData.tax_amount ? invData.tax_amount > 0 : true);
+          const gstPct = invData.gst_percentage ?? invData.business?.tax_percentage ?? 18.0;
+          const isInclusive = invData.price_includes_gst ?? invData.business?.price_includes_gst ?? false;
 
-          {invData.tax_amount && invData.tax_amount > 0 ? (
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Tax / GST</span>
-              <span className="tabular-nums">{fmt(invData.tax_amount)}</span>
+          let taxableAmt = netSubtotal;
+          let taxAmt = invData.tax_amount || 0;
+          let grandTotal = invData.total_amount || netSubtotal;
+
+          if (enableGst && taxAmt === 0 && gstPct > 0) {
+            if (isInclusive) {
+              grandTotal = netSubtotal;
+              taxableAmt = Math.round((grandTotal / (1 + gstPct / 100)) * 100) / 100;
+              taxAmt = Math.round((grandTotal - taxableAmt) * 100) / 100;
+            } else {
+              taxableAmt = netSubtotal;
+              taxAmt = Math.round((taxableAmt * (gstPct / 100)) * 100) / 100;
+              grandTotal = Math.round((taxableAmt + taxAmt) * 100) / 100;
+            }
+          }
+
+          return (
+            <div className="mt-4 space-y-1.5 border-t pt-3 text-xs">
+              {/* Subtotal */}
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="tabular-nums font-mono">{fmt(subtotal)}</span>
+              </div>
+
+              {/* Coupon Discount */}
+              {discount > 0 && (
+                <div className="flex justify-between text-emerald-600 font-medium">
+                  <span>Coupon Discount {couponCode ? `(${couponCode})` : ""}</span>
+                  <span className="tabular-nums font-mono">-{fmt(discount)}</span>
+                </div>
+              )}
+
+              {/* Taxable Amount & GST Breakdown (HIDDEN IF GST IS DISABLED) */}
+              {enableGst && gstPct > 0 && (
+                <>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Taxable Amount</span>
+                    <span className="tabular-nums font-mono">{fmt(taxableAmt)}</span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>GST ({gstPct}%) {isInclusive ? "(Inclusive)" : ""}</span>
+                    <span className="tabular-nums font-mono">{fmt(taxAmt)}</span>
+                  </div>
+                </>
+              )}
+
+              {/* Grand Total */}
+              <div className="flex justify-between border-t pt-2 font-display text-base font-bold">
+                <span>Grand Total</span>
+                <span className="tabular-nums text-primary font-mono">{fmt(grandTotal)}</span>
+              </div>
             </div>
-          ) : null}
-
-          {invData.discount_amount && invData.discount_amount > 0 ? (
-            <div className="flex justify-between text-rose-500">
-              <span>Discount</span>
-              <span className="tabular-nums">-{fmt(invData.discount_amount)}</span>
-            </div>
-          ) : null}
-
-          <div className="flex justify-between border-t pt-2 font-display text-base font-bold">
-            <span>Grand Total</span>
-            <span className="tabular-nums text-primary">{fmt(invData.total_amount)}</span>
-          </div>
-        </div>
+          );
+        })()}
 
         {/* Loyalty Section */}
         {invData.loyalty && (

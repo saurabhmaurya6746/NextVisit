@@ -39,6 +39,7 @@ export interface Appointment {
   paymentStatus?: PaymentStatus;
   paidAt?: string;
   visitCounted?: boolean;
+  isWalkIn?: boolean;
 }
 
 const KEY = "growthos:appointments";
@@ -94,17 +95,18 @@ export function getAppointment(id: string) {
   return read().find((a) => a.id === id) || null;
 }
 
-export function saveAppointment(input: Omit<Appointment, "id" | "code"> & { businessKey?: string }) {
+export function saveAppointment(input: Omit<Appointment, "id" | "code"> & { id?: string; businessKey?: string }) {
   const services = input.services && input.services.length ? input.services : [{ name: input.service, price: input.price || 0, duration: input.duration || 30 }];
   const price = services.reduce((s, x) => s + (x.price || 0), 0);
   const duration = services.reduce((s, x) => s + (x.duration || 0), 0);
+
   const appt: Appointment = {
     ...input,
     services,
     service: services[0]?.name || input.service,
     price,
     duration,
-    id: `A-${Date.now().toString(36).toUpperCase()}`,
+    id: input.id || `A-${Date.now().toString(36).toUpperCase()}`,
     code: nextApptCode(input.businessKey),
     status: input.status || "pending",
     paymentStatus: input.paymentStatus || "unpaid",

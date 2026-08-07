@@ -21,7 +21,7 @@ import { PageTransition } from "@/components/page-transition";
 import { EmptyState } from "@/components/empty-state";
 import { AiGenerateDialog } from "@/components/ai-generate-dialog";
 import { CampaignSendModal, SendCustomerItem } from "@/components/campaign-send-modal";
-import { openWhatsApp } from "@/lib/celebration-utils";
+import { openWhatsApp, sendWhatsAppWithStatusTracking } from "@/lib/celebration-utils";
 import { logWhatsApp } from "@/lib/whatsapp-history";
 import { fmt } from "@/lib/currency";
 import { apiFetch, getSession } from "@/lib/auth";
@@ -197,19 +197,20 @@ function RecoveryBucketPage() {
     return `Hi ${first}! 👋 We miss you at ${bizLabel}!\nIt's been ${c.days_since_last_visit} days since your last ${actionLabel}. We'd love to welcome you back with ${offer} (Coupon: ${coupon}) ❤️`;
   }
 
-  function handleSendSingle(c: RecoverableCustomerItem) {
+  async function handleSendSingle(c: RecoverableCustomerItem) {
     setOpeningWa(true);
     const msg = customMsg[c.id] ?? defaultMessageFor(c);
-    setTimeout(() => {
-      openWhatsApp(c.phone, msg);
-      logWhatsApp({ customerId: c.id, kind: "recovery", message: msg });
-      apiFetch("/api/v1/campaign-logs", {
-        method: "POST",
-        body: JSON.stringify({ customer_id: c.id, campaign_type: "RECOVERY", status: "SENT", message: msg }),
-      }).catch((e) => console.warn("Log save warning:", e));
-      setOpeningWa(false);
-      toast.success("WhatsApp opened");
-    }, 350);
+    await sendWhatsAppWithStatusTracking({
+      customerId: c.id,
+      customerPhone: c.phone,
+      message: msg,
+      campaignType: "RECOVERY",
+      onSuccess: () => {
+        setOpeningWa(false);
+        refetch();
+      },
+      onError: () => setOpeningWa(false),
+    });
   }
 
   // ── Bulk Selection ──────────────────────────────────────────────────────

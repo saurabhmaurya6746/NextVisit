@@ -19,7 +19,7 @@ import { EmptyState } from "@/components/empty-state";
 import { AiGenerateDialog } from "@/components/ai-generate-dialog";
 import { CampaignSendModal } from "@/components/campaign-send-modal";
 import { fmt } from "@/lib/currency";
-import { openWhatsApp } from "@/lib/celebration-utils";
+import { openWhatsApp, sendWhatsAppWithStatusTracking } from "@/lib/celebration-utils";
 import { logWhatsApp } from "@/lib/whatsapp-history";
 import { apiFetch, getSession } from "@/lib/auth";
 import { toast } from "sonner";
@@ -91,10 +91,15 @@ function WelcomePage() {
     setPage(1);
   };
 
-  function sendWhatsApp(c: any) {
+  async function sendWhatsApp(c: any) {
     const msg = customMsgs[c.id] || defaultWelcomeMessage(c.name);
-    openWhatsApp(c.phone, msg);
-    logWhatsApp({ customerId: c.id, kind: "campaign", message: msg });
+    await sendWhatsAppWithStatusTracking({
+      customerId: c.id,
+      customerPhone: c.phone,
+      message: msg,
+      campaignType: "WELCOME",
+      onSuccess: () => refetch(),
+    });
   }
 
   return (

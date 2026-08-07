@@ -139,10 +139,10 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
       : `${API_BASE_URL}${bizSettings.payment_qr_image.startsWith("/") ? "" : "/"}${bizSettings.payment_qr_image}`
     : null;
 
-  // Auto Detect Customer on phone change / search
+  // Auto Detect Customer on phone change / search (exact 10 digits only)
   const handleDetectCustomer = async (num: string) => {
-    const clean = num.trim();
-    if (!clean || clean.length < 4) {
+    const clean = num.replace(/\D/g, "");
+    if (clean.length !== 10) {
       setAutoDetectResult(null);
       return;
     }
@@ -899,11 +899,29 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                         <div className="relative mt-1.5">
                           <Phone className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                           <Input
-                            placeholder="Enter phone number…"
+                            placeholder="Enter 10-digit phone number…"
                             value={phoneInput}
                             onChange={(e) => {
-                              setPhoneInput(e.target.value);
-                              handleDetectCustomer(e.target.value);
+                              const val = e.target.value;
+                              setPhoneInput(val);
+                              const cleanDigits = val.replace(/\D/g, "");
+                              if (cleanDigits.length === 10) {
+                                handleDetectCustomer(val);
+                              } else {
+                                setAutoDetectResult(null);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleDetectCustomer(phoneInput);
+                              }
+                            }}
+                            onBlur={() => {
+                              const cleanDigits = phoneInput.replace(/\D/g, "");
+                              if (cleanDigits.length === 10) {
+                                handleDetectCustomer(phoneInput);
+                              }
                             }}
                             className="pl-9 text-xs h-9 rounded-xl font-mono"
                           />

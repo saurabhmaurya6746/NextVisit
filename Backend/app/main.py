@@ -12,6 +12,7 @@ from app.api.v1.admin_clients.router import router as admin_clients_router
 from app.api.v1.admin_dashboard.router import router as admin_dashboard_router
 from app.api.v1.admin_settings.router import router as admin_settings_router
 from app.api.v1.admin_subscriptions.router import router as admin_subscriptions_router
+from app.api.v1.credit_management.router import router as credit_management_router
 from app.api.v1.auth.router import router as auth_router
 from app.api.v1.automation.router import router as automation_router
 from app.api.v1.business.router import router as business_router
@@ -95,6 +96,11 @@ app.include_router(
 
 app.include_router(
     admin_subscriptions_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    credit_management_router,
     prefix="/api/v1",
 )
 

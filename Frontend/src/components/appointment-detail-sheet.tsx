@@ -23,14 +23,36 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { API_BASE_URL } from "@/lib/auth";
 import { useQueryClient } from "@tanstack/react-query";
+import { listStaffApi } from "@/lib/staff-api";
+import { Edit2 } from "lucide-react";
 
 const statusColor: Record<string, string> = {
   pending: "bg-warning/15 text-warning-foreground border-warning/30",
   checkedin: "bg-info/15 text-info border-info/30",
-  completed: "bg-success/15 text-success-foreground border-success/30",
+  completed: "bg-purple-500/15 text-purple-600 border-purple-500/30",
+  paid: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30",
   cancelled: "bg-destructive/15 text-destructive border-destructive/30",
 };
-const statusLabel: Record<string, string> = { pending: "Pending", checkedin: "Checked In", completed: "Completed", cancelled: "Cancelled" };
+const statusLabel: Record<string, string> = {
+  pending: "Pending",
+  checkedin: "In Service",
+  completed: "Completed",
+  paid: "Paid",
+  cancelled: "Cancelled",
+};
+
+function getDisplayStatus(a: Appointment) {
+  if (a.status === "cancelled") return { label: "Cancelled", color: statusColor.cancelled };
+  if (a.status === "pending") return { label: "Pending", color: statusColor.pending };
+  if (a.status === "checkedin") return { label: "In Service", color: statusColor.checkedin };
+  if (a.status === "completed") {
+    if (a.paymentStatus === "paid" || a.paidAt) {
+      return { label: "Paid", color: statusColor.paid };
+    }
+    return { label: "Completed", color: statusColor.completed };
+  }
+  return { label: a.status, color: "bg-muted text-muted-foreground" };
+}
 
 import { useEffect } from "react";
 import { Download, MessageCircle, Check, Plus, Search } from "lucide-react";
@@ -52,7 +74,17 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
   const [assignChairOpen, setAssignChairOpen] = useState(false);
   const [assignAreaIdPick, setAssignAreaIdPick] = useState("");
   const [assignChairIdPick, setAssignChairIdPick] = useState("");
+  const [assignStaffPick, setAssignStaffPick] = useState("");
   const [assigningChair, setAssigningChair] = useState(false);
+
+  // Schedule Edit State
+  const [isEditingSchedule, setIsEditingSchedule] = useState(false);
+  const [editStaff, setEditStaff] = useState("");
+  const [editServiceAreaId, setEditServiceAreaId] = useState("");
+  const [editChairId, setEditChairId] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [editStartTime, setEditStartTime] = useState("");
+  const [editDuration, setEditDuration] = useState(30);
 
   // Add Extra Service Modal State
   const [addServiceModalOpen, setAddServiceModalOpen] = useState(false);
@@ -88,8 +120,14 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
   const { data: salonChairs = [] } = useQuery<SalonChair[]>({
     queryKey: ["salon-chairs"],
     queryFn: () => listSalonChairsApi(),
-    enabled: open && assignChairOpen,
+    enabled: open && (assignChairOpen || isEditingSchedule),
   });
+  const { data: staffData } = useQuery({
+    queryKey: ["staff-list"],
+    queryFn: () => listStaffApi("", "ALL", 1, 100),
+    enabled: open && (assignChairOpen || isEditingSchedule),
+  });
+  const staffList = staffData?.items || [];
 
   async function executeChairRelease() {
     if (!a.chairId) return;
@@ -190,13 +228,32 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
   async function setStatus(s: Appointment["status"]) {
     // For Check-In: open the workstation assignment panel
     if (s === "checkedin") {
-      // Pre-populate area from existing appointment if any
       setAssignAreaIdPick(a.serviceAreaId || "");
       setAssignChairIdPick("");
+      setAssignStaffPick(a.staff || "");
       setAssignChairOpen(true);
       return;
     }
-    updateAppointment(a.id, { status: s });
+
+    if (s === "cancelled" && a.chairId) {
+      try {
+        await releaseSalonChairApi(a.chairId);
+        qc.invalidateQueries({ queryKey: ["salon-chairs"] });
+        qc.invalidateQueries({ queryKey: ["salon-chairs-metrics"] });
+      } catch (err) {
+        console.warn("Failed releasing workstation on cancellation:", err);
+      }
+    }
+
+    const updated = updateAppointment(a.id, { status: s });
+    if (updated) {
+      setLiveAppt(updated);
+    }
+
+    qc.invalidateQueries({ queryKey: ["appointments"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
+    qc.invalidateQueries({ queryKey: ["salon-chairs"] });
+    qc.invalidateQueries({ queryKey: ["salon-chairs-metrics"] });
     toast.success(`Marked ${statusLabel[s] || s}`);
   }
 
@@ -218,20 +275,95 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
       await updateSalonChairStatusApi(assignChairIdPick, "Occupied");
       qc.invalidateQueries({ queryKey: ["salon-chairs"] });
       qc.invalidateQueries({ queryKey: ["salon-chairs-metrics"] });
-      // Save workstation assignment + checkedin status on the appointment
-      updateAppointment(a.id, {
+
+      // Start Time becomes actual Check-In time
+      const actualCheckInTime = new Date().toISOString();
+
+      // Save workstation assignment + staff + check-in time + checkedin status on the appointment
+      const updatedAppt = updateAppointment(a.id, {
         status: "checkedin",
+        start: actualCheckInTime,
+        staff: assignStaffPick || a.staff,
         chairId: assignChairIdPick,
         chairName: selectedChair?.chair_name,
         serviceAreaId: assignAreaIdPick || a.serviceAreaId,
         serviceAreaName: selectedArea?.name || a.serviceAreaName,
       });
+      if (updatedAppt) {
+        setLiveAppt(updatedAppt);
+      }
       setAssignChairOpen(false);
       toast.success(`Customer Checked In ✔ Workstation "${selectedChair?.chair_name}" is now Occupied`);
     } catch (err: any) {
+      console.error("Failed to check in appointment:", err);
+      toast.error("Failed to check in customer. Please try again.");
     } finally {
       setAssigningChair(false);
     }
+  }
+
+  function startEditSchedule() {
+    setEditStaff(a.staff || "");
+    setEditServiceAreaId(a.serviceAreaId || "");
+    setEditChairId(a.chairId || "");
+    const d = new Date(a.start);
+    setEditDate(d.toISOString().slice(0, 10));
+    setEditStartTime(d.toTimeString().slice(0, 5));
+    setEditDuration(totalDuration);
+    setIsEditingSchedule(true);
+  }
+
+  async function saveScheduleEdit() {
+    const selectedArea = salonAreas.find((ar) => ar.id === editServiceAreaId);
+    const selectedChair = salonChairs.find((ch) => ch.id === editChairId);
+
+    let newStartIso = a.start;
+    if (editDate && editStartTime) {
+      const combined = new Date(`${editDate}T${editStartTime}`);
+      if (!isNaN(combined.getTime())) {
+        newStartIso = combined.toISOString();
+      }
+    }
+
+    const oldChairId = a.chairId;
+    const newChairId = editChairId || undefined;
+
+    if (oldChairId && oldChairId !== newChairId && (a.status === "checkedin" || a.status === "in-service")) {
+      try {
+        await updateSalonChairStatusApi(oldChairId, "Available");
+      } catch (e) {
+        console.warn("Failed releasing previous workstation:", e);
+      }
+    }
+    if (newChairId && oldChairId !== newChairId && (a.status === "checkedin" || a.status === "in-service")) {
+      try {
+        await updateSalonChairStatusApi(newChairId, "Occupied");
+      } catch (e) {
+        console.warn("Failed occupying new workstation:", e);
+      }
+    }
+
+    const updated = updateAppointment(a.id, {
+      staff: editStaff || undefined,
+      serviceAreaId: editServiceAreaId || undefined,
+      serviceAreaName: selectedArea?.name || undefined,
+      chairId: newChairId,
+      chairName: selectedChair?.chair_name || undefined,
+      start: newStartIso,
+      duration: Number(editDuration) || totalDuration,
+    });
+
+    if (updated) {
+      setLiveAppt(updated);
+    }
+
+    qc.invalidateQueries({ queryKey: ["appointments"] });
+    qc.invalidateQueries({ queryKey: ["salon-chairs"] });
+    qc.invalidateQueries({ queryKey: ["salon-chairs-metrics"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
+
+    toast.success("Appointment schedule updated successfully!");
+    setIsEditingSchedule(false);
   }
 
   async function handleAddExtraServices(itemsToAdd: { name: string; price: number; duration: number; id?: string }[]) {
@@ -412,19 +544,14 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
 
     if (a.chairId) {
       try {
-        await updateSalonChairStatusApi(a.chairId, "Occupied");
+        await releaseSalonChairApi(a.chairId);
         qc.invalidateQueries({ queryKey: ["salon-chairs"] });
-        toast.info("Payment completed. Workstation will be released automatically in 30 seconds...");
-        setTimeout(async () => {
-          try {
-            await releaseSalonChairApi(a.chairId!);
-            qc.invalidateQueries({ queryKey: ["salon-chairs"] });
-          } catch (e) {
-            console.warn("Auto-release workstation failed:", e);
-          }
-        }, 30000);
+        qc.invalidateQueries({ queryKey: ["salon-chairs-metrics"] });
+        qc.invalidateQueries({ queryKey: ["dashboard-analytics"] });
+        qc.invalidateQueries({ queryKey: ["dashboard"] });
+        toast.success(`Payment collected · ${fmt(totalPrice)} · Workstation released`);
       } catch (err) {
-        console.warn("Failed updating workstation status:", err);
+        console.warn("Failed releasing workstation status on payment:", err);
       }
     } else {
       toast.success(`Payment collected · ${fmt(totalPrice)}`);
@@ -435,17 +562,32 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
     setInvoiceSuccessOpen(true);
   }
 
+  function handleOpenPayModal() {
+    if (services.length === 0) {
+      toast.error("Please add at least one service before collecting payment.");
+      return;
+    }
+    if (!a.staff || a.staff === "Unassigned" || a.staff === "Staff Member") {
+      toast.error("Please assign a staff member before collecting payment.");
+      return;
+    }
+    setPayOpen(true);
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full overflow-y-auto sm:max-w-xl text-foreground">
-        <SheetHeader>
-          <SheetTitle className="font-display flex items-center justify-between gap-2 border-b pb-3">
+        <SheetHeader className="pr-8">
+          <SheetTitle className="font-display flex flex-wrap items-center justify-between gap-2 border-b pb-3 pr-2">
             <div className="flex items-center gap-2">
               <Scissors className="h-5 w-5 text-primary" />
               <span>{apptCode(a)}</span>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="outline" className={`rounded-full text-[10px] ${statusColor[a.status]}`}>{statusLabel[a.status]}</Badge>
+              {(() => {
+                const st = getDisplayStatus(a);
+                return <Badge variant="outline" className={`rounded-full text-[10px] ${st.color}`}>{st.label}</Badge>;
+              })()}
               {paid ? (
                 <Badge variant="outline" className="rounded-full bg-emerald-500/15 text-emerald-600 border-emerald-500/30 text-[10px]">Paid</Badge>
               ) : advancePaid > 0 ? (
@@ -537,19 +679,96 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
 
           {/* APPOINTMENT & TIMING SECTION */}
           <div className="rounded-2xl border bg-card p-4 space-y-2.5 shadow-xs">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 border-b pb-2">
-              <Calendar className="h-3.5 w-3.5 text-primary" /> Appointment Details & Schedule
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-              <div><span className="text-muted-foreground block text-[10px]">Assigned Staff</span><span className="font-semibold text-foreground">{a.staff || "Staff Member"}</span></div>
-              <div><span className="text-muted-foreground block text-[10px]">Service Area</span><span className="font-semibold text-foreground">{a.serviceAreaName || "Main Salon"}</span></div>
-              <div><span className="text-muted-foreground block text-[10px]">Assigned Chair / Station</span><span className="font-semibold text-primary">{a.chairName || "Styling Chair"}</span></div>
-              <div><span className="text-muted-foreground block text-[10px]">Start Time</span><span className="font-medium">{startTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
-              <div><span className="text-muted-foreground block text-[10px]">Est. Finish Time</span><span className="font-semibold text-primary">{endTime ? endTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</span></div>
-              <div><span className="text-muted-foreground block text-[10px]">Date</span><span className="font-medium">{startTime.toLocaleDateString()}</span></div>
-              <div><span className="text-muted-foreground block text-[10px]">Duration</span><span className="font-medium">{totalDuration} minutes</span></div>
-              <div><span className="text-muted-foreground block text-[10px]">Booking Status</span><span className="font-medium capitalize">{a.status}</span></div>
+            <div className="flex items-center justify-between border-b pb-2">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <Calendar className="h-3.5 w-3.5 text-primary" /> Appointment Details & Schedule
+              </p>
+              {a.status !== "completed" && !paid && (!isEditingSchedule ? (
+                <Button variant="outline" size="sm" className="h-7 text-xs rounded-full gap-1" onClick={startEditSchedule}>
+                  <Edit2 className="h-3 w-3" /> Edit Schedule
+                </Button>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <Button variant="ghost" size="sm" className="h-7 text-xs rounded-full" onClick={() => setIsEditingSchedule(false)}>
+                    Cancel
+                  </Button>
+                  <Button size="sm" className="h-7 text-xs rounded-full gradient-brand text-primary-foreground" onClick={saveScheduleEdit}>
+                    Save Changes
+                  </Button>
+                </div>
+              ))}
             </div>
+
+            {!isEditingSchedule ? (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div><span className="text-muted-foreground block text-[10px]">Assigned Staff</span><span className="font-semibold text-foreground">{a.staff || "Staff Member"}</span></div>
+                <div><span className="text-muted-foreground block text-[10px]">Service Area</span><span className="font-semibold text-foreground">{a.serviceAreaName || "Not Assigned"}</span></div>
+                <div><span className="text-muted-foreground block text-[10px]">Assigned Chair / Station</span><span className="font-semibold text-primary">{a.chairName || "Not Assigned"}</span></div>
+                <div><span className="text-muted-foreground block text-[10px]">Start Time</span><span className="font-medium">{startTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
+                <div><span className="text-muted-foreground block text-[10px]">Est. Finish Time</span><span className="font-semibold text-primary">{endTime ? endTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</span></div>
+                <div><span className="text-muted-foreground block text-[10px]">Date</span><span className="font-medium">{startTime.toLocaleDateString()}</span></div>
+                <div><span className="text-muted-foreground block text-[10px]">Duration</span><span className="font-medium">{totalDuration} minutes</span></div>
+                <div><span className="text-muted-foreground block text-[10px]">Booking Status</span><span className="font-medium capitalize">{a.status}</span></div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Assigned Staff</Label>
+                  <Select value={editStaff} onValueChange={setEditStaff}>
+                    <SelectTrigger className="mt-1 text-xs h-8"><SelectValue placeholder="Select staff..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Unassigned">Unassigned</SelectItem>
+                      {staffList.map((st) => (
+                        <SelectItem key={st.id} value={st.name}>{st.name} ({st.designation || st.role})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Service Area</Label>
+                  <Select value={editServiceAreaId || "none"} onValueChange={(v) => setEditServiceAreaId(v === "none" ? "" : v)}>
+                    <SelectTrigger className="mt-1 text-xs h-8"><SelectValue placeholder="Select area..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Not Assigned</SelectItem>
+                      {salonAreas.map((ar) => (
+                        <SelectItem key={ar.id} value={ar.id}>{ar.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Assigned Workstation</Label>
+                  <Select value={editChairId || "none"} onValueChange={(v) => setEditChairId(v === "none" ? "" : v)}>
+                    <SelectTrigger className="mt-1 text-xs h-8"><SelectValue placeholder="Select workstation..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Not Assigned</SelectItem>
+                      {(editServiceAreaId ? salonChairs.filter((c) => c.service_area_id === editServiceAreaId && (c.status === "Available" || c.id === a.chairId)) : salonChairs.filter((c) => c.status === "Available" || c.id === a.chairId)).map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.chair_name} {c.chair_number ? `(#${c.chair_number})` : ""} {c.status === "Available" ? "(Available)" : "(Current)"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Appointment Date</Label>
+                  <Input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} className="mt-1 text-xs h-8" />
+                </div>
+
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Start Time</Label>
+                  <Input type="time" value={editStartTime} onChange={(e) => setEditStartTime(e.target.value)} className="mt-1 text-xs h-8" />
+                </div>
+
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Duration (Minutes)</Label>
+                  <Input type="number" min="5" step="5" value={editDuration} onChange={(e) => setEditDuration(Number(e.target.value))} className="mt-1 text-xs h-8" />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* SERVICES SECTION */}
@@ -558,45 +777,43 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
               <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 <Scissors className="h-3.5 w-3.5 text-primary" /> Selected Services ({services.length})
               </p>
-              {!paid && (
+
+              {a.status !== "completed" && !paid && (
                 <Button
                   size="sm"
                   variant="outline"
-                  className="rounded-full text-xs h-7 px-3 text-primary border-primary/30 hover:bg-primary/10"
+                  className="rounded-full h-7 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10"
                   onClick={() => setAddServiceModalOpen(true)}
                 >
-                  <Plus className="mr-1 h-3.5 w-3.5" /> Add Service
+                  <Plus className="h-3 w-3" /> Add Extra Service
                 </Button>
               )}
             </div>
-            <div className="space-y-1.5 text-xs">
-              {services.length === 0 ? (
-                <div className="py-4 text-center text-xs text-muted-foreground italic bg-muted/20 rounded-xl">
-                  No services selected. Click "+ Add Service" to add services.
-                </div>
-              ) : (
-                services.map((s, i) => (
-                  <div key={i} className="flex items-center justify-between rounded-xl bg-muted/30 px-3 py-2">
-                    <div>
-                      <span className="font-medium text-foreground">{s.name}</span>
-                      <span className="text-muted-foreground text-[11px] ml-2">· {s.duration} min</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-semibold">{fmt(s.price)}</span>
-                      {!paid && (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-6 w-6 rounded-full text-destructive/70 hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => setRemoveServiceTarget({ index: i, service: s })}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </div>
+            <div className="space-y-2">
+              {services.map((s, idx) => (
+                <div key={idx} className="flex items-center justify-between rounded-xl bg-muted/20 p-2.5 border">
+                  <div>
+                    <p className="font-semibold text-foreground">{s.name}</p>
+                    <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                      <Clock className="h-3 w-3" /> {s.duration} min · Standard Service
+                    </p>
                   </div>
-                ))
-              )}
+
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-primary">{fmt(s.price)}</span>
+                    {!paid && services.length > 1 && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 rounded-full text-destructive hover:bg-destructive/10"
+                        onClick={() => setRemoveServiceTarget({ index: idx, service: s })}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -639,9 +856,35 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
                   <LogIn className="mr-1.5 h-4 w-4" /> Check In (Customer Arrived)
                 </Button>
               )}
-              {a.status !== "completed" && <Button size="sm" variant="outline" className="rounded-full" onClick={() => setStatus("completed")}><CheckCircle2 className="mr-1.5 h-4 w-4" /> Mark completed</Button>}
-              <Button size="sm" className="rounded-full gradient-brand text-primary-foreground" onClick={() => setPayOpen(true)}><CreditCard className="mr-1.5 h-4 w-4" /> Collect payment</Button>
-              <Button size="sm" variant="ghost" className="rounded-full text-destructive" onClick={() => setStatus("cancelled")}><XCircle className="mr-1.5 h-4 w-4" /> Cancel</Button>
+              {a.status === "checkedin" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="rounded-full"
+                  onClick={() => setStatus("completed")}
+                >
+                  <CheckCircle2 className="mr-1.5 h-4 w-4" /> Mark completed
+                </Button>
+              )}
+              {a.status === "completed" && (
+                <Button
+                  size="sm"
+                  className="rounded-full gradient-brand text-primary-foreground"
+                  onClick={handleOpenPayModal}
+                >
+                  <CreditCard className="mr-1.5 h-4 w-4" /> Collect payment
+                </Button>
+              )}
+              {a.status !== "completed" && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="rounded-full text-destructive"
+                  onClick={() => setStatus("cancelled")}
+                >
+                  <XCircle className="mr-1.5 h-4 w-4" /> Cancel
+                </Button>
+              )}
             </div>
           )}
           {paid && (
@@ -665,13 +908,26 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
             <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4 space-y-3 mt-2">
               <div className="flex items-center gap-2 border-b pb-2">
                 <Armchair className="h-4 w-4 text-primary" />
-                <p className="font-bold text-sm text-foreground">Assign Workstation</p>
+                <p className="font-bold text-sm text-foreground">Confirm Check-In Details</p>
                 <Badge variant="outline" className="ml-auto rounded-full text-[10px] bg-amber-500/10 text-amber-700 border-amber-500/30">Check-In Step</Badge>
               </div>
               <p className="text-xs text-muted-foreground">
-                Customer has arrived. Select an available workstation to start service.
+                Customer has arrived. Assign staff, service area, and an available workstation to start service.
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs font-semibold">Assigned Staff</Label>
+                  <Select value={assignStaffPick} onValueChange={setAssignStaffPick}>
+                    <SelectTrigger className="mt-1 text-xs"><SelectValue placeholder="Select staff…" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Unassigned">Unassigned</SelectItem>
+                      {staffList.map((st) => (
+                        <SelectItem key={st.id} value={st.name}>{st.name} ({st.designation || st.role})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {salonAreas.length > 0 && (
                   <div>
                     <Label className="text-xs font-semibold">Service Area</Label>
@@ -691,11 +947,11 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
                     <SelectTrigger className="mt-1 text-xs"><SelectValue placeholder="Select workstation…" /></SelectTrigger>
                     <SelectContent>
                       {(assignAreaIdPick
-                        ? salonChairs.filter((c) => c.service_area_id === assignAreaIdPick)
-                        : salonChairs
+                        ? salonChairs.filter((c) => c.service_area_id === assignAreaIdPick && (c.status === "Available" || c.id === a.chairId))
+                        : salonChairs.filter((c) => c.status === "Available" || c.id === a.chairId)
                       ).map((c) => (
-                        <SelectItem key={c.id} value={c.id} disabled={c.status !== "Available"}>
-                          {c.chair_name} {c.chair_number ? `(#${c.chair_number})` : ""} — {c.status}
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.chair_name} {c.chair_number ? `(#${c.chair_number})` : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -762,11 +1018,11 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
                   </div>
                   <div>
                     <span className="text-[10px] text-muted-foreground block font-medium">Service Area</span>
-                    <span className="font-medium">{a.serviceAreaName || "Main Salon"}</span>
+                    <span className="font-medium">{a.serviceAreaName || "Not Assigned"}</span>
                   </div>
                   <div>
                     <span className="text-[10px] text-muted-foreground block font-medium">Workstation / Chair</span>
-                    <span className="font-semibold text-primary">{a.chairName || "Styling Chair"}</span>
+                    <span className="font-semibold text-primary">{a.chairName || "Not Assigned"}</span>
                   </div>
                 </div>
 
@@ -887,8 +1143,8 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
                   <div><span className="text-[10px] text-muted-foreground block">Customer Name:</span><span className="font-semibold">{a.customerName}</span></div>
                   <div><span className="text-[10px] text-muted-foreground block">Phone Number:</span><span className="font-medium">{a.customerPhone || customerObj?.phone || "—"}</span></div>
                   <div><span className="text-[10px] text-muted-foreground block">Assigned Staff:</span><span className="font-semibold">{a.staff || "Staff Member"}</span></div>
-                  <div><span className="text-[10px] text-muted-foreground block">Service Area:</span><span className="font-medium">{a.serviceAreaName || "Main Salon"}</span></div>
-                  <div><span className="text-[10px] text-muted-foreground block">Workstation:</span><span className="font-semibold text-primary">{a.chairName || "Styling Chair"}</span></div>
+                  <div><span className="text-[10px] text-muted-foreground block">Service Area:</span><span className="font-medium">{a.serviceAreaName || "Not Assigned"}</span></div>
+                  <div><span className="text-[10px] text-muted-foreground block">Workstation:</span><span className="font-semibold text-primary">{a.chairName || "Not Assigned"}</span></div>
                   <div><span className="text-[10px] text-muted-foreground block">Date & Time:</span><span className="font-medium">{startTime.toLocaleDateString()} · {startTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
                 </div>
 

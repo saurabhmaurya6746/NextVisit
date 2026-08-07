@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import {
   Star, Send, MessageCircle, Sparkles, Phone, Copy, Search,
   CheckCircle2, ChevronLeft, ChevronRight, RefreshCw, Calendar, TrendingUp,
-  LayoutGrid, List
+  LayoutGrid, List, Pencil
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { PageTransition } from "@/components/page-transition";
 import { EmptyState } from "@/components/empty-state";
 import { AiGenerateDialog } from "@/components/ai-generate-dialog";
@@ -88,76 +88,69 @@ function ReviewsPage() {
   const [aiFor, setAiFor] = useState<ReviewBoosterCustomerItem | null>(null);
   const [customMsg, setCustomMsg] = useState<Record<string, string>>({});
   const [isSending, setIsSending] = useState(false);
+  const [sendModalCustomer, setSendModalCustomer] = useState<ReviewBoosterCustomerItem | null>(null);
+  const [sendModalMessage, setSendModalMessage] = useState("");
 
-  // Debounce search input
   const handleSearchChange = (val: string) => {
     setSearch(val);
-    clearTimeout((window as any).__reviewSearchTimer);
-    (window as any).__reviewSearchTimer = setTimeout(() => {
-      setDebouncedSearch(val);
-      setPage(1);
-    }, 400);
+    setDebouncedSearch(val);
+    setPage(1);
   };
 
-  // 1. React Query: Fetch 100% Database-Driven Dashboard Metrics
-  const { data: dashboard, isLoading: isDashLoading } = useQuery({
-    queryKey: ["review-booster", "dashboard", session?.clientId],
-    queryFn: getReviewBoosterDashboardApi,
-    refetchInterval: 30000,
-  });
+  const dateRange = getDateRange(dateFilter, customDate);
 
-  // 2. React Query: Fetch Business Google Review Settings
-  const { data: settings } = useQuery({
-    queryKey: ["review-booster", "settings", session?.clientId],
+  const { data: settingsData } = useQuery({
+    queryKey: ["review-booster-settings"],
     queryFn: getReviewBoosterSettingsApi,
   });
 
-  const googleReviewUrl = settings?.google_review_url || "https://g.page/review";
+  const googleReviewUrl = settingsData?.google_review_url || "https://g.page/r/your-google-review-link";
 
-  // 3. React Query: Fetch 100% Database-Driven Paginated Customers List
-  const dateRange = getDateRange(dateFilter, customDate);
+  const { data: dashData } = useQuery({
+    queryKey: ["review-booster-dashboard"],
+    queryFn: getReviewBoosterDashboardApi,
+  });
+
+  const counts = {
+    pending: dashData?.pending ?? 0,
+    requested: dashData?.requested ?? 0,
+    reviewed: dashData?.reviewed ?? 0,
+  };
 
   const {
     data: customerData,
     isLoading: isCustLoading,
     isError,
-    refetch,
   } = useQuery({
-    queryKey: [
-      "review-booster", "customers", session?.clientId,
-      tab, debouncedSearch, page, pageSize, dateFilter, customDate,
-    ],
+    queryKey: ["review-booster-customers", tab, debouncedSearch, page, pageSize, dateRange.startDate, dateRange.endDate],
     queryFn: () =>
       getReviewBoosterCustomersApi({
         status: tab,
         search: debouncedSearch,
         page,
         pageSize,
-        sortBy: "recent",
         startDate: dateRange.startDate,
         endDate: dateRange.endDate,
       }),
-    refetchInterval: 30000,
   });
 
   const customers = customerData?.items ?? [];
-  const totalPages = customerData?.total_pages ?? 1;
   const totalItems = customerData?.total ?? 0;
+  const totalPages = customerData?.total_pages ?? 1;
 
-  const counts = {
-    pending: dashboard?.pending ?? 0,
-    requested: dashboard?.requested ?? 0,
-    reviewed: dashboard?.reviewed ?? 0,
-    clicked: dashboard?.clicked ?? 0,
-    eligible_today: dashboard?.eligible_today ?? 0,
-  };
+  function openSendModal(c: ReviewBoosterCustomerItem) {
+    setSendModalCustomer(c);
+    setSendModalMessage(
+      customMsg[c.customer_id] ?? defaultReviewMessage(c.customer_name, googleReviewUrl)
+    );
+  }
 
   // Handle Send Review Request -> Calls Backend POST /api/v1/review-booster/send
-  async function handleSend(c: ReviewBoosterCustomerItem) {
+  async function handleSend(c: ReviewBoosterCustomerItem, msgOverride?: string) {
     setIsSending(true);
     setOpening(true);
 
-    const msg = customMsg[c.customer_id] ?? defaultReviewMessage(c.customer_name, googleReviewUrl);
+    const msg = msgOverride ?? customMsg[c.customer_id] ?? defaultReviewMessage(c.customer_name, googleReviewUrl);
 
     try {
       // 1. Enqueue review request on backend
@@ -172,6 +165,7 @@ function ReviewsPage() {
         logWhatsApp({ customerId: c.customer_id, kind: "review", message: msg });
         setOpening(false);
         setIsSending(false);
+        setSendModalCustomer(null);
 
         // 3. Invalidate React Query cache to auto-reload status & dashboard
         queryClient.invalidateQueries({ queryKey: ["review-booster"] });
@@ -370,12 +364,24 @@ function ReviewsPage() {
                           </div>
                         </div>
 
-                        {/* CUSTOM MSG PREVIEW */}
-                        {customMsg[c.customer_id] && (
-                          <div className="max-h-16 overflow-y-auto rounded-xl bg-muted/40 p-2 font-mono text-[10px] whitespace-pre-line text-muted-foreground">
-                            {customMsg[c.customer_id]}
+                        {/* CUSTOM MSG PREVIEW & EDIT BOX */}
+                        <div className="rounded-xl bg-muted/50 border border-border/50 p-2.5 space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <MessageCircle className="h-3 w-3 text-primary" /> Message to send
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => openSendModal(c)}
+                              className="inline-flex items-center gap-1 text-primary hover:underline text-[10px] font-medium"
+                            >
+                              <Pencil className="h-2.5 w-2.5" /> Edit
+                            </button>
                           </div>
-                        )}
+                          <p className="text-[11px] text-foreground/80 line-clamp-3 whitespace-pre-line font-sans leading-relaxed">
+                            {customMsg[c.customer_id] ?? defaultReviewMessage(c.customer_name, googleReviewUrl)}
+                          </p>
+                        </div>
 
                         {/* ACTION BUTTONS */}
                         <div className="flex flex-wrap items-center gap-1.5 pt-1">
@@ -383,7 +389,7 @@ function ReviewsPage() {
                             <Button
                               size="sm"
                               className="h-8 rounded-full gradient-brand text-primary-foreground text-xs font-semibold"
-                              onClick={() => handleSend(c)}
+                              onClick={() => openSendModal(c)}
                               disabled={isSending}
                             >
                               <MessageCircle className="mr-1 h-3 w-3" /> Send Review Request
@@ -393,7 +399,7 @@ function ReviewsPage() {
                               size="sm"
                               variant="outline"
                               className="h-8 rounded-full text-xs"
-                              onClick={() => handleSend(c)}
+                              onClick={() => openSendModal(c)}
                               disabled={isSending}
                             >
                               <Send className="mr-1 h-3 w-3" /> Resend
@@ -410,7 +416,10 @@ function ReviewsPage() {
                                 size="sm"
                                 variant="outline"
                                 className="h-8 rounded-full text-xs"
-                                onClick={() => setAiFor(c)}
+                                onClick={() => {
+                                  openSendModal(c);
+                                  setAiFor(c);
+                                }}
                               >
                                 <Sparkles className="mr-1 h-3 w-3 text-primary" /> AI Improve
                               </Button>
@@ -504,7 +513,7 @@ function ReviewsPage() {
                                 <Button
                                   size="sm"
                                   className="h-7 px-3 rounded-full gradient-brand text-primary-foreground text-[11px] font-semibold"
-                                  onClick={() => handleSend(c)}
+                                  onClick={() => openSendModal(c)}
                                   disabled={isSending}
                                 >
                                   <MessageCircle className="mr-1 h-3 w-3" /> Send
@@ -514,7 +523,7 @@ function ReviewsPage() {
                                   size="sm"
                                   variant="outline"
                                   className="h-7 px-3 rounded-full text-[11px]"
-                                  onClick={() => handleSend(c)}
+                                  onClick={() => openSendModal(c)}
                                   disabled={isSending}
                                 >
                                   <Send className="mr-1 h-3 w-3" /> Resend
@@ -531,7 +540,10 @@ function ReviewsPage() {
                                     size="sm"
                                     variant="outline"
                                     className="h-7 px-2.5 rounded-full text-[11px]"
-                                    onClick={() => setAiFor(c)}
+                                    onClick={() => {
+                                      openSendModal(c);
+                                      setAiFor(c);
+                                    }}
                                   >
                                     <Sparkles className="h-3 w-3 text-primary" />
                                   </Button>
@@ -638,6 +650,109 @@ function ReviewsPage() {
         </div>
       )}
 
+      {/* EDIT & SEND REVIEW REQUEST DIALOG */}
+      <Dialog open={!!sendModalCustomer} onOpenChange={(open) => !open && setSendModalCustomer(null)}>
+        <DialogContent className="sm:max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
+          {sendModalCustomer && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-base font-bold">
+                  <MessageCircle className="h-5 w-5 text-primary" />
+                  Review Request for {sendModalCustomer.customer_name}
+                </DialogTitle>
+                <p className="text-xs text-muted-foreground">
+                  Review and customize the message below before sending via WhatsApp.
+                </p>
+              </DialogHeader>
+
+              <div className="space-y-4 py-2">
+                {/* Customer Info Card */}
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-muted/50 p-3 text-xs">
+                  <div>
+                    <span className="font-semibold text-foreground">{sendModalCustomer.customer_name}</span>
+                    <span className="ml-2 font-mono text-muted-foreground">{sendModalCustomer.phone}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                    <span>Bill: <strong className="text-foreground">{fmt(sendModalCustomer.bill_amount)}</strong></span>
+                    <span>Visits: <strong className="text-foreground">{sendModalCustomer.visit_count}</strong></span>
+                  </div>
+                </div>
+
+                {/* Message Input Box */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <label className="font-semibold text-foreground">Message Content (Editable)</label>
+                    <div className="flex items-center gap-2 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setAiFor(sendModalCustomer)}
+                        className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                      >
+                        <Sparkles className="h-3 w-3" /> AI Improve
+                      </button>
+                      <span className="text-muted-foreground">•</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const def = defaultReviewMessage(sendModalCustomer.customer_name, googleReviewUrl);
+                          setSendModalMessage(def);
+                          setCustomMsg((prev) => ({ ...prev, [sendModalCustomer.customer_id]: def }));
+                        }}
+                        className="text-muted-foreground hover:text-foreground hover:underline"
+                      >
+                        Reset Default
+                      </button>
+                    </div>
+                  </div>
+
+                  <textarea
+                    rows={5}
+                    value={sendModalMessage}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSendModalMessage(val);
+                      setCustomMsg((prev) => ({ ...prev, [sendModalCustomer.customer_id]: val }));
+                    }}
+                    placeholder="Enter review request message..."
+                    className="w-full rounded-xl border bg-background p-3 text-xs font-sans leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  />
+                  <div className="flex justify-between text-[10px] text-muted-foreground px-1">
+                    <span>Supports WhatsApp formatting (*bold*, _italic_)</span>
+                    <span>{sendModalMessage.length} characters</span>
+                  </div>
+                </div>
+
+                {/* Live WhatsApp Preview */}
+                <div className="space-y-1">
+                  <span className="text-[11px] font-semibold text-muted-foreground">WhatsApp Live Preview</span>
+                  <div className="rounded-xl border bg-[#efeae2] dark:bg-zinc-900 p-3 text-xs shadow-inner">
+                    <div className="max-w-[90%] rounded-lg bg-white dark:bg-zinc-800 p-2.5 shadow-sm text-foreground space-y-1 text-[11px] whitespace-pre-line font-sans">
+                      {sendModalMessage || "Your message preview will appear here..."}
+                      <div className="text-[9px] text-muted-foreground text-right mt-1 font-mono">
+                        {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ✓✓
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button variant="outline" onClick={() => setSendModalCustomer(null)} className="rounded-full text-xs">
+                  Cancel
+                </Button>
+                <Button
+                  className="rounded-full gradient-brand text-primary-foreground text-xs font-semibold px-5"
+                  onClick={() => handleSend(sendModalCustomer, sendModalMessage)}
+                  disabled={isSending || !sendModalMessage.trim()}
+                >
+                  <MessageCircle className="mr-1.5 h-4 w-4" /> Send via WhatsApp
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* WHATSAPP OPENING DIALOG */}
       <Dialog open={opening} onOpenChange={setOpening}>
         <DialogContent className="rounded-2xl sm:max-w-sm text-center">
@@ -660,8 +775,13 @@ function ReviewsPage() {
         customerId={aiFor?.customer_id}
         campaignType="review"
         onUse={(m) => {
-          if (aiFor) setCustomMsg((p) => ({ ...p, [aiFor.customer_id]: m }));
-          toast.success("AI review request copy ready — click Send Review Request!");
+          if (aiFor) {
+            setCustomMsg((p) => ({ ...p, [aiFor.customer_id]: m }));
+            if (sendModalCustomer && sendModalCustomer.customer_id === aiFor.customer_id) {
+              setSendModalMessage(m);
+            }
+          }
+          toast.success("AI review request copy generated!");
         }}
       />
     </PageTransition>

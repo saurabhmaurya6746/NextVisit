@@ -17,6 +17,7 @@ import { Route as SignupRouteImport } from './routes/signup'
 import { Route as UseCasesRouteImport } from './routes/use-cases'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminApprovalsRouteImport } from './routes/admin.approvals'
+import { Route as AdminCreditsRouteImport } from './routes/admin.credits'
 import { Route as AdminMonitoringRouteImport } from './routes/admin.monitoring'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminSubscriptionsRouteImport } from './routes/admin.subscriptions'
@@ -108,6 +109,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
 const AdminApprovalsRoute = AdminApprovalsRouteImport.update({
   id: '/approvals',
   path: '/approvals',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminCreditsRoute = AdminCreditsRouteImport.update({
+  id: '/credits',
+  path: '/credits',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminMonitoringRoute = AdminMonitoringRouteImport.update({
@@ -403,6 +409,7 @@ export interface FileRoutesByFullPath {
   '/signup': typeof SignupRoute
   '/use-cases': typeof UseCasesRoute
   '/admin/approvals': typeof AdminApprovalsRoute
+  '/admin/credits': typeof AdminCreditsRoute
   '/admin/monitoring': typeof AdminMonitoringRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
@@ -464,6 +471,7 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/use-cases': typeof UseCasesRoute
   '/admin/approvals': typeof AdminApprovalsRoute
+  '/admin/credits': typeof AdminCreditsRoute
   '/admin/monitoring': typeof AdminMonitoringRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
@@ -527,6 +535,7 @@ export interface FileRoutesById {
   '/signup': typeof SignupRoute
   '/use-cases': typeof UseCasesRoute
   '/admin/approvals': typeof AdminApprovalsRoute
+  '/admin/credits': typeof AdminCreditsRoute
   '/admin/monitoring': typeof AdminMonitoringRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
@@ -591,6 +600,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/use-cases'
     | '/admin/approvals'
+    | '/admin/credits'
     | '/admin/monitoring'
     | '/admin/settings'
     | '/admin/subscriptions'
@@ -652,6 +662,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/use-cases'
     | '/admin/approvals'
+    | '/admin/credits'
     | '/admin/monitoring'
     | '/admin/settings'
     | '/admin/subscriptions'
@@ -714,6 +725,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/use-cases'
     | '/admin/approvals'
+    | '/admin/credits'
     | '/admin/monitoring'
     | '/admin/settings'
     | '/admin/subscriptions'
@@ -841,6 +853,13 @@ declare module '@tanstack/react-router' {
       path: '/approvals'
       fullPath: '/admin/approvals'
       preLoaderRoute: typeof AdminApprovalsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/credits': {
+      id: '/admin/credits'
+      path: '/credits'
+      fullPath: '/admin/credits'
+      preLoaderRoute: typeof AdminCreditsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/monitoring': {
@@ -1212,6 +1231,7 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminApprovalsRoute: typeof AdminApprovalsRoute
+  AdminCreditsRoute: typeof AdminCreditsRoute
   AdminMonitoringRoute: typeof AdminMonitoringRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminSubscriptionsRoute: typeof AdminSubscriptionsRoute
@@ -1222,6 +1242,7 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminApprovalsRoute: AdminApprovalsRoute,
+  AdminCreditsRoute: AdminCreditsRoute,
   AdminMonitoringRoute: AdminMonitoringRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminSubscriptionsRoute: AdminSubscriptionsRoute,

@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SkeletonRows } from "@/components/skeletons";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { toast } from "sonner";
+import { sanitizeNumberInput } from "@/lib/validation";
 
 import {
   listServicesCatalogApi,
@@ -361,9 +362,10 @@ function ServicesPage() {
                 <Label className="text-xs font-semibold">Duration (minutes) *</Label>
                 <Input
                   type="number"
+                  min="1"
                   placeholder="30"
                   value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
+                  onChange={(e) => setDuration(sanitizeNumberInput(e.target.value, false))}
                   className="mt-1 rounded-xl"
                 />
               </div>
@@ -372,9 +374,11 @@ function ServicesPage() {
                 <Label className="text-xs font-semibold">Price (₹) *</Label>
                 <Input
                   type="number"
+                  min="0"
+                  step="0.01"
                   placeholder="500"
                   value={price}
-                  onChange={(e) => setPrice(e.target.value)}
+                  onChange={(e) => setPrice(sanitizeNumberInput(e.target.value, true))}
                   className="mt-1 rounded-xl"
                 />
               </div>

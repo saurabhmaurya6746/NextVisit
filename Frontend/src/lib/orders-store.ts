@@ -137,11 +137,17 @@ function normPhone(p: string) {
 }
 
 export function findCustomerByPhone(phone: string) {
-  const n = normPhone(phone);
-  if (!n) return null;
-  const seed = seedCustomers.find((c) => normPhone(c.phone).endsWith(n) || n.endsWith(normPhone(c.phone)));
+  const n = (phone || "").replace(/\D/g, "");
+  if (n.length !== 10) return null;
+  const seed = seedCustomers.find((c) => {
+    const cp = normPhone(c.phone);
+    return cp === n || cp.slice(-10) === n;
+  });
   if (seed) return { id: seed.id, name: seed.name, phone: seed.phone, birthday: seed.birthday, anniversary: seed.anniversary, gender: (seed as any).gender, points: seed.points || Math.floor((seed.spent || 0) / 10), source: "seed" as const };
-  const extra = readExtras().find((c) => normPhone(c.phone) === n);
+  const extra = readExtras().find((c) => {
+    const cp = normPhone(c.phone);
+    return cp === n || cp.slice(-10) === n;
+  });
   if (extra) return { id: extra.id, name: extra.name, phone: extra.phone, birthday: extra.birthday, anniversary: extra.anniversary, gender: (extra as any).gender, points: Math.floor((extra.spent || 0) / 10), source: "extra" as const };
   return null;
 }

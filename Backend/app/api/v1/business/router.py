@@ -23,7 +23,7 @@ router = APIRouter(
     summary="Get the authenticated business profile",
 )
 def get_business(
-    current_user: User = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """

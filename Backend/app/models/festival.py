@@ -62,6 +62,7 @@ class FestivalCampaign(BaseModel):
     last_sent: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
     business = relationship("Business")
     festival = relationship("Festival", back_populates="campaigns")

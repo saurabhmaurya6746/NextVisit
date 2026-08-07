@@ -79,7 +79,7 @@ class SalonThankYouMessageService:
         # 5. Extract Financials
         subtotal = visit.subtotal if visit.subtotal > 0 else (visit.total_amount if visit.total_amount > 0 else 0.0)
         tax_amount = round((subtotal * max(0.0, tax_pct)) / 100.0, 2)
-        grand_total = visit.total_amount if visit.total_amount > 0 else (subtotal + tax_amount)
+        grand_total = subtotal + tax_amount - (visit.discount if visit.discount else 0.0)
         advance_paid = 0.0
         if visit.notes:
             match = re.search(r"Advance Paid:\s*₹?\s*(\d+(?:\.\d+)?)", visit.notes, re.IGNORECASE)

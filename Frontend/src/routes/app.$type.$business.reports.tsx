@@ -348,10 +348,27 @@ function ReportsBiDashboardPage() {
         />
       ) : (
         <div className="space-y-6">
-          {/* KPI GRID — 16 METRICS */}
+          {/* PRIMARY REVENUE BREAKDOWN CARDS */}
+          <div className="rounded-2xl border bg-card/40 p-4 space-y-3 shadow-xs">
+            <div className="flex items-center justify-between">
+              <h3 className="font-display text-sm font-bold text-foreground flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-emerald-500" /> Revenue & Tax Summary
+              </h3>
+              <Badge variant="outline" className="rounded-full text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                100% Calculated
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+              <KpiCard title="Gross Sales" value={fmt(kpi?.gross_sales ?? kpi?.total_revenue ?? 0)} sub="Total subtotal amount" icon={TrendingUp} highlight />
+              <KpiCard title="Discounts" value={fmt(kpi?.discounts ?? kpi?.discount_given ?? 0)} sub="Coupons & offers" icon={Gift} />
+              <KpiCard title="Taxable Sales" value={fmt(kpi?.taxable_sales ?? 0)} sub="Net taxable base" icon={Target} />
+              <KpiCard title="GST Collected" value={fmt(kpi?.gst_collected ?? 0)} sub="Total tax collected" icon={Percent} />
+              <KpiCard title="Net Revenue" value={fmt(kpi?.net_revenue ?? 0)} sub="Final net revenue" icon={DollarSign} highlight />
+            </div>
+          </div>
+
+          {/* SECONDARY METRICS GRID */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-            <KpiCard title="Total Revenue" value={fmt(kpi?.total_revenue ?? 0)} sub="Gross billings" icon={TrendingUp} highlight />
-            <KpiCard title="Net Revenue" value={fmt(kpi?.net_revenue ?? 0)} sub="After discounts" icon={DollarSign} />
             <KpiCard title={isSalon ? "Appointments" : "Total Orders"} value={String(kpi?.total_appointments_or_orders ?? 0)} sub={`Completed: ${kpi?.completed_visits}`} icon={CheckCircle2} />
             <KpiCard title="Cancelled" value={String(kpi?.cancelled_visits ?? 0)} sub="No shows / cancelled" icon={XCircle} />
             <KpiCard title="Avg Ticket Size" value={fmt(kpi?.average_order_or_service_value ?? 0)} sub="Per visit / order" icon={Target} />
@@ -361,7 +378,6 @@ function ReportsBiDashboardPage() {
             <KpiCard title="Loyalty Points" value={String(kpi?.total_loyalty_points_earned ?? 0)} sub="Total points earned" icon={Award} />
             <KpiCard title="Coupons Used" value={String(kpi?.coupons_redeemed ?? 0)} sub="Campaign redemptions" icon={Percent} />
             <KpiCard title="Campaign Revenue" value={fmt(kpi?.campaign_revenue ?? 0)} sub="Generated from offers" icon={Sparkles} />
-            <KpiCard title="Discount Given" value={fmt(kpi?.discount_given ?? 0)} sub={`GST: ${fmt(kpi?.gst_collected ?? 0)}`} icon={Gift} />
           </div>
 
           {/* MAIN CHARTS SECTION */}

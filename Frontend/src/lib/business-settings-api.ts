@@ -49,7 +49,9 @@ export interface BusinessSettings {
   currency: string;
   timezone: string;
   language: string;
+  enable_gst?: boolean;
   tax_percentage: number;
+  price_includes_gst?: boolean;
   service_charge: number;
   round_off_bill: boolean;
 
@@ -229,6 +231,33 @@ export async function saveRestaurantSetupSettingsApi(
   return await res.json();
 }
 
+export function parseApiErrorMessage(errData: any, fallback: string = "Unable to process request. Please try again."): string {
+  if (!errData) return fallback;
+  if (typeof errData === "string" && errData.trim()) return errData.trim();
+
+  if (typeof errData.detail === "string" && errData.detail.trim()) {
+    return errData.detail.trim();
+  }
+
+  if (Array.isArray(errData.detail) && errData.detail.length > 0) {
+    const first = errData.detail[0];
+    if (typeof first === "string" && first.trim()) return first.trim();
+    if (first && typeof first.msg === "string" && first.msg.trim()) {
+      return first.msg.trim();
+    }
+  }
+
+  if (typeof errData.message === "string" && errData.message.trim()) {
+    return errData.message.trim();
+  }
+
+  if (typeof errData.error === "string" && errData.error.trim()) {
+    return errData.error.trim();
+  }
+
+  return fallback;
+}
+
 /**
  * 7. Change Password (POST /api/v1/business-settings/security/change-password)
  */
@@ -239,7 +268,8 @@ export async function changePasswordApi(payload: { old_password: string; new_pas
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || `Failed to change password (HTTP ${res.status})`);
+    const message = parseApiErrorMessage(errData, "Unable to update password. Please try again.");
+    throw new Error(message);
   }
   return await res.json();
 }
@@ -297,6 +327,23 @@ export async function downloadDataExportApi(type: "database" | "customers" | "or
   a.href = url;
   const ext = type === "database" ? "json" : "csv";
   a.download = `${type.toUpperCase()}_Export_${new Date().toISOString().slice(0, 10)}.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+export async function exportCatalogPdfApi(): Promise<void> {
+  const res = await apiFetch("/api/v1/business-settings/export/catalog-pdf");
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || `Failed to export catalog PDF (HTTP ${res.status})`);
+  }
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Catalog_Export_${new Date().toISOString().slice(0, 10)}.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();

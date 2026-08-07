@@ -19,19 +19,19 @@ export const Route = createFileRoute("/pricing")({
 
 const plans = [
   { name: "Starter", price: "₹1,499", tag: "For single-location businesses starting out.", cta: "Start Free", features: {
-    "Up to 500 customers": true, "5 GB storage": true, "Email support": true,
-    "WhatsApp campaigns": true, "Loyalty program": true, "QR ordering": true,
-    "Customer CRM": true, "AI insights": false, "Google review booster": false, "Multi-branch": false,
+    "Up to 5 active staff": true, "5 GB storage": true, "Email support": true,
+    "WhatsApp direct messaging": true, "Loyalty program": true, "QR ordering": true,
+    "Customer CRM": true, "100 AI credits / mo": true, "Google review booster": false, "Multi-branch": false,
   } },
   { name: "Professional", price: "₹3,999", tag: "For growing businesses that automate everything.", cta: "Start Free", popular: true, features: {
-    "Up to 5,000 customers": true, "50 GB storage": true, "Priority support": true,
-    "WhatsApp campaigns": true, "Loyalty program": true, "QR ordering": true,
-    "Customer CRM": true, "AI insights": true, "Google review booster": true, "Multi-branch": false,
+    "Up to 15 active staff": true, "10 GB storage": true, "Priority support": true,
+    "WhatsApp direct messaging": true, "Loyalty program": true, "QR ordering": true,
+    "Customer CRM": true, "500 AI credits / mo": true, "Google review booster": true, "Multi-branch": false,
   } },
   { name: "Enterprise", price: "₹9,999", tag: "For multi-branch chains and franchises.", cta: "Start Free", features: {
-    "Unlimited customers": true, "500 GB storage": true, "Dedicated CSM": true,
-    "WhatsApp campaigns": true, "Loyalty program": true, "QR ordering": true,
-    "Customer CRM": true, "AI insights": true, "Google review booster": true, "Multi-branch": true,
+    "Up to 100 active staff": true, "500 GB storage": true, "Dedicated CSM": true,
+    "WhatsApp direct messaging": true, "Loyalty program": true, "QR ordering": true,
+    "Customer CRM": true, "5000 AI credits / mo": true, "Google review booster": true, "Multi-branch": true,
   } },
 ];
 

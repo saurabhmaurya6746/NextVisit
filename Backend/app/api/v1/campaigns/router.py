@@ -125,11 +125,16 @@ def delete_campaign(
 def generate_ai_message(
     data: CampaignAiGenerateRequest,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Generates a funny, witty, engaging WhatsApp marketing message via Google Gemini REST API.
     Reads GEMINI_API_KEY from backend environment.
     """
+    from app.services.subscription_limit_service import SubscriptionLimitService
+    sub_limit_svc = SubscriptionLimitService(db)
+    sub_limit_svc.check_ai_limit(current_user.business_id)
+
     tones = [
         "witty & playful",
         "energetic & exciting",
@@ -169,6 +174,7 @@ def generate_ai_message(
         method="POST",
     )
 
+    generated_text = None
     try:
         with urllib.request.urlopen(req, timeout=10) as response:
             res_body = json.loads(response.read().decode("utf-8"))
@@ -179,17 +185,21 @@ def generate_ai_message(
                 .get("text", "")
             )
             if text:
-                return CampaignAiGenerateResponse(generated_message=text.strip())
+                generated_text = text.strip()
     except Exception as e:
         logger.warning(f"[GEMINI AI BACKEND] Call failed: {e}")
 
-    # Fallback message
-    fallbacks = [
-        f"Hey {{customer_name}}! 🎉 {data.title or 'Special Treat'}! Get {{discount}} off on your next visit. Book your slot today! ✨",
-        f"Psst {{customer_name}}! 🎁 We missed you! Enjoy {{discount}} on your next order. Valid for a limited time! 🔥",
-        f"Exclusive offer for {{customer_name}} 🌟 {data.title or 'Claim your deal'}: Get {{discount}} off now! See you soon!",
-    ]
-    return CampaignAiGenerateResponse(generated_message=random.choice(fallbacks))
+    if not generated_text:
+        # Fallback message
+        fallbacks = [
+            f"Hey {{customer_name}}! 🎉 {data.title or 'Special Treat'}! Get {{discount}} off on your next visit. Book your slot today! ✨",
+            f"Psst {{customer_name}}! 🎁 We missed you! Enjoy {{discount}} on your next order. Valid for a limited time! 🔥",
+            f"Exclusive offer for {{customer_name}} 🌟 {data.title or 'Claim your deal'}: Get {{discount}} off now! See you soon!",
+        ]
+        generated_text = random.choice(fallbacks)
+
+    sub_limit_svc.consume_ai_credit(current_user.business_id)
+    return CampaignAiGenerateResponse(generated_message=generated_text)
 
 
 @router.post(

@@ -1,4 +1,7 @@
 from .admin import Admin
+from .ai_credit_audit_log import AiCreditAuditLog
+from .ai_credit_pack import AiCreditPack
+from .ai_credit_purchase_request import AiCreditPurchaseRequest
 from .automation import AutomationRule, ScheduleType
 from .business import Business
 from .business_settings import BusinessSettings
@@ -12,6 +15,7 @@ from .campaign import (
 )
 from .customer import Customer
 from .festival import Festival, FestivalCampaign
+from .coupon import Coupon, CouponRedemption, CouponStatus, CouponType
 from .dining_area import DiningArea
 from .loyalty import CustomerLoyalty, LoyaltySettings
 from .menu_category import MenuCategory
@@ -24,9 +28,12 @@ from .salon_service_area import SalonServiceArea
 from .salon_chair import SalonChair
 from .salon_service_category import SalonServiceCategory
 from .service import Service
+from .subscription_billing_history import SubscriptionBillingHistory
 from .subscription_plan import SubscriptionPlan
+from .subscription_upgrade_request import SubscriptionUpgradeRequest
 from .user import User
 from .user_session import UserSession
+from .vip_settings import VipSettings
 from .visit import (
     PaymentMethod,
     PaymentStatus,

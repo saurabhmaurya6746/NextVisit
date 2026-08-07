@@ -19,6 +19,7 @@ import { EmptyState } from "@/components/empty-state";
 import { SkeletonRows, SkeletonCustomerCards } from "@/components/skeletons";
 import { fmt } from "@/lib/currency";
 import { openWhatsApp } from "@/lib/celebration-utils";
+import { logWhatsApp } from "@/lib/whatsapp-history";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,6 +36,7 @@ export const Route = createFileRoute("/app/$type/$business/customers/$id")({
 });
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const sanitizePhoneInput = (v: string) => (v || "").replace(/\D/g, "").slice(0, 10);
 
 function CustomerProfile() {
   const { id } = Route.useLoaderData();
@@ -70,8 +72,12 @@ function CustomerProfile() {
       if (!isValidUuidFormat) {
         const allCust = await listCustomersApi();
         const cleanId = id.trim().toLowerCase().replace(/\D/g, "");
+        const is10Digits = cleanId.length === 10;
         const match = allCust.find(
-          (c: CustomerModel) => c.id === id || (cleanId && (c.phone || "").replace(/\D/g, "").includes(cleanId)) || c.name.toLowerCase().includes(id.toLowerCase())
+          (c: CustomerModel) =>
+            c.id === id ||
+            (is10Digits && ((c.phone || "").replace(/\D/g, "") === cleanId || (c.phone || "").replace(/\D/g, "").slice(-10) === cleanId)) ||
+            c.name.toLowerCase().includes(id.toLowerCase())
         );
         if (match) {
           targetUuid = match.id;
@@ -153,9 +159,14 @@ function CustomerProfile() {
   };
 
   const handleWhatsApp = () => {
-    const msg = `Hi ${p.name.split(" ")[0]} 👋 — thank you for dining with us!`;
-    openWhatsApp(p.phone, msg);
-    toast.success("WhatsApp opened");
+    if (!p) return;
+    const firstName = p.name ? p.name.split(" ")[0] : "Customer";
+    const msg = `Hi ${firstName} 👋 — thank you for connecting with us!`;
+    const success = openWhatsApp(p.phone, msg);
+    if (success) {
+      logWhatsApp({ customerId: p.id, kind: "manual", message: msg });
+      toast.success(`WhatsApp chat opened for ${p.name}`);
+    }
   };
 
   const openEditModal = () => {
@@ -172,16 +183,29 @@ function CustomerProfile() {
 
   const handleSaveEditCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editName.trim() || !editPhone.trim()) {
-      toast.error("Name and Phone are required.");
+    const cleanName = editName.trim();
+    const cleanPhone = sanitizePhoneInput(editPhone);
+    const cleanEmail = editEmail.trim();
+
+    if (!cleanName) {
+      toast.error("Full Name is required.");
+      return;
+    }
+    if (cleanPhone.length !== 10) {
+      toast.error("Please enter a valid 10-digit mobile number.");
+      return;
+    }
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (cleanEmail && !EMAIL_REGEX.test(cleanEmail)) {
+      toast.error("Please enter a valid email address.");
       return;
     }
     setEditLoading(true);
     try {
       await updateCustomerApi(p.id, {
-        name: editName.trim(),
-        phone: editPhone.trim(),
-        email: editEmail.trim() || undefined,
+        name: cleanName,
+        phone: cleanPhone,
+        email: cleanEmail || undefined,
         gender: editGender.trim() || undefined,
         birth_date: editBirthDate || undefined,
         anniversary_date: editAnniversary || undefined,
@@ -630,7 +654,13 @@ function CustomerProfile() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="id-edit-cust-phone">Phone Number *</Label>
-              <Input id="id-edit-cust-phone" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} required />
+              <Input
+                id="id-edit-cust-phone"
+                value={editPhone}
+                onChange={(e) => setEditPhone(sanitizePhoneInput(e.target.value))}
+                maxLength={10}
+                required
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="id-edit-cust-email">Email Address</Label>

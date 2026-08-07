@@ -47,6 +47,9 @@ def generate_salon_invoice_pdf_bytes(
     points_earned: int,
     loyalty_balance: int,
     thank_you_msg: str,
+    coupon_discount: float = 0.0,
+    enable_gst: bool = True,
+    price_includes_gst: bool = False,
 ) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -199,12 +202,24 @@ def generate_salon_invoice_pdf_bytes(
     # 4. Totals & Financial Breakdown
     totals_data = []
     totals_data.append([Paragraph("Subtotal:", body_style), Paragraph(f"Rs. {subtotal:,.2f}", ParagraphStyle('TR', parent=body_style, alignment=TA_RIGHT))])
-    if tax_rate > 0:
-        totals_data.append([Paragraph(f"GST ({tax_rate}%):", body_style), Paragraph(f"Rs. {tax_amount:,.2f}", ParagraphStyle('TR', parent=body_style, alignment=TA_RIGHT))])
+    
+    if coupon_discount > 0:
+        totals_data.append([Paragraph("Coupon Discount:", ParagraphStyle('TDisc', parent=body_style, textColor=colors.HexColor('#16A34A'))), Paragraph(f"- Rs. {coupon_discount:,.2f}", ParagraphStyle('TRG', parent=body_style, alignment=TA_RIGHT, textColor=colors.HexColor('#16A34A')))])
+    
+    net_sub = max(0.0, subtotal - coupon_discount)
+    taxable_amt = net_sub
+    if enable_gst and tax_rate > 0:
+        if price_includes_gst:
+            taxable_amt = round(grand_total / (1.0 + (tax_rate / 100.0)), 2)
+        totals_data.append([Paragraph("Taxable Amount:", body_style), Paragraph(f"Rs. {taxable_amt:,.2f}", ParagraphStyle('TR', parent=body_style, alignment=TA_RIGHT))])
+        mode_label = "(Inclusive)" if price_includes_gst else "(Exclusive)"
+        totals_data.append([Paragraph(f"GST ({tax_rate}% {mode_label}):", body_style), Paragraph(f"Rs. {tax_amount:,.2f}", ParagraphStyle('TR', parent=body_style, alignment=TA_RIGHT))])
+
     if advance_paid > 0:
         totals_data.append([Paragraph("Advance Paid:", ParagraphStyle('TB', parent=body_style, textColor=colors.HexColor('#16A34A'))), Paragraph(f"- Rs. {advance_paid:,.2f}", ParagraphStyle('TRG', parent=body_style, alignment=TA_RIGHT, textColor=colors.HexColor('#16A34A')))])
 
-    totals_data.append([Paragraph("<b>Grand Total:</b>", body_bold), Paragraph(f"<b>Rs. {remaining_balance:,.2f}</b>", ParagraphStyle('TRBold', parent=body_bold, alignment=TA_RIGHT, textColor=colors.HexColor('#4F46E5')))])
+    final_due = max(0.0, grand_total - advance_paid)
+    totals_data.append([Paragraph("<b>Grand Total:</b>", body_bold), Paragraph(f"<b>Rs. {final_due:,.2f}</b>", ParagraphStyle('TRBold', parent=body_bold, alignment=TA_RIGHT, textColor=colors.HexColor('#4F46E5')))])
 
     totals_table = Table(totals_data, colWidths=[140, 100])
     totals_table.setStyle(TableStyle([
@@ -337,6 +352,10 @@ class SalonInvoicePdfService:
         pay_status = "PAID" if (visit.payment_status and visit.payment_status.value == "PAID") or (visit.status and visit.status.value == "COMPLETED") else "PAID"
         pay_method = visit.payment_method.value if visit.payment_method else "UPI"
 
+        enable_gst = settings.enable_gst if settings else True
+        price_includes_gst = settings.price_includes_gst if settings else False
+        coupon_disc = float(visit.discount or 0.0)
+
         pdf_bytes = generate_salon_invoice_pdf_bytes(
             business_name=biz_name,
             business_address=biz_address,
@@ -353,15 +372,398 @@ class SalonInvoicePdfService:
             customer_email=c_email,
             services=services_list,
             subtotal=subtotal,
-            tax_rate=tax_pct,
-            tax_amount=tax_amount,
+            tax_rate=tax_pct if enable_gst else 0.0,
+            tax_amount=tax_amount if enable_gst else 0.0,
             advance_paid=advance_paid,
             grand_total=grand_total,
             remaining_balance=remaining_balance,
             points_earned=pts_earned,
             loyalty_balance=loyalty_balance,
             thank_you_msg=invoice_footer,
+            coupon_discount=coupon_disc,
+            enable_gst=enable_gst,
+            price_includes_gst=price_includes_gst,
         )
 
         filename = f"Invoice_{invoice_num}.pdf"
         return pdf_bytes, filename
+
+
+from reportlab.lib.pagesizes import landscape
+from reportlab.pdfgen import canvas
+
+class CustomerExportNumberedCanvas(canvas.Canvas):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_page_decorations(num_pages)
+            super().showPage()
+        super().save()
+
+    def draw_page_decorations(self, page_count: int):
+        self.saveState()
+        page_width, page_height = landscape(A4)
+        margin = 36
+
+        # Top Accent Line
+        self.setStrokeColor(colors.HexColor("#4F46E5"))
+        self.setLineWidth(3)
+        self.line(0, page_height - 3, page_width, page_height - 3)
+
+        # Footer Divider Line
+        self.setStrokeColor(colors.HexColor("#E5E7EB"))
+        self.setLineWidth(0.75)
+        self.line(margin, 34, page_width - margin, 34)
+
+        # Footer Text
+        font_name = "Helvetica"
+        self.setFont(font_name, 8)
+        self.setFillColor(colors.HexColor("#6B7280"))
+
+        now_str = datetime.now().strftime("%d %b %Y, %I:%M %p")
+        self.drawString(margin, 20, f"NextVisit CRM  |  Customer Intelligence Report  |  Generated: {now_str}")
+        self.drawRightString(page_width - margin, 20, f"Page {self._pageNumber} of {page_count}  |  Powered by NextVisit CRM")
+
+        self.restoreState()
+
+
+def generate_customer_export_pdf_bytes(
+    business_name: str,
+    business_type_name: str,
+    business_address: str | None,
+    business_phone: str | None,
+    business_email: str | None,
+    logo_url: str | None,
+    search_query: str | None,
+    filter_segment: str | None,
+    sort_order: str | None,
+    customers: list[dict],
+) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=36,
+        bottomMargin=48,
+    )
+
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        "PDFDocTitle",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=18,
+        leading=22,
+        textColor=colors.HexColor("#1E293B"),
+    )
+    subtitle_style = ParagraphStyle(
+        "PDFDocSubtitle",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#64748B"),
+    )
+    badge_style = ParagraphStyle(
+        "PDFBadge",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=10,
+        alignment=TA_RIGHT,
+        textColor=colors.HexColor("#4F46E5"),
+    )
+    th_style = ParagraphStyle(
+        "PDFTH",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=10,
+        textColor=colors.white,
+    )
+    td_style = ParagraphStyle(
+        "PDFTD",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor("#334155"),
+    )
+    td_center = ParagraphStyle(
+        "PDFTDCenter",
+        parent=td_style,
+        alignment=TA_CENTER,
+    )
+    td_right = ParagraphStyle(
+        "PDFTDRight",
+        parent=td_style,
+        alignment=TA_RIGHT,
+    )
+    td_bold = ParagraphStyle(
+        "PDFTDBold",
+        parent=td_style,
+        fontName="Helvetica-Bold",
+        textColor=colors.HexColor("#0F172A"),
+    )
+
+    elements = []
+
+    # 1. Header (Business Info + Report Title)
+    header_text = f"<b>{business_name}</b> ({business_type_name})"
+    sub_lines = []
+    if business_address:
+        sub_lines.append(business_address)
+    if business_phone or business_email:
+        sub_lines.append(" | ".join(filter(None, [business_phone, business_email])))
+    contact_text = "<br/>".join(sub_lines) if sub_lines else "NextVisit CRM Customer Directory"
+
+    header_table_data = [
+        [
+            Paragraph(f"<font size=16 color='#4F46E5'><b>{header_text}</b></font><br/><font size=8 color='#64748B'>{contact_text}</font>", title_style),
+            Paragraph("CUSTOMER PERFORMANCE REPORT<br/><font size=8 color='#64748B'>Executive Customer Directory</font>", badge_style),
+        ]
+    ]
+    header_table = Table(header_table_data, colWidths=[520, 250])
+    header_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    elements.append(header_table)
+    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#CBD5E1"), spaceAfter=10))
+
+    # 2. Applied Filters & Summary Cards
+    total_cust = len(customers)
+    total_spend = sum(c.get("total_spent", 0.0) for c in customers)
+    total_visits = sum(c.get("visit_count", 0) for c in customers)
+    vip_count = sum(1 for c in customers if c.get("is_vip", False))
+
+    search_txt = search_query if search_query else "All"
+    filter_txt = filter_segment if filter_segment else "All"
+    sort_txt = sort_order if sort_order else "Newest"
+
+    summary_html = f"""
+    <b>Total Customers:</b> {total_cust:,} &nbsp;|&nbsp; 
+    <b>Total Revenue:</b> ₹{total_spend:,.2f} &nbsp;|&nbsp; 
+    <b>Total Visits:</b> {total_visits:,} &nbsp;|&nbsp; 
+    <b>VIP Customers:</b> {vip_count:,}<br/>
+    <font color='#64748B'>Applied Filters &nbsp;&bull;&nbsp; Search: "{search_txt}" &nbsp;|&nbsp; Segment: {filter_txt} &nbsp;|&nbsp; Sorting: {sort_txt}</font>
+    """
+    summary_p = Paragraph(summary_html, subtitle_style)
+
+    summary_box = Table([[summary_p]], colWidths=[770])
+    summary_box.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+        ("PADDING", (0, 0), (-1, -1), 8),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    elements.append(summary_box)
+    elements.append(Spacer(1, 10))
+
+    # 3. Customers Table
+    # Col Widths: # (25), Name (130), Phone (85), Email (130), Gender (45), VIP (35), Points (45), Visits (40), Spend (85), Last Visit (85), Created (65) -> Total: 770
+    table_headers = [
+        Paragraph("#", th_style),
+        Paragraph("Customer Name", th_style),
+        Paragraph("Phone", th_style),
+        Paragraph("Email", th_style),
+        Paragraph("Gender", th_style),
+        Paragraph("VIP", th_style),
+        Paragraph("Points", th_style),
+        Paragraph("Visits", th_style),
+        Paragraph("Total Spend", th_style),
+        Paragraph("Last Visit", th_style),
+    ]
+
+    table_rows = [table_headers]
+
+    for idx, c in enumerate(customers, start=1):
+        vip_tag = "<font color='#16A34A'><b>YES</b></font>" if c.get("is_vip") else "NO"
+        row_cells = [
+            Paragraph(str(idx), td_center),
+            Paragraph(c.get("name", "Guest"), td_bold),
+            Paragraph(c.get("phone", "—"), td_center),
+            Paragraph(c.get("email") or "—", td_style),
+            Paragraph(c.get("gender") or "—", td_center),
+            Paragraph(vip_tag, td_center),
+            Paragraph(str(c.get("loyalty_points", 0)), td_right),
+            Paragraph(str(c.get("visit_count", 0)), td_right),
+            Paragraph(f"₹{c.get('total_spent', 0.0):,.2f}", td_right),
+            Paragraph(c.get("last_visit_at") or "Never", td_center),
+        ]
+        table_rows.append(row_cells)
+
+    cust_table = Table(table_rows, colWidths=[25, 140, 85, 140, 45, 35, 45, 40, 95, 120], repeatRows=1)
+
+    t_style = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E293B")),
+        ("ALIGN", (0, 0), (-1, 0), "LEFT"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+    ]
+
+    for r_i in range(1, len(table_rows)):
+        if r_i % 2 == 0:
+            t_style.append(("BACKGROUND", (0, r_i), (-1, r_i), colors.HexColor("#F8FAFC")))
+
+    cust_table.setStyle(TableStyle(t_style))
+    elements.append(cust_table)
+
+    doc.build(elements, canvasmaker=CustomerExportNumberedCanvas)
+    return buffer.getvalue()
+
+
+def generate_catalog_export_pdf_bytes(
+    business_name: str,
+    business_type_name: str,
+    catalog_title: str,
+    items: list[dict],
+) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=36,
+        bottomMargin=48,
+    )
+
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        "CatTitle",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=18,
+        leading=22,
+        textColor=colors.HexColor("#1E293B"),
+    )
+    subtitle_style = ParagraphStyle(
+        "CatSubTitle",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#64748B"),
+    )
+    badge_style = ParagraphStyle(
+        "CatBadge",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=10,
+        alignment=TA_RIGHT,
+        textColor=colors.HexColor("#4F46E5"),
+    )
+    th_style = ParagraphStyle(
+        "CatTH",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=10,
+        textColor=colors.white,
+    )
+    td_style = ParagraphStyle(
+        "CatTD",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor("#334155"),
+    )
+    td_center = ParagraphStyle("CatTDCenter", parent=td_style, alignment=TA_CENTER)
+    td_right = ParagraphStyle("CatTDRight", parent=td_style, alignment=TA_RIGHT)
+    td_bold = ParagraphStyle("CatTDBold", parent=td_style, fontName="Helvetica-Bold", textColor=colors.HexColor("#0F172A"))
+
+    elements = []
+
+    header_table_data = [
+        [
+            Paragraph(f"<font size=16 color='#4F46E5'><b>{business_name}</b></font><br/><font size=8 color='#64748B'>{business_type_name} Directory</font>", title_style),
+            Paragraph(f"{catalog_title.upper()}<br/><font size=8 color='#64748B'>Official Catalog</font>", badge_style),
+        ]
+    ]
+    header_table = Table(header_table_data, colWidths=[520, 250])
+    header_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    elements.append(header_table)
+    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#CBD5E1"), spaceAfter=10))
+
+    total_items = len(items)
+    categories = len(set(i.get("category_name", "General") for i in items))
+    available = sum(1 for i in items if i.get("is_available", True))
+
+    summary_html = f"<b>Total Items / Services:</b> {total_items:,} &nbsp;|&nbsp; <b>Categories:</b> {categories:,} &nbsp;|&nbsp; <b>Active Available:</b> {available:,}"
+    summary_p = Paragraph(summary_html, subtitle_style)
+
+    summary_box = Table([[summary_p]], colWidths=[770])
+    summary_box.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+        ("PADDING", (0, 0), (-1, -1), 8),
+    ]))
+    elements.append(summary_box)
+    elements.append(Spacer(1, 10))
+
+    table_headers = [
+        Paragraph("#", th_style),
+        Paragraph("Category", th_style),
+        Paragraph("Item / Service Name", th_style),
+        Paragraph("Price (₹)", th_style),
+        Paragraph("Status", th_style),
+    ]
+
+    table_rows = [table_headers]
+
+    for idx, it in enumerate(items, start=1):
+        avail_str = "<font color='#16A34A'><b>Available</b></font>" if it.get("is_available", True) else "<font color='#DC2626'>Unavailable</font>"
+        row_cells = [
+            Paragraph(str(idx), td_center),
+            Paragraph(it.get("category_name") or "General", td_style),
+            Paragraph(it.get("name") or "Item", td_bold),
+            Paragraph(f"₹{float(it.get('price') or 0.0):,.2f}", td_right),
+            Paragraph(avail_str, td_center),
+        ]
+        table_rows.append(row_cells)
+
+    cat_table = Table(table_rows, colWidths=[30, 180, 320, 120, 120], repeatRows=1)
+    t_style = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E293B")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+    ]
+
+    for r_i in range(1, len(table_rows)):
+        if r_i % 2 == 0:
+            t_style.append(("BACKGROUND", (0, r_i), (-1, r_i), colors.HexColor("#F8FAFC")))
+
+    cat_table.setStyle(TableStyle(t_style))
+    elements.append(cat_table)
+
+    doc.build(elements, canvasmaker=CustomerExportNumberedCanvas)
+    return buffer.getvalue()

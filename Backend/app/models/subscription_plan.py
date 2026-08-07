@@ -51,6 +51,12 @@ class SubscriptionPlan(BaseModel):
         nullable=False,
     )
 
+    monthly_ai_credits: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+
     features: Mapped[dict[str, Any] | None] = mapped_column(
         JSON,
         nullable=True,

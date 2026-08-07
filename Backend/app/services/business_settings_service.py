@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -182,13 +182,25 @@ class BusinessSettingsService:
         if not user or not verify_password(data.old_password, user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Incorrect old password.",
+                detail="Current password is incorrect.",
+            )
+
+        if not data.new_password or len(data.new_password) < 8:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New password must be at least 8 characters.",
+            )
+
+        if data.old_password == data.new_password or verify_password(data.new_password, user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New password cannot be the same as the current password.",
             )
 
         user.hashed_password = hash_password(data.new_password)
         self.db.commit()
         logger.info("User password changed successfully | user_id=%s", user.id)
-        return {"message": "Password changed successfully."}
+        return {"message": "Password updated successfully."}
 
     def toggle_2fa(self, current_user: User, enable: bool) -> dict:
         user = self.db.scalar(select(User).where(User.id == current_user.id))
@@ -309,6 +321,64 @@ class BusinessSettingsService:
             io.BytesIO(output.getvalue().encode("utf-8")),
             media_type="text/csv",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    def export_catalog_pdf(self, current_user: User) -> Response:
+        from app.services.pdf_service import generate_catalog_export_pdf_bytes
+        from app.models.service import Service
+        from fastapi.responses import Response
+
+        biz_name = current_user.business.name if current_user.business else "NextVisit Merchant"
+        biz_type_name = (
+            current_user.business.business_type.name
+            if (current_user.business and current_user.business.business_type)
+            else "Business"
+        )
+        is_salon = "salon" in biz_type_name.lower() or "spa" in biz_type_name.lower()
+
+        items_list = []
+        if is_salon:
+            services = self.db.scalars(
+                select(Service).where(Service.business_id == current_user.business_id)
+            ).all()
+            for s in services:
+                cat_name = s.category.name if hasattr(s.category, "name") else (str(s.category) if s.category else "Services")
+                items_list.append({
+                    "category_name": cat_name,
+                    "name": s.name,
+                    "price": float(s.price or 0.0),
+                    "is_available": getattr(s, "is_active", True),
+                })
+            catalog_title = "Salon Services Catalog"
+        else:
+            items = self.db.scalars(
+                select(MenuItem).where(MenuItem.business_id == current_user.business_id)
+            ).all()
+            for it in items:
+                cat_name = it.category.name if hasattr(it.category, "name") else (str(it.category) if it.category else "Menu Items")
+                items_list.append({
+                    "category_name": cat_name,
+                    "name": it.name,
+                    "price": float(it.price or 0.0),
+                    "is_available": getattr(it, "is_available", True),
+                })
+            catalog_title = "Restaurant Menu Catalog"
+
+        pdf_bytes = generate_catalog_export_pdf_bytes(
+            business_name=biz_name,
+            business_type_name=biz_type_name,
+            catalog_title=catalog_title,
+            items=items_list,
+        )
+
+        filename = f"{'Services' if is_salon else 'Menu'}_Catalog_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition",
+            },
         )
 
     def export_database_json(self, current_user: User) -> StreamingResponse:

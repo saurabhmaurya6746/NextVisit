@@ -146,3 +146,24 @@ export async function validateCouponApi(payload: CouponValidatePayload): Promise
   }
   return await res.json();
 }
+
+/**
+ * 5. POST /api/v1/coupons/redeem
+ */
+export async function redeemCouponApi(payload: {
+  code: string;
+  customer_id?: string;
+  order_amount?: number;
+  order_id?: string;
+  visit_id?: string;
+}): Promise<{ redemption_id: string; coupon_code: string; discount_applied: number; new_redeemed_count: number }> {
+  const res = await apiFetch("/api/v1/coupons/redeem", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(parseErrorDetail(errData, `Failed to redeem coupon (HTTP ${res.status})`));
+  }
+  return await res.json();
+}

@@ -1,6 +1,7 @@
+from datetime import datetime
 import uuid
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -48,7 +49,9 @@ class BusinessSettings(BaseModel):
     currency: Mapped[str] = mapped_column(String(10), default="INR", nullable=False)
     timezone: Mapped[str] = mapped_column(String(50), default="Asia/Kolkata", nullable=False)
     language: Mapped[str] = mapped_column(String(10), default="en", nullable=False)
-    tax_percentage: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    enable_gst: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    tax_percentage: Mapped[float] = mapped_column(Float, default=18.0, nullable=False)
+    price_includes_gst: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     service_charge: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     round_off_bill: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
@@ -62,6 +65,11 @@ class BusinessSettings(BaseModel):
     # 7. AI Settings
     ai_default_tone: Mapped[str] = mapped_column(String(50), default="Friendly", nullable=False)
     ai_max_monthly_requests: Mapped[int] = mapped_column(Integer, default=500, nullable=False)
+    ai_requests_used_month: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    ai_monthly_used_credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    purchased_ai_credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    ai_usage_period: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    last_ai_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # 8. POS Settings
     enable_qr_ordering: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

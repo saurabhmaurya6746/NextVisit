@@ -31,6 +31,8 @@ import {
   Lock,
 } from "lucide-react";
 import { toast } from "sonner";
+import { PasswordInput } from "@/components/ui/password-input";
+import { sanitizePhoneInput } from "@/lib/validation";
 import { cn } from "@/lib/utils";
 import {
   listStaffApi,
@@ -42,6 +44,8 @@ import {
   getNextStaffLoginIdApi,
   type StaffMember,
 } from "@/lib/staff-api";
+import { getSubscriptionUsageApi } from "@/lib/subscription-api";
+import { SubscriptionUpgradeModal } from "@/components/subscription-upgrade-modal";
 
 export const Route = createFileRoute("/app/$type/$business/team")({ component: TeamPage });
 
@@ -144,13 +148,19 @@ export function TeamPage() {
   const [resetPass, setResetPass] = useState("");
   const [resetConfirmPass, setResetConfirmPass] = useState("");
   const [resetting, setResetting] = useState(false);
+  const [usage, setUsage] = useState<any>(null);
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
 
   const loadStaff = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await listStaffApi(search, statusFilter, page, 10);
+      const [data, usageData] = await Promise.all([
+        listStaffApi(search, statusFilter, page, 10),
+        getSubscriptionUsageApi().catch(() => null),
+      ]);
       setStaffList(data.items || []);
       setTotalPages(data.pages || 1);
+      if (usageData) setUsage(usageData);
     } catch (err: any) {
       toast.error(err.message || "Failed to load staff members");
     } finally {
@@ -252,12 +262,17 @@ export function TeamPage() {
 
   async function handleSubmitForm(e: React.FormEvent) {
     e.preventDefault();
+    const cleanPhone = sanitizePhoneInput(phone);
     if (!name.trim()) {
       toast.error("Full Name is required.");
       return;
     }
-    if (!phone.trim()) {
-      toast.error("Phone Number is required.");
+    if (cleanPhone.length !== 10) {
+      toast.error("Please enter a valid 10-digit mobile number.");
+      return;
+    }
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      toast.error("Please enter a valid email address.");
       return;
     }
 
@@ -354,6 +369,9 @@ export function TeamPage() {
     }
   }
 
+  const staffUsage = usage?.staff_usage;
+  const isLimitReached = staffUsage?.limit_reached || false;
+
   return (
     <PageTransition>
       <PageHeader
@@ -362,6 +380,7 @@ export function TeamPage() {
         actions={
           <Button
             size="sm"
+            disabled={isLimitReached}
             className="rounded-full gradient-brand text-primary-foreground transition-transform hover:scale-105"
             onClick={handleOpenCreate}
           >
@@ -369,6 +388,46 @@ export function TeamPage() {
           </Button>
         }
       />
+
+      {/* Staff Usage Card & Limit Banner */}
+      {staffUsage && (
+        <Card className="rounded-2xl border shadow-sm mb-4 bg-muted/20">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Staff Account Usage</p>
+                <p className="text-lg font-bold text-foreground font-display mt-0.5">
+                  {staffUsage.active_count} / {staffUsage.max_count} Staff Accounts Used
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <Badge variant="outline" className="rounded-full px-3 py-1 font-semibold text-xs border-primary/30 text-primary">
+                  {staffUsage.remaining_slots} Staff Slots Available
+                </Badge>
+                <Badge variant="secondary" className="rounded-full px-3 py-1 font-semibold text-xs">
+                  {staffUsage.plan_name} PLAN
+                </Badge>
+              </div>
+            </div>
+
+            {isLimitReached && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span>
+                    <strong>Limit Reached:</strong> You have reached your staff account limit. Upgrade your subscription to add more staff.
+                  </span>
+                </div>
+                <Button size="sm" variant="outline" className="rounded-full text-xs font-semibold shrink-0" onClick={() => setUpgradeModalOpen(true)}>
+                  Upgrade Subscription
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <SubscriptionUpgradeModal open={upgradeModalOpen} onOpenChange={setUpgradeModalOpen} />
 
       {/* Staff Roster Card */}
       <Card className="rounded-2xl border shadow-sm">
@@ -578,7 +637,13 @@ export function TeamPage() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">Phone Number *</Label>
-                <Input placeholder="+91 98765 43210" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+                <Input
+                  placeholder="10-digit mobile number"
+                  value={phone}
+                  onChange={(e) => setPhone(sanitizePhoneInput(e.target.value))}
+                  maxLength={10}
+                  required
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">Email Address (Optional)</Label>
@@ -757,12 +822,12 @@ export function TeamPage() {
           </DialogHeader>
           <form onSubmit={handleResetPassword} className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">New Password</Label>
-              <Input type="password" placeholder="••••••••" value={resetPass} onChange={(e) => setResetPass(e.target.value)} required />
+              <Label className="text-xs font-semibold">New Password *</Label>
+              <PasswordInput placeholder="••••••••" value={resetPass} onChange={(e) => setResetPass(e.target.value)} required />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Confirm New Password</Label>
-              <Input type="password" placeholder="••••••••" value={resetConfirmPass} onChange={(e) => setResetConfirmPass(e.target.value)} required />
+              <Label className="text-xs font-semibold">Confirm New Password *</Label>
+              <PasswordInput placeholder="••••••••" value={resetConfirmPass} onChange={(e) => setResetConfirmPass(e.target.value)} required />
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" className="rounded-full" onClick={() => setResetMember(null)}>

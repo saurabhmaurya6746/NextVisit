@@ -181,6 +181,8 @@ export interface ClientStatsModel {
   visit_count: number;
   campaign_count: number;
   loyalty_enabled: boolean;
+  ai_monthly_used_credits?: number;
+  ai_monthly_plan_credits?: number;
 }
 
 export interface ClientDetailModel {
@@ -287,8 +289,10 @@ export interface SubscriptionPlanModel {
   trial_days: number;
   max_customers: number;
   max_staff: number;
+  max_active_devices: number;
   max_campaigns_per_month: number;
   storage_limit_gb: number;
+  monthly_ai_credits: number;
   features: Record<string, any> | null;
   is_active: boolean;
   created_at: string;
@@ -309,12 +313,20 @@ export interface BusinessSubscriptionItemModel {
 }
 
 export async function listSubscriptionPlansApi(): Promise<SubscriptionPlanModel[]> {
-  const res = await apiFetch("/api/v1/admin/subscriptions/plans");
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to fetch subscription plans");
+  try {
+    const res = await apiFetch("/api/v1/admin/subscriptions/plans");
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) throw new Error("Permission denied. Super Admin access required.");
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "Unable to load subscription plans.");
+    }
+    return await res.json();
+  } catch (err: any) {
+    if (err.name === "TypeError" || err.message?.includes("fetch")) {
+      throw new Error("Unable to load subscription plans. Server unavailable or network error.");
+    }
+    throw err;
   }
-  return await res.json();
 }
 
 export async function createSubscriptionPlanApi(payload: Partial<SubscriptionPlanModel>): Promise<SubscriptionPlanModel> {
@@ -324,7 +336,7 @@ export async function createSubscriptionPlanApi(payload: Partial<SubscriptionPla
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to create subscription plan");
+    throw new Error(errData.detail || "Unable to create subscription plan");
   }
   return await res.json();
 }
@@ -336,7 +348,7 @@ export async function updateSubscriptionPlanApi(planId: string, payload: Partial
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to update subscription plan");
+    throw new Error(errData.detail || "Unable to update subscription plan");
   }
   return await res.json();
 }
@@ -347,7 +359,7 @@ export async function deleteSubscriptionPlanApi(planId: string): Promise<{ messa
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to delete subscription plan");
+    throw new Error(errData.detail || "Unable to delete subscription plan");
   }
   return await res.json();
 }
@@ -362,18 +374,26 @@ export async function assignBusinessSubscriptionApi(
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to assign subscription");
+    throw new Error(errData.detail || "Unable to assign subscription plan");
   }
   return await res.json();
 }
 
 export async function listBusinessSubscriptionsApi(): Promise<BusinessSubscriptionItemModel[]> {
-  const res = await apiFetch("/api/v1/admin/subscriptions/business");
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to fetch business subscriptions");
+  try {
+    const res = await apiFetch("/api/v1/admin/subscriptions/business");
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) throw new Error("Permission denied. Super Admin access required.");
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "Unable to load business subscriptions.");
+    }
+    return await res.json();
+  } catch (err: any) {
+    if (err.name === "TypeError" || err.message?.includes("fetch")) {
+      throw new Error("Unable to load business subscriptions. Server unavailable or network error.");
+    }
+    throw err;
   }
-  return await res.json();
 }
 
 export interface AdminUpgradeRequestItem {
@@ -407,18 +427,26 @@ export async function listAdminUpgradeRequestsApi(
   status = "ALL",
   search = ""
 ): Promise<PaginatedAdminUpgradeRequests> {
-  const params = new URLSearchParams();
-  params.set("page", page.toString());
-  params.set("limit", limit.toString());
-  if (status) params.set("status", status);
-  if (search) params.set("search", search);
+  try {
+    const params = new URLSearchParams();
+    params.set("page", page.toString());
+    params.set("limit", limit.toString());
+    if (status) params.set("status", status);
+    if (search) params.set("search", search);
 
-  const res = await apiFetch(`/api/v1/admin/subscriptions/requests?${params.toString()}`);
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to fetch subscription requests");
+    const res = await apiFetch(`/api/v1/admin/subscriptions/requests?${params.toString()}`);
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) throw new Error("Permission denied. Super Admin access required.");
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "Unable to load subscription requests.");
+    }
+    return await res.json();
+  } catch (err: any) {
+    if (err.name === "TypeError" || err.message?.includes("fetch")) {
+      throw new Error("Unable to load upgrade requests. Server unavailable or network error.");
+    }
+    throw err;
   }
-  return await res.json();
 }
 
 export async function approveUpgradeRequestApi(requestId: string): Promise<AdminUpgradeRequestItem> {
@@ -480,3 +508,114 @@ export async function updatePlatformSettingsApi(payload: Partial<PlatformSetting
   }
   return await res.json();
 }
+
+// 6. Super Admin AI Usage APIs
+export interface BusinessAiUsageModel {
+  business_id: string;
+  business_name: string;
+  business_type: string;
+  owner_name: string;
+  email: string;
+  plan_name: string;
+  monthly_plan_credits: number;
+  monthly_used_credits: number;
+  monthly_remaining_credits: number;
+  purchased_remaining_credits: number;
+  total_remaining_credits: number;
+  limit_reached: boolean;
+  reset_date: string;
+  last_ai_activity: string;
+  status: string; // "Normal" | "Warning" | "Limit Reached"
+}
+
+export interface PaginatedAiUsageResponse {
+  items: BusinessAiUsageModel[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+}
+
+export interface AiCreditAuditLogModel {
+  id: string;
+  business_id: string;
+  admin_id: string | null;
+  admin_name: string | null;
+  action: string;
+  amount: number;
+  reason: string;
+  notes: string | null;
+  previous_balance: number;
+  new_balance: number;
+  created_at: string;
+}
+
+export async function getAdminAiUsageApi(
+  page = 1,
+  limit = 20,
+  search = "",
+  businessType = "all",
+  plan = "all",
+  status = "all"
+): Promise<PaginatedAiUsageResponse> {
+  try {
+    const params = new URLSearchParams();
+    params.set("page", page.toString());
+    params.set("limit", limit.toString());
+    if (search) params.set("search", search);
+    if (businessType && businessType !== "all") params.set("business_type", businessType);
+    if (plan && plan !== "all") params.set("plan", plan);
+    if (status && status !== "all") params.set("status", status);
+
+    const res = await apiFetch(`/api/v1/admin/subscriptions/ai-usage?${params.toString()}`);
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) throw new Error("Permission denied. Super Admin access required.");
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "Unable to load AI usage data.");
+    }
+    return await res.json();
+  } catch (err: any) {
+    if (err.name === "TypeError" || err.message?.includes("fetch")) {
+      throw new Error("Unable to load AI usage data. Server unavailable or network error.");
+    }
+    throw err;
+  }
+}
+
+export async function resetBusinessMonthlyCreditsApi(businessId: string): Promise<{ message: string; business_id: string }> {
+  const res = await apiFetch(`/api/v1/admin/subscriptions/business/${businessId}/reset-monthly-credits`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to reset monthly credits");
+  }
+  return await res.json();
+}
+
+export async function adjustBusinessPurchasedCreditsApi(
+  businessId: string,
+  amount: number,
+  reason: string,
+  notes?: string
+): Promise<{ message: string; business_id: string; previous_credits: number; new_total_credits: number }> {
+  const res = await apiFetch(`/api/v1/admin/subscriptions/business/${businessId}/adjust-credits`, {
+    method: "POST",
+    body: JSON.stringify({ amount, reason, notes }),
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to adjust purchased credits");
+  }
+  return await res.json();
+}
+
+export async function getBusinessAiAuditLogsApi(businessId: string): Promise<AiCreditAuditLogModel[]> {
+  const res = await apiFetch(`/api/v1/admin/subscriptions/business/${businessId}/ai-audit-logs`);
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to fetch AI audit logs");
+  }
+  return await res.json();
+}
+

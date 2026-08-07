@@ -10,6 +10,8 @@ import { BrandLogo } from "@/components/brand-logo";
 import { toast } from "sonner";
 import { getBusinessTypesApi, registerApi } from "@/lib/auth";
 import { PasswordInput } from "@/components/ui/password-input";
+import { useFormValidation } from "@/hooks/use-form-validation";
+import { ValidatedField } from "@/components/ui/validated-field";
 
 export const Route = createFileRoute("/signup")({
   head: () => ({ meta: [{ title: "Create account — NextVisit" }] }),
@@ -23,18 +25,42 @@ function SignupPage() {
   const [businessTypes, setBusinessTypes] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedTypeId, setSelectedTypeId] = useState<string>("");
 
-  const [form, setForm] = useState({
-    business: "",
-    owner: "",
-    type: "Restaurant",
-    phone: "",
-    email: "",
-    password: "",
-    confirm: "",
-    country: "India",
-    city: "",
-    terms: false,
-  });
+  const {
+    values: form,
+    errors,
+    touched,
+    handleChange,
+    handleBlur,
+    validateAll,
+    registerRef,
+  } = useFormValidation(
+    {
+      business: "",
+      owner: "",
+      type: "Restaurant",
+      phone: "",
+      email: "",
+      password: "",
+      confirm: "",
+      country: "India",
+      city: "",
+      terms: false,
+    },
+    {
+      business: { required: true, requiredMessage: "Business name is required" },
+      owner: { required: true, requiredMessage: "Owner name is required" },
+      phone: { required: true, isPhone: true, requiredMessage: "10-digit mobile number required" },
+      email: { required: true, isEmail: true, requiredMessage: "Valid email is required" },
+      password: { required: true, minLength: 6, requiredMessage: "Password (min 6 characters) required" },
+      confirm: {
+        required: true,
+        custom: (val) => (val !== form.password ? "Passwords don't match" : null),
+      },
+      country: { required: true, requiredMessage: "Country is required" },
+      city: { required: true, requiredMessage: "City is required" },
+      terms: { required: true, requiredMessage: "You must accept the terms" },
+    }
+  );
 
   useEffect(() => {
     getBusinessTypesApi().then((types) => {
@@ -45,13 +71,12 @@ function SignupPage() {
     }).catch(() => {});
   }, []);
 
-  const set = (k: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
-
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (form.password !== form.confirm) return toast.error("Passwords don't match");
-    if (form.password.length < 6) return toast.error("Password must be at least 6 characters");
-    if (!form.terms) return toast.error("Please accept the Terms to continue");
+    if (!validateAll()) {
+      toast.error("Please correct the highlighted fields before submitting.");
+      return;
+    }
 
     setLoading(true);
 
@@ -66,16 +91,16 @@ function SignupPage() {
       await registerApi({
         business: {
           business_type_id: typeId,
-          business_name: form.business,
-          phone: form.phone,
-          country: form.country,
+          business_name: form.business.trim(),
+          phone: form.phone.trim(),
+          country: form.country.trim(),
           currency: "INR",
           timezone: "Asia/Kolkata",
-          address: form.city || "Default Address",
+          address: form.city.trim() || "Default Address",
         },
         owner: {
-          owner_name: form.owner,
-          owner_email: form.email,
+          owner_name: form.owner.trim(),
+          owner_email: form.email.trim(),
           password: form.password,
         },
       });
@@ -118,22 +143,32 @@ function SignupPage() {
             <p className="mt-1 text-sm text-muted-foreground">New accounts need admin approval before you can sign in.</p>
             <form onSubmit={submit} className="mt-8 space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="business">Business name</Label>
-                  <Input id="business" required value={form.business} onChange={(e) => set("business")(e.target.value)} placeholder="Aroma Bistro" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="owner">Owner name</Label>
-                  <Input id="owner" required value={form.owner} onChange={(e) => set("owner")(e.target.value)} placeholder="Priya Sharma" />
-                </div>
+                <ValidatedField label="Business name" required error={errors.business} touched={touched.business}>
+                  <Input
+                    ref={registerRef("business")}
+                    value={form.business}
+                    onChange={(e) => handleChange("business", e.target.value)}
+                    onBlur={() => handleBlur("business")}
+                    placeholder="Aroma Bistro"
+                  />
+                </ValidatedField>
+                <ValidatedField label="Owner name" required error={errors.owner} touched={touched.owner}>
+                  <Input
+                    ref={registerRef("owner")}
+                    value={form.owner}
+                    onChange={(e) => handleChange("owner", e.target.value)}
+                    onBlur={() => handleBlur("owner")}
+                    placeholder="Priya Sharma"
+                  />
+                </ValidatedField>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label>Business type</Label>
+                  <Label className="text-xs font-semibold">Business type <span className="text-destructive font-bold">*</span></Label>
                   <Select
                     value={form.type}
                     onValueChange={(v) => {
-                      set("type")(v);
+                      handleChange("type", v);
                       const matched = businessTypes.find((bt) => bt.name.toLowerCase() === v.toLowerCase());
                       if (matched) setSelectedTypeId(matched.id);
                     }}
@@ -155,49 +190,75 @@ function SignupPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input id="phone" required value={form.phone} onChange={(e) => set("phone")(e.target.value)} placeholder="+91 98765 43210" />
-                </div>
+                <ValidatedField label="Phone Number" required error={errors.phone} touched={touched.phone}>
+                  <Input
+                    ref={registerRef("phone")}
+                    value={form.phone}
+                    onChange={(e) => handleChange("phone", e.target.value)}
+                    onBlur={() => handleBlur("phone")}
+                    maxLength={10}
+                    placeholder="10-digit mobile number"
+                  />
+                </ValidatedField>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" required value={form.email} onChange={(e) => set("email")(e.target.value)} placeholder="you@business.com" />
-              </div>
+              <ValidatedField label="Email Address" required error={errors.email} touched={touched.email}>
+                <Input
+                  ref={registerRef("email")}
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => handleChange("email", e.target.value)}
+                  onBlur={() => handleBlur("email")}
+                  placeholder="you@business.com"
+                />
+              </ValidatedField>
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="password">Password</Label>
+                <ValidatedField label="Password" required error={errors.password} touched={touched.password}>
                   <PasswordInput
-                    id="password"
-                    required
+                    ref={registerRef("password")}
                     value={form.password}
-                    onChange={(e) => set("password")(e.target.value)}
+                    onChange={(e) => handleChange("password", e.target.value)}
+                    onBlur={() => handleBlur("password")}
                   />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="confirm">Confirm password</Label>
+                </ValidatedField>
+                <ValidatedField label="Confirm password" required error={errors.confirm} touched={touched.confirm}>
                   <PasswordInput
-                    id="confirm"
-                    required
+                    ref={registerRef("confirm")}
                     value={form.confirm}
-                    onChange={(e) => set("confirm")(e.target.value)}
+                    onChange={(e) => handleChange("confirm", e.target.value)}
+                    onBlur={() => handleBlur("confirm")}
                   />
-                </div>
+                </ValidatedField>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="country">Country</Label>
-                  <Input id="country" required value={form.country} onChange={(e) => set("country")(e.target.value)} placeholder="India" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="city">City</Label>
-                  <Input id="city" required value={form.city} onChange={(e) => set("city")(e.target.value)} placeholder="Mumbai" />
-                </div>
+                <ValidatedField label="Country" required error={errors.country} touched={touched.country}>
+                  <Input
+                    ref={registerRef("country")}
+                    value={form.country}
+                    onChange={(e) => handleChange("country", e.target.value)}
+                    onBlur={() => handleBlur("country")}
+                    placeholder="India"
+                  />
+                </ValidatedField>
+                <ValidatedField label="City" required error={errors.city} touched={touched.city}>
+                  <Input
+                    ref={registerRef("city")}
+                    value={form.city}
+                    onChange={(e) => handleChange("city", e.target.value)}
+                    onBlur={() => handleBlur("city")}
+                    placeholder="Mumbai"
+                  />
+                </ValidatedField>
               </div>
-              <label className="flex items-start gap-2 rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
-                <Checkbox checked={form.terms} onCheckedChange={(v) => setForm((f) => ({ ...f, terms: !!v }))} className="mt-0.5" />
-                <span>I accept the <Link to="/docs" className="text-primary hover:underline">Terms</Link> and <Link to="/docs" className="text-primary hover:underline">Privacy Policy</Link>.</span>
-              </label>
+              <ValidatedField error={errors.terms} touched={touched.terms}>
+                <label className="flex items-start gap-2 rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
+                  <Checkbox
+                    checked={form.terms}
+                    onCheckedChange={(v) => handleChange("terms", !!v)}
+                    className="mt-0.5"
+                  />
+                  <span>I accept the <Link to="/docs" className="text-primary hover:underline">Terms</Link> and <Link to="/docs" className="text-primary hover:underline">Privacy Policy</Link>.</span>
+                </label>
+              </ValidatedField>
               <p className="rounded-lg bg-primary/5 p-3 text-xs text-muted-foreground">
                 ✅ Once approved, you'll get a 14-day full-access free trial — no card required.
               </p>

@@ -303,8 +303,8 @@ function ClientDetail() {
               <Progress value={Math.min(100, (client.stats.service_count / 20) * 100)} />
             </div>
             <div>
-              <div className="mb-1.5 flex justify-between"><span>WhatsApp Campaigns</span><span className="font-medium">{client.stats.campaign_count}</span></div>
-              <Progress value={Math.min(100, (client.stats.campaign_count / 50) * 100)} />
+              <div className="mb-1.5 flex justify-between"><span>AI Credits Used</span><span className="font-medium">{client.stats.ai_monthly_used_credits ?? 0}</span></div>
+              <Progress value={Math.min(100, Math.round(((client.stats.ai_monthly_used_credits ?? 0) / (client.stats.ai_monthly_plan_credits || 100)) * 100))} />
             </div>
             <div>
               <div className="mb-1.5 flex justify-between"><span>Loyalty Program</span><span className="font-medium">{client.stats.loyalty_enabled ? "Enabled" : "Disabled"}</span></div>

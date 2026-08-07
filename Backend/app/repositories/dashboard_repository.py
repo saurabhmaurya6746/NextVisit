@@ -748,30 +748,28 @@ class DashboardRepository(BaseRepository):
             or 0
         )
 
-        # 2. APPOINTMENTS & SERVICES COUNTS (EXCLUDING CANCELLED)
+        # 2. APPOINTMENTS & SERVICES COUNTS (EXCLUDING CANCELLED & POS WALK-INS)
         today_visits_count = (
             self.db.scalar(
                 select(func.count(Visit.id)).where(
                     Visit.business_id == business_id,
                     Visit.status != VisitStatus.CANCELLED,
+                    Visit.created_at >= start_of_today,
                     or_(
-                        Visit.started_at >= start_of_today,
-                        Visit.completed_at >= start_of_today,
+                        Visit.notes.ilike("%APP-%"),
+                        Visit.notes.ilike("%appointment%"),
                     ),
                 )
             )
             or 0
         )
 
-        # Ongoing Appointments: ONLY visits actively IN_SERVICE today (started today, not completed, status OPEN)
+        # Ongoing Appointments: ONLY visits actively OPEN / checkedin / in service
         open_visits_count = (
             self.db.scalar(
                 select(func.count(Visit.id)).where(
                     Visit.business_id == business_id,
                     Visit.status == VisitStatus.OPEN,
-                    Visit.started_at.isnot(None),
-                    Visit.started_at >= start_of_today,
-                    Visit.completed_at.is_(None),
                 )
             )
             or 0
@@ -783,10 +781,7 @@ class DashboardRepository(BaseRepository):
                 select(func.count(Visit.id)).where(
                     Visit.business_id == business_id,
                     Visit.status == VisitStatus.COMPLETED,
-                    or_(
-                        Visit.completed_at >= start_of_today,
-                        Visit.started_at >= start_of_today,
-                    ),
+                    Visit.completed_at >= start_of_today,
                 )
             )
             or 0

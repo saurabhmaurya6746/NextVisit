@@ -170,15 +170,17 @@ export function CampaignSendModal({
   // Backend log tracking helper
   async function logToBackend(customerId: string, status: "SENT" | "SKIPPED" | "FAILED", msg: string) {
     try {
-      await apiFetch("/api/v1/campaign-logs", {
+      const payload: any = {
+        customer_id: customerId,
+        campaign_type: campaignType.toUpperCase(),
+        message: msg,
+      };
+      if (campaignId && campaignId.length > 20 && !campaignId.includes("global")) {
+        payload.campaign_id = campaignId;
+      }
+      await apiFetch("/api/v1/campaign-logs/record-send", {
         method: "POST",
-        body: JSON.stringify({
-          campaign_id: campaignId.length > 20 ? campaignId : null,
-          customer_id: customerId,
-          campaign_type: campaignType,
-          status: status,
-          message: msg,
-        }),
+        body: JSON.stringify(payload),
       });
     } catch (e) {
       console.warn("Backend log save warning:", e);
@@ -186,9 +188,10 @@ export function CampaignSendModal({
   }
 
   // Action: Open WhatsApp
-  function handleOpenWhatsApp() {
+  async function handleOpenWhatsApp() {
     if (!currentCustomer) return;
     const formattedMsg = replacePlaceholders(templateMessage, currentCustomer);
+    await logToBackend(currentCustomer.id, "SENT", formattedMsg);
     openWhatsApp(currentCustomer.phone, formattedMsg);
     logWhatsApp({ customerId: currentCustomer.id, kind: "campaign", message: formattedMsg });
   }

@@ -28,6 +28,10 @@ export interface ReportFilterOptionsResponse {
 
 export interface ReportsKpiSummary {
   total_revenue: number;
+  gross_sales: number;
+  discounts: number;
+  taxable_sales: number;
+  gst_collected: number;
   net_revenue: number;
   total_appointments_or_orders: number;
   completed_visits: number;
@@ -41,7 +45,6 @@ export interface ReportsKpiSummary {
   total_loyalty_points_earned: number;
   coupons_redeemed: number;
   campaign_revenue: number;
-  gst_collected: number;
   discount_given: number;
 }
 

@@ -9,19 +9,18 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/empty-state";
 import { SkeletonRows } from "@/components/skeletons";
 import { toast } from "sonner";
+import { PasswordInput } from "@/components/ui/password-input";
 import {
   Store,
   MessageSquare,
   Globe,
   FileText,
   Percent,
-  Bell,
   Sparkles,
-  Monitor,
   Shield,
   Database,
   QrCode,
@@ -31,9 +30,13 @@ import {
   Download,
   Key,
   LogOut,
+  Scissors,
+  Brain,
+  RefreshCw,
+  FileCheck,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { API_BASE_URL } from "@/lib/auth";
+import { formatCurrency } from "@/lib/currency";
 import {
   getBusinessSettingsApi,
   updateBusinessSettingsApi,
@@ -44,15 +47,24 @@ import {
   toggle2faApi,
   getActiveSessionsApi,
   logoutOtherDevicesApi,
-  downloadDataExportApi,
+  exportCatalogPdfApi,
   type BusinessSettings,
   type BusinessProfile,
   type UserSessionItem,
 } from "@/lib/business-settings-api";
+import { getSubscriptionUsageApi } from "@/lib/subscription-api";
+import { SubscriptionUpgradeModal } from "@/components/subscription-upgrade-modal";
+import { BuyAiCreditsModal } from "@/components/buy-ai-credits-modal";
+import { getMyCreditPurchaseRequestsApi } from "@/lib/credit-management-api";
+import { exportCustomersApi } from "@/lib/customers-api";
+import { downloadReportsPdfApi } from "@/lib/reports-api";
 
 export const Route = createFileRoute("/app/$type/$business/settings")({ component: SettingsPage });
 
 function SettingsPage() {
+  const params = useParams({ strict: false }) as Record<string, string>;
+  const typeParam = params?.type || "";
+
   const [profile, setProfile] = useState<BusinessProfile | null>(null);
   const [settings, setSettings] = useState<BusinessSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -109,12 +121,24 @@ function SettingsPage() {
     );
   }
 
+  const effectiveType = typeParam || profile.type || "";
+  const isSalon = effectiveType.toLowerCase().includes("salon") || effectiveType.toLowerCase().includes("spa");
+
   return (
     <>
       <PageHeader
-        title="Settings"
-        description="Day-to-day configuration: General, WhatsApp, Invoices, Tax, AI, POS, Security & Backups."
-        actions={<Badge variant="outline" className="rounded-full">{profile.name}</Badge>}
+        title={isSalon ? "Salon Settings" : "Restaurant Settings"}
+        description={
+          isSalon
+            ? "Clean business configuration: General, WhatsApp, Invoices, Tax, AI, Security & Reports Export."
+            : "Clean business configuration: General, WhatsApp, Invoices, Tax, AI, Security & Reports Export."
+        }
+        actions={
+          <Badge variant="outline" className="rounded-full flex items-center gap-1.5 px-3 py-1 font-medium">
+            {isSalon ? <Scissors className="h-3.5 w-3.5 text-primary" /> : <Store className="h-3.5 w-3.5 text-primary" />}
+            {profile.name}
+          </Badge>
+        }
       />
 
       <Tabs defaultValue="general" className="space-y-4">
@@ -134,31 +158,25 @@ function SettingsPage() {
           <TabsTrigger value="tax" className="rounded-xl gap-1.5 text-xs">
             <Percent className="h-3.5 w-3.5" /> Tax
           </TabsTrigger>
-          <TabsTrigger value="notifications" className="rounded-xl gap-1.5 text-xs">
-            <Bell className="h-3.5 w-3.5" /> Notifications
-          </TabsTrigger>
           <TabsTrigger value="ai" className="rounded-xl gap-1.5 text-xs">
             <Sparkles className="h-3.5 w-3.5" /> AI
-          </TabsTrigger>
-          <TabsTrigger value="pos" className="rounded-xl gap-1.5 text-xs">
-            <Monitor className="h-3.5 w-3.5" /> POS
           </TabsTrigger>
           <TabsTrigger value="security" className="rounded-xl gap-1.5 text-xs">
             <Shield className="h-3.5 w-3.5" /> Security
           </TabsTrigger>
           <TabsTrigger value="backup" className="rounded-xl gap-1.5 text-xs">
-            <Database className="h-3.5 w-3.5" /> Backup
+            <Database className="h-3.5 w-3.5" /> Backup & Reports
           </TabsTrigger>
         </TabsList>
 
         {/* 1. GENERAL TAB */}
         <TabsContent value="general">
-          <GeneralTab profile={profile} settings={settings} onSaved={loadData} />
+          <GeneralTab profile={profile} settings={settings} onSaved={loadData} isSalon={isSalon} />
         </TabsContent>
 
         {/* 2. WHATSAPP TAB */}
         <TabsContent value="whatsapp">
-          <WhatsAppTab settings={settings} onSaved={loadData} />
+          <WhatsAppTab settings={settings} onSaved={loadData} isSalon={isSalon} />
         </TabsContent>
 
         {/* 3. GOOGLE TAB */}
@@ -168,7 +186,7 @@ function SettingsPage() {
 
         {/* 4. INVOICE TAB */}
         <TabsContent value="invoice">
-          <InvoiceTab settings={settings} onSaved={loadData} />
+          <InvoiceTab settings={settings} onSaved={loadData} isSalon={isSalon} />
         </TabsContent>
 
         {/* 5. TAX TAB */}
@@ -176,29 +194,19 @@ function SettingsPage() {
           <TaxTab settings={settings} onSaved={loadData} />
         </TabsContent>
 
-        {/* 6. NOTIFICATION TAB */}
-        <TabsContent value="notifications">
-          <NotificationTab settings={settings} onSaved={loadData} />
-        </TabsContent>
-
-        {/* 7. AI TAB */}
+        {/* 6. AI TAB */}
         <TabsContent value="ai">
           <AiTab settings={settings} onSaved={loadData} />
         </TabsContent>
 
-        {/* 8. POS TAB */}
-        <TabsContent value="pos">
-          <PosTab settings={settings} onSaved={loadData} />
-        </TabsContent>
-
-        {/* 9. SECURITY TAB */}
+        {/* 7. SECURITY TAB */}
         <TabsContent value="security">
           <SecurityTab />
         </TabsContent>
 
-        {/* 10. BACKUP TAB */}
+        {/* 8. BACKUP TAB */}
         <TabsContent value="backup">
-          <BackupTab />
+          <BackupTab isSalon={isSalon} />
         </TabsContent>
       </Tabs>
     </>
@@ -208,9 +216,17 @@ function SettingsPage() {
 /* ─────────────────────────────────────────────────────────────────────────────
  * 1. GENERAL TAB
  * ────────────────────────────────────────────────────────────────────────────*/
-function GeneralTab({ profile, settings, onSaved }: { profile: BusinessProfile; settings: BusinessSettings; onSaved: () => void }) {
-  const routerParams = useParams({ strict: false }) as Record<string, string>;
-  const isSalon = routerParams?.type === "salon";
+function GeneralTab({
+  profile,
+  settings,
+  onSaved,
+  isSalon,
+}: {
+  profile: BusinessProfile;
+  settings: BusinessSettings;
+  onSaved: () => void;
+  isSalon: boolean;
+}) {
   const [logo, setLogo] = useState(settings.logo || profile.logo_url || "");
   const [coverImage, setCoverImage] = useState(settings.cover_image || "");
   const [name, setName] = useState(profile.name || "");
@@ -247,8 +263,12 @@ function GeneralTab({ profile, settings, onSaved }: { profile: BusinessProfile; 
   return (
     <Card className="rounded-2xl border shadow-sm">
       <CardHeader>
-        <CardTitle className="font-display text-base">{isSalon ? "General Salon Settings" : "General Restaurant Settings"}</CardTitle>
-        <CardDescription>Brand logo, cover image, and primary contact info.</CardDescription>
+        <CardTitle className="font-display text-base">
+          {isSalon ? "General Salon Details" : "General Restaurant Details"}
+        </CardTitle>
+        <CardDescription>
+          {isSalon ? "Brand logo, cover banner, and primary salon contact info." : "Brand logo, cover image, and primary restaurant contact info."}
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="flex flex-wrap items-center gap-6">
@@ -264,7 +284,7 @@ function GeneralTab({ profile, settings, onSaved }: { profile: BusinessProfile; 
 
           <div className="flex items-center gap-3">
             <div className="grid h-16 w-32 place-items-center rounded-2xl bg-muted border overflow-hidden">
-              {coverImage ? <img src={coverImage} alt="Cover" className="h-full w-full object-cover" /> : <span className="text-[10px] text-muted-foreground">Cover Image</span>}
+              {coverImage ? <img src={coverImage} alt="Cover" className="h-full w-full object-cover" /> : <span className="text-[10px] text-muted-foreground">Cover Banner</span>}
             </div>
             <div className="space-y-1">
               <Label className="text-xs font-semibold">Cover Image URL</Label>
@@ -277,7 +297,12 @@ function GeneralTab({ profile, settings, onSaved }: { profile: BusinessProfile; 
           <Fld label="Business Name" value={name} onChange={setName} />
           <Fld label="Support Email" value={email} onChange={setEmail} />
           <Fld label="Support Phone" value={phone} onChange={setPhone} />
-          <Fld label="Website" value={website} onChange={setWebsite} placeholder="https://yourrestaurant.com" />
+          <Fld
+            label="Website"
+            value={website}
+            onChange={setWebsite}
+            placeholder={isSalon ? "https://yoursalon.com" : "https://yourrestaurant.com"}
+          />
         </div>
 
         <div className="flex justify-end pt-2">
@@ -293,14 +318,18 @@ function GeneralTab({ profile, settings, onSaved }: { profile: BusinessProfile; 
 /* ─────────────────────────────────────────────────────────────────────────────
  * 2. WHATSAPP TAB
  * ────────────────────────────────────────────────────────────────────────────*/
-function WhatsAppTab({ settings, onSaved }: { settings: BusinessSettings; onSaved: () => void }) {
+function WhatsAppTab({
+  settings,
+  onSaved,
+  isSalon,
+}: {
+  settings: BusinessSettings;
+  onSaved: () => void;
+  isSalon: boolean;
+}) {
   const [waNum, setWaNum] = useState(settings.whatsapp_number || "");
   const [countryCode, setCountryCode] = useState(settings.default_country_code || "+91");
   const [signature, setSignature] = useState(settings.default_message_signature || "");
-  const [waCampaigns, setWaCampaigns] = useState(settings.enable_whatsapp_campaigns);
-  const [welcomeMsgs, setWelcomeMsgs] = useState(settings.enable_welcome_messages);
-  const [reviewReqs, setReviewReqs] = useState(settings.review_booster_enabled);
-  const [recoveryCamps, setRecoveryCamps] = useState(settings.recovery_enabled);
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -310,10 +339,6 @@ function WhatsAppTab({ settings, onSaved }: { settings: BusinessSettings; onSave
         whatsapp_number: waNum.trim() || undefined,
         default_country_code: countryCode.trim(),
         default_message_signature: signature.trim() || undefined,
-        enable_whatsapp_campaigns: waCampaigns,
-        enable_welcome_messages: welcomeMsgs,
-        review_booster_enabled: reviewReqs,
-        recovery_enabled: recoveryCamps,
       });
       toast.success("WhatsApp settings updated!");
       onSaved();
@@ -328,7 +353,7 @@ function WhatsAppTab({ settings, onSaved }: { settings: BusinessSettings; onSave
     <Card className="rounded-2xl border shadow-sm">
       <CardHeader>
         <CardTitle className="font-display text-base">WhatsApp Configuration</CardTitle>
-        <CardDescription>Manage WhatsApp messaging behavior and automation triggers.</CardDescription>
+        <CardDescription>Primary WhatsApp contact number and default message signature.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -338,14 +363,12 @@ function WhatsAppTab({ settings, onSaved }: { settings: BusinessSettings; onSave
 
         <div className="space-y-1.5">
           <Label className="text-xs font-semibold">Default Message Signature</Label>
-          <Textarea rows={2} placeholder="e.g. — Aroma Bistro · Mumbai" value={signature} onChange={(e) => setSignature(e.target.value)} />
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <ToggleCard title="Enable WhatsApp Campaigns" desc="Send bulk promotional messages via WhatsApp" checked={waCampaigns} onChange={setWaCampaigns} />
-          <ToggleCard title="Enable Welcome Messages" desc="Send automated welcome greetings to new customers" checked={welcomeMsgs} onChange={setWelcomeMsgs} />
-          <ToggleCard title="Enable Review Requests" desc="Automatically invite customers to leave a Google review" checked={reviewReqs} onChange={setReviewReqs} />
-          <ToggleCard title="Enable Recovery Campaigns" desc="Re-engage churned customers with winback offers" checked={recoveryCamps} onChange={setRecoveryCamps} />
+          <Textarea
+            rows={2}
+            placeholder={isSalon ? "e.g. — Glamour Salon & Spa · Mumbai" : "e.g. — Aroma Bistro · Mumbai"}
+            value={signature}
+            onChange={(e) => setSignature(e.target.value)}
+          />
         </div>
 
         <div className="flex justify-end pt-2">
@@ -385,7 +408,7 @@ function GoogleTab({ settings, onSaved }: { settings: BusinessSettings; onSaved:
   return (
     <Card className="rounded-2xl border shadow-sm">
       <CardHeader>
-        <CardTitle className="font-display text-base">Google Business & Review Links</CardTitle>
+        <CardTitle className="font-display text-base">Google Business Links</CardTitle>
         <CardDescription>Links used for Google Review Booster campaigns and customer navigation.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -404,12 +427,20 @@ function GoogleTab({ settings, onSaved }: { settings: BusinessSettings; onSaved:
 /* ─────────────────────────────────────────────────────────────────────────────
  * 4. INVOICE TAB
  * ────────────────────────────────────────────────────────────────────────────*/
-function InvoiceTab({ settings, onSaved }: { settings: BusinessSettings; onSaved: () => void }) {
+function InvoiceTab({
+  settings,
+  onSaved,
+  isSalon,
+}: {
+  settings: BusinessSettings;
+  onSaved: () => void;
+  isSalon: boolean;
+}) {
+  const defaultFooter = isSalon ? "Thank you for visiting our salon!" : "Thank you for dining with us!";
   const [prefix, setPrefix] = useState(settings.invoice_prefix || "INV-");
-  const [footer, setFooter] = useState(settings.invoice_footer || "Thank you for dining with us!");
+  const [footer, setFooter] = useState(settings.invoice_footer || defaultFooter);
   const [showGst, setShowGst] = useState(settings.show_gst_on_invoice);
   const [showQr, setShowQr] = useState(settings.show_qr_on_invoice);
-  const [autoPrint, setAutoPrint] = useState(settings.auto_print_invoice);
   const [qrImage, setQrImage] = useState(settings.payment_qr_image || "");
   const [upiId, setUpiId] = useState(settings.payment_upi_id || "");
   const [uploadingQr, setUploadingQr] = useState(false);
@@ -423,7 +454,6 @@ function InvoiceTab({ settings, onSaved }: { settings: BusinessSettings; onSaved
         invoice_footer: footer.trim() || undefined,
         show_gst_on_invoice: showGst,
         show_qr_on_invoice: showQr,
-        auto_print_invoice: autoPrint,
         payment_upi_id: upiId.trim() || undefined,
       });
       toast.success("Invoice settings updated!");
@@ -454,8 +484,8 @@ function InvoiceTab({ settings, onSaved }: { settings: BusinessSettings; onSaved
   return (
     <Card className="rounded-2xl border shadow-sm">
       <CardHeader>
-        <CardTitle className="font-display text-base">Invoice & Receipt Printing</CardTitle>
-        <CardDescription>Format printed receipts, invoice numbering, and UPI QR display.</CardDescription>
+        <CardTitle className="font-display text-base">Invoice & Receipt Setup</CardTitle>
+        <CardDescription>Format printed receipts, invoice numbering, and UPI payment details.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -465,13 +495,12 @@ function InvoiceTab({ settings, onSaved }: { settings: BusinessSettings; onSaved
 
         <div className="space-y-1.5">
           <Label className="text-xs font-semibold">Invoice Footer Text</Label>
-          <Input value={footer} onChange={(e) => setFooter(e.target.value)} placeholder="Thank you for visiting!" />
+          <Input value={footer} onChange={(e) => setFooter(e.target.value)} placeholder={defaultFooter} />
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
-          <ToggleCard title="Show GST Breakup" desc="Display tax details on printed bills" checked={showGst} onChange={setShowGst} />
-          <ToggleCard title="Show UPI QR Code" desc="Print payment QR code on invoice" checked={showQr} onChange={setShowQr} />
-          <ToggleCard title="Auto Print Invoice" desc="Trigger print dialog on order settlement" checked={autoPrint} onChange={setAutoPrint} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <ToggleCard title="Show GST Breakup" desc="Display itemized tax details on printed bills" checked={showGst} onChange={setShowGst} />
+          <ToggleCard title="Show UPI QR Code" desc="Print payment QR code image on invoice" checked={showQr} onChange={setShowQr} />
         </div>
 
         {/* QR Code Upload Section */}
@@ -512,25 +541,60 @@ function InvoiceTab({ settings, onSaved }: { settings: BusinessSettings; onSaved
  * 5. TAX TAB
  * ────────────────────────────────────────────────────────────────────────────*/
 function TaxTab({ settings, onSaved }: { settings: BusinessSettings; onSaved: () => void }) {
-  const [gstPct, setGstPct] = useState(settings.tax_percentage || 0);
+  const [enableGst, setEnableGst] = useState(settings.enable_gst ?? true);
+  const [gstPct, setGstPct] = useState(settings.tax_percentage ?? 18.0);
+  const [priceIncludesGst, setPriceIncludesGst] = useState(settings.price_includes_gst ?? false);
+  const [gstNum, setGstNum] = useState(settings.gst_number || "");
   const [serviceCharge, setServiceCharge] = useState(settings.service_charge || 0);
   const [roundOff, setRoundOff] = useState(settings.round_off_bill);
-  const [gstNum, setGstNum] = useState(settings.gst_number || "");
   const [saving, setSaving] = useState(false);
 
+  const INDIAN_GST_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+
+  // Live Price Calculation Preview for ₹500
+  const samplePrice = 500;
+  const rate = Math.max(0, Math.min(100, Number(gstPct) || 0));
+  let taxablePreview = samplePrice;
+  let gstAmountPreview = 0;
+  let totalPreview = samplePrice;
+
+  if (enableGst && rate > 0) {
+    if (priceIncludesGst) {
+      totalPreview = samplePrice;
+      taxablePreview = Math.round((totalPreview / (1 + rate / 100)) * 100) / 100;
+      gstAmountPreview = Math.round((totalPreview - taxablePreview) * 100) / 100;
+    } else {
+      taxablePreview = samplePrice;
+      gstAmountPreview = Math.round((taxablePreview * (rate / 100)) * 100) / 100;
+      totalPreview = Math.round((taxablePreview + gstAmountPreview) * 100) / 100;
+    }
+  }
+
   async function handleSave() {
+    const cleanGstNum = gstNum.trim().toUpperCase();
+    if (enableGst && cleanGstNum && !INDIAN_GST_REGEX.test(cleanGstNum)) {
+      toast.error("Invalid Indian GST format. Example: 09ABCDE1234F1Z5");
+      return;
+    }
+    if (gstPct < 0 || gstPct > 100) {
+      toast.error("GST percentage must be between 0% and 100%");
+      return;
+    }
+
     setSaving(true);
     try {
       await updateBusinessSettingsApi({
+        enable_gst: enableGst,
         tax_percentage: Number(gstPct) || 0,
+        price_includes_gst: priceIncludesGst,
+        gst_number: cleanGstNum || undefined,
         service_charge: Number(serviceCharge) || 0,
         round_off_bill: roundOff,
-        gst_number: gstNum.trim() || undefined,
       });
-      toast.success("Tax settings updated!");
+      toast.success("Business GST settings updated!");
       onSaved();
     } catch (e: any) {
-      toast.error(e.message || "Failed to update tax settings");
+      toast.error(e.message || "Failed to update GST settings");
     } finally {
       setSaving(false);
     }
@@ -539,19 +603,100 @@ function TaxTab({ settings, onSaved }: { settings: BusinessSettings; onSaved: ()
   return (
     <Card className="rounded-2xl border shadow-sm">
       <CardHeader>
-        <CardTitle className="font-display text-base">Tax & Service Charges</CardTitle>
-        <CardDescription>Configure GST percentage, service fees, and rounding options.</CardDescription>
+        <CardTitle className="font-display text-base">Business Tax &amp; GST Settings</CardTitle>
+        <CardDescription>
+          Configure business-specific GST percentage, inclusive/exclusive pricing modes, and GSTIN registration details.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <ToggleCard
+            title="Enable GST"
+            desc="Enable GST tax computation and invoice tax headers for this business"
+            checked={enableGst}
+            onChange={setEnableGst}
+          />
+          <ToggleCard
+            title="Price Includes GST"
+            desc={priceIncludesGst ? "Mode 1: Product/service price includes GST (Inclusive)" : "Mode 2: GST is added on top of price (Exclusive)"}
+            checked={priceIncludesGst}
+            onChange={setPriceIncludesGst}
+          />
+        </div>
+
         <div className="grid gap-4 sm:grid-cols-3">
-          <Fld label="GSTIN Number" value={gstNum} onChange={setGstNum} placeholder="27AAAAA0000A1Z5" />
           <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">GST Rate (%)</Label>
-            <Input type="number" step="0.1" value={gstPct} onChange={(e) => setGstPct(Number(e.target.value))} />
+            <Label className="text-xs font-semibold">GSTIN Number</Label>
+            <Input
+              placeholder="e.g. 09ABCDE1234F1Z5"
+              value={gstNum}
+              onChange={(e) => setGstNum(e.target.value.toUpperCase())}
+              disabled={!enableGst}
+              className="text-xs uppercase font-mono rounded-xl"
+            />
+            <p className="text-[11px] text-muted-foreground">Standard 15-character Indian GST format</p>
           </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold">GST Percentage (%)</Label>
+            <Input
+              type="number"
+              step="0.1"
+              min="0"
+              max="100"
+              value={gstPct}
+              onChange={(e) => setGstPct(Number(e.target.value))}
+              disabled={!enableGst}
+              className="text-xs rounded-xl"
+            />
+            <p className="text-[11px] text-muted-foreground">Range: 0% to 100% (Default: 18%)</p>
+          </div>
+
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold">Service Charge (%)</Label>
-            <Input type="number" step="0.1" value={serviceCharge} onChange={(e) => setServiceCharge(Number(e.target.value))} />
+            <Input
+              type="number"
+              step="0.1"
+              min="0"
+              value={serviceCharge}
+              onChange={(e) => setServiceCharge(Number(e.target.value))}
+              className="text-xs rounded-xl"
+            />
+            <p className="text-[11px] text-muted-foreground">Optional operational service charge</p>
+          </div>
+        </div>
+
+        {/* GST CALCULATION ENGINE PREVIEW CARD */}
+        <div className="rounded-xl border p-4 bg-muted/20 space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="font-display text-xs font-bold uppercase tracking-wider text-foreground">
+              GST Price Calculation Engine Preview (Sample ₹500 Item)
+            </h4>
+            <Badge variant="outline" className="text-[10px] uppercase font-bold">
+              {enableGst ? (priceIncludesGst ? "Inclusive Mode" : "Exclusive Mode") : "GST Disabled"}
+            </Badge>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+            <div className="rounded-lg border bg-background p-3">
+              <span className="text-muted-foreground">Sample Service Price:</span>
+              <p className="font-bold text-foreground text-sm font-display">{formatCurrency(samplePrice, "INR")}</p>
+            </div>
+
+            <div className="rounded-lg border bg-background p-3">
+              <span className="text-muted-foreground">Taxable Value:</span>
+              <p className="font-bold text-foreground text-sm font-display">{formatCurrency(taxablePreview, "INR")}</p>
+            </div>
+
+            <div className="rounded-lg border bg-background p-3">
+              <span className="text-muted-foreground">GST ({enableGst ? `${rate}%` : "0%"}):</span>
+              <p className="font-bold text-violet-600 dark:text-violet-400 text-sm font-display">{formatCurrency(gstAmountPreview, "INR")}</p>
+            </div>
+
+            <div className="rounded-lg border bg-background p-3">
+              <span className="text-muted-foreground">Final Bill Total:</span>
+              <p className="font-bold text-emerald-600 dark:text-emerald-400 text-sm font-display">{formatCurrency(totalPreview, "INR")}</p>
+            </div>
           </div>
         </div>
 
@@ -559,7 +704,7 @@ function TaxTab({ settings, onSaved }: { settings: BusinessSettings; onSaved: ()
 
         <div className="flex justify-end pt-2">
           <Button disabled={saving} onClick={handleSave} className="rounded-full gradient-brand text-primary-foreground font-semibold">
-            {saving ? "Saving..." : "Save Tax Settings"}
+            {saving ? "Saving..." : "Save GST Settings"}
           </Button>
         </div>
       </CardContent>
@@ -568,78 +713,54 @@ function TaxTab({ settings, onSaved }: { settings: BusinessSettings; onSaved: ()
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
- * 6. NOTIFICATION TAB
- * ────────────────────────────────────────────────────────────────────────────*/
-function NotificationTab({ settings, onSaved }: { settings: BusinessSettings; onSaved: () => void }) {
-  const [orders, setOrders] = useState(settings.notify_orders);
-  const [qrOrders, setQrOrders] = useState(settings.notify_qr_orders);
-  const [campaigns, setCampaigns] = useState(settings.notify_campaigns);
-  const [reviews, setReviews] = useState(settings.notify_reviews);
-  const [email, setEmail] = useState(settings.notify_email);
-  const [saving, setSaving] = useState(false);
-
-  async function handleSave() {
-    setSaving(true);
-    try {
-      await updateBusinessSettingsApi({
-        notify_orders: orders,
-        notify_qr_orders: qrOrders,
-        notify_campaigns: campaigns,
-        notify_reviews: reviews,
-        notify_email: email,
-      });
-      toast.success("Notification preferences saved!");
-      onSaved();
-    } catch (e: any) {
-      toast.error(e.message || "Failed to update notifications");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Card className="rounded-2xl border shadow-sm">
-      <CardHeader>
-        <CardTitle className="font-display text-base">Notification Preferences</CardTitle>
-        <CardDescription>Control live sound, bell alerts, and email notifications.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <ToggleCard title="Order Notifications" desc="Alert when a new POS or staff order is created" checked={orders} onChange={setOrders} />
-          <ToggleCard title="QR Order Notifications" desc="Instant alert & sound when customer scans QR order" checked={qrOrders} onChange={setQrOrders} />
-          <ToggleCard title="Campaign Notifications" desc="Alert when scheduled WhatsApp campaigns complete" checked={campaigns} onChange={setCampaigns} />
-          <ToggleCard title="Review Notifications" desc="Alert when a new customer leaves a review" checked={reviews} onChange={setReviews} />
-          <ToggleCard title="Email Notifications" desc="Receive daily & weekly summary reports by email" checked={email} onChange={setEmail} />
-        </div>
-
-        <div className="flex justify-end pt-2">
-          <Button disabled={saving} onClick={handleSave} className="rounded-full gradient-brand text-primary-foreground font-semibold">
-            {saving ? "Saving..." : "Save Notifications"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
- * 7. AI TAB
+ * 6. AI TAB
  * ────────────────────────────────────────────────────────────────────────────*/
 function AiTab({ settings, onSaved }: { settings: BusinessSettings; onSaved: () => void }) {
   const [enableAi, setEnableAi] = useState(settings.review_booster_ai_enabled);
-  const [tone, setTone] = useState(settings.ai_default_tone || "Friendly");
-  const [lang, setLang] = useState(settings.language || "en");
-  const [maxReqs, setMaxReqs] = useState(settings.ai_max_monthly_requests || 500);
   const [saving, setSaving] = useState(false);
+  const [aiUsage, setAiUsage] = useState<any>(null);
+  const [loadingUsage, setLoadingUsage] = useState(true);
+  const [buyCreditsModalOpen, setBuyCreditsModalOpen] = useState(false);
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+
+  const [creditRequests, setCreditRequests] = useState<any[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+
+  const fetchAiUsage = useCallback(() => {
+    setLoadingUsage(true);
+    getSubscriptionUsageApi()
+      .then((data) => setAiUsage(data.ai_usage))
+      .catch(() => null)
+      .finally(() => setLoadingUsage(false));
+  }, []);
+
+  const fetchCreditRequests = useCallback(() => {
+    setLoadingRequests(true);
+    getMyCreditPurchaseRequestsApi()
+      .then((data) => setCreditRequests(data || []))
+      .catch(() => setCreditRequests([]))
+      .finally(() => setLoadingRequests(false));
+  }, []);
+
+  useEffect(() => {
+    fetchAiUsage();
+    fetchCreditRequests();
+  }, [fetchAiUsage, fetchCreditRequests]);
+
+  const planName = aiUsage?.plan_name || "Free";
+  const monthlyPlanCredits = aiUsage?.monthly_plan_credits ?? 0;
+  const monthlyUsed = aiUsage?.monthly_used_credits ?? 0;
+  const monthlyRemaining = aiUsage?.monthly_remaining_credits ?? Math.max(0, monthlyPlanCredits - monthlyUsed);
+  const purchasedRemaining = aiUsage?.purchased_remaining_credits ?? 0;
+  const resetDate = aiUsage?.reset_date || "1 September 2026";
+  const usagePct = monthlyPlanCredits > 0 ? Math.min(100, Math.round((monthlyUsed / monthlyPlanCredits) * 100)) : 0;
+  const isAiDisabled = aiUsage && (!aiUsage.ai_enabled || (monthlyPlanCredits === 0 && purchasedRemaining === 0));
 
   async function handleSave() {
     setSaving(true);
     try {
       await updateBusinessSettingsApi({
         review_booster_ai_enabled: enableAi,
-        ai_default_tone: tone,
-        language: lang,
-        ai_max_monthly_requests: Number(maxReqs) || 500,
       });
       toast.success("AI Settings updated!");
       onSaved();
@@ -653,45 +774,221 @@ function AiTab({ settings, onSaved }: { settings: BusinessSettings; onSaved: () 
   return (
     <Card className="rounded-2xl border shadow-sm">
       <CardHeader>
-        <CardTitle className="font-display text-base">Gemini AI Assistant Configuration</CardTitle>
-        <CardDescription>Tailor tone style, language, and monthly AI generation limits.</CardDescription>
+        <CardTitle className="font-display text-base">Gemini AI Assistant &amp; Credits</CardTitle>
+        <CardDescription>Configure AI message generation and monitor monthly &amp; purchased credit balances.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <ToggleCard title="Enable Gemini AI Message Generator" desc="Allow AI generation for campaigns and review follow-ups" checked={enableAi} onChange={setEnableAi} />
+        <ToggleCard
+          title="Enable AI Messages"
+          desc="Allow Gemini AI generation for WhatsApp campaigns, customer recovery, and review responses"
+          checked={enableAi}
+          onChange={setEnableAi}
+        />
 
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">Default AI Tone</Label>
-            <Select value={tone} onValueChange={setTone}>
-              <SelectTrigger className="rounded-lg"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Friendly">Friendly</SelectItem>
-                <SelectItem value="Professional">Professional</SelectItem>
-                <SelectItem value="Casual">Casual</SelectItem>
-                <SelectItem value="Funny & Witty">Funny & Witty</SelectItem>
-                <SelectItem value="Urgent & Exclusive">Urgent & Exclusive</SelectItem>
-              </SelectContent>
-            </Select>
+        {/* PART 2: HIDE AI DASHBOARD IF AI IS DISABLED */}
+        {loadingUsage ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          </div>
+        ) : isAiDisabled ? (
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-6 text-center space-y-3">
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-amber-500/20 text-amber-600 dark:text-amber-400">
+              <Brain className="h-6 w-6" />
+            </div>
+            <div className="space-y-1 max-w-md mx-auto">
+              <h3 className="font-display font-bold text-base text-foreground">
+                AI is not included in your current subscription
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Your active plan (<strong className="text-foreground">{planName}</strong>) does not include monthly AI Credits. Upgrade your subscription to use AI features.
+              </p>
+            </div>
+            <div className="pt-2">
+              <Button
+                onClick={() => setUpgradeModalOpen(true)}
+                className="rounded-full gradient-brand text-primary-foreground font-semibold text-xs px-6"
+              >
+                Upgrade Subscription
+              </Button>
+            </div>
+            <SubscriptionUpgradeModal
+              open={upgradeModalOpen}
+              onOpenChange={setUpgradeModalOpen}
+              title="Upgrade Subscription Plan for AI Features"
+              description="Unlock monthly Gemini AI Credits, higher staff limits, and active devices."
+            />
+          </div>
+        ) : (
+          /* PART 1: DYNAMIC AI CREDITS DASHBOARD */
+          <div className="rounded-2xl border p-4 bg-muted/20 space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-xs text-foreground flex items-center gap-1.5 uppercase tracking-wider">
+                <Sparkles className="h-4 w-4 text-violet-500" /> AI Credits Dashboard
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground font-medium">Current Plan:</span>
+                <Badge variant="secondary" className="rounded-full px-2.5 py-0.5 text-xs font-bold uppercase">
+                  {planName}
+                </Badge>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Monthly Subscription Credits */}
+              <div className="rounded-xl border bg-background p-4 space-y-2 shadow-sm">
+                <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
+                  <span>Monthly Subscription Credits</span>
+                  <span className="text-foreground font-semibold">{monthlyPlanCredits} Credits / Month</span>
+                </div>
+                <p className="text-2xl font-bold text-foreground font-display">
+                  {monthlyUsed} <span className="text-xs font-normal text-muted-foreground">Used</span>
+                </p>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full gradient-brand transition-all duration-300"
+                    style={{ width: `${usagePct}%` }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground pt-1 flex justify-between">
+                  <span>Remaining: <strong className="text-foreground">{monthlyRemaining} Credits</strong></span>
+                  <span>{usagePct}% consumed</span>
+                </p>
+              </div>
+
+              {/* Purchased Extra Credits */}
+              <div className="rounded-xl border bg-background p-4 space-y-2 shadow-sm flex flex-col justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium">Purchased Extra Credits</p>
+                  <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 font-display">
+                    {purchasedRemaining} <span className="text-xs font-normal text-muted-foreground">Remaining</span>
+                  </p>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Purchased credits <strong>never expire</strong> until consumed.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between text-xs pt-2 border-t gap-2 text-muted-foreground">
+              <span>
+                Next Reset: <strong className="text-foreground">{resetDate}</strong>
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="rounded-full text-xs font-semibold border-violet-500/40 hover:border-violet-500 text-violet-600 dark:text-violet-400"
+                onClick={() => setBuyCreditsModalOpen(true)}
+              >
+                <Brain className="mr-1.5 h-3.5 w-3.5" /> Purchase Extra Credits
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* PURCHASE REQUEST HISTORY */}
+        <div className="rounded-2xl border p-4 bg-background space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="font-display text-xs font-bold uppercase tracking-wider text-foreground">
+              Purchase Requests
+            </h4>
+            <Button size="sm" variant="ghost" className="h-7 text-xs rounded-full" onClick={fetchCreditRequests}>
+              <RefreshCw className="h-3 w-3 mr-1" /> Refresh History
+            </Button>
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">Language</Label>
-            <Select value={lang} onValueChange={setLang}>
-              <SelectTrigger className="rounded-lg"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="hi">Hinglish / Hindi</SelectItem>
-                <SelectItem value="es">Spanish</SelectItem>
-                <SelectItem value="fr">French</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">Maximum Monthly AI Requests</Label>
-            <Input type="number" value={maxReqs} onChange={(e) => setMaxReqs(Number(e.target.value))} />
-          </div>
+          {loadingRequests ? (
+            <div className="py-4 text-center text-xs text-muted-foreground">Loading purchase requests...</div>
+          ) : creditRequests.length === 0 ? (
+            <div className="py-4 text-center text-xs text-muted-foreground">No purchase requests submitted yet.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="text-xs">
+                    <TableHead>Request Date</TableHead>
+                    <TableHead>Credit Pack</TableHead>
+                    <TableHead>Credits</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Payment Status</TableHead>
+                    <TableHead>Approval Status</TableHead>
+                    <TableHead className="text-right">Approved On / Remark</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {creditRequests.map((req) => (
+                    <TableRow key={req.id} className="text-xs">
+                      <TableCell className="text-muted-foreground">
+                        {req.requested_at ? new Date(req.requested_at).toLocaleString() : "N/A"}
+                      </TableCell>
+                      <TableCell className="font-semibold text-foreground">
+                        {req.pack_name}
+                      </TableCell>
+                      <TableCell className="font-bold text-violet-600 dark:text-violet-400">
+                        +{req.ai_credits?.toLocaleString()} Credits
+                      </TableCell>
+                      <TableCell className="font-semibold">
+                        {req.amount === 0 ? "Free" : formatCurrency(req.amount, "INR")}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={
+                            req.payment_status === "PAID"
+                              ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                              : req.payment_status === "FAILED"
+                              ? "bg-rose-500/10 text-rose-600 border-rose-500/30"
+                              : "bg-amber-500/10 text-amber-600 border-amber-500/30"
+                          }
+                        >
+                          {req.payment_status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={
+                            req.approval_status === "APPROVED"
+                              ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                              : req.approval_status === "REJECTED"
+                              ? "bg-rose-500/10 text-rose-600 border-rose-500/30"
+                              : req.approval_status === "CANCELLED"
+                              ? "bg-muted text-muted-foreground"
+                              : "bg-amber-500/10 text-amber-600 border-amber-500/30"
+                          }
+                        >
+                          {req.approval_status === "PENDING" ? "Pending Approval" : req.approval_status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {req.approval_status === "APPROVED" ? (
+                          <span className="text-emerald-600 text-[11px]">
+                            {req.approved_at ? new Date(req.approved_at).toLocaleString() : "Approved"}
+                          </span>
+                        ) : req.approval_status === "REJECTED" ? (
+                          <span className="text-rose-600 text-[11px] font-semibold">
+                            {req.rejection_reason || "Rejected"}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-[11px]">-</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </div>
+
+        {/* PART 4 & 5: DYNAMIC PURCHASE AI CREDITS POPUP */}
+        <BuyAiCreditsModal
+          open={buyCreditsModalOpen}
+          onOpenChange={setBuyCreditsModalOpen}
+          onSuccess={() => {
+            fetchAiUsage();
+            fetchCreditRequests();
+          }}
+        />
 
         <div className="flex justify-end pt-2">
           <Button disabled={saving} onClick={handleSave} className="rounded-full gradient-brand text-primary-foreground font-semibold">
@@ -704,88 +1001,12 @@ function AiTab({ settings, onSaved }: { settings: BusinessSettings; onSaved: () 
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
- * 8. POS TAB
- * ────────────────────────────────────────────────────────────────────────────*/
-function PosTab({ settings, onSaved }: { settings: BusinessSettings; onSaved: () => void }) {
-  const [autoComplete, setAutoComplete] = useState(settings.pos_auto_complete_order);
-  const [autoFreeTable, setAutoFreeTable] = useState(settings.pos_auto_free_table);
-  const [defaultPayment, setDefaultPayment] = useState(settings.pos_default_payment_method || "CASH");
-  const [dineIn, setDineIn] = useState(settings.enable_dine_in);
-  const [parcel, setParcel] = useState(settings.enable_parcel);
-  const [takeaway, setTakeaway] = useState(settings.enable_takeaway);
-  const [qrOrdering, setQrOrdering] = useState(settings.enable_qr_ordering);
-  const [saving, setSaving] = useState(false);
-
-  async function handleSave() {
-    setSaving(true);
-    try {
-      await updateBusinessSettingsApi({
-        pos_auto_complete_order: autoComplete,
-        pos_auto_free_table: autoFreeTable,
-        pos_default_payment_method: defaultPayment,
-        enable_dine_in: dineIn,
-        enable_parcel: parcel,
-        enable_takeaway: takeaway,
-        enable_qr_ordering: qrOrdering,
-      });
-      toast.success("POS Settings updated!");
-      onSaved();
-    } catch (e: any) {
-      toast.error(e.message || "Failed to update POS settings");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Card className="rounded-2xl border shadow-sm">
-      <CardHeader>
-        <CardTitle className="font-display text-base">Point of Sale & Ordering Options</CardTitle>
-        <CardDescription>Configure order completion, table automation, and available order types.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <ToggleCard title="Auto Complete Order" desc="Automatically mark order SERVED upon payment settlement" checked={autoComplete} onChange={setAutoComplete} />
-          <ToggleCard title="Auto Free Table After Payment" desc="Reset table status to Empty as soon as bill is paid" checked={autoFreeTable} onChange={setAutoFreeTable} />
-        </div>
-
-        <div className="space-y-1.5 max-w-xs">
-          <Label className="text-xs font-semibold">Default Payment Method</Label>
-          <Select value={defaultPayment} onValueChange={setDefaultPayment}>
-            <SelectTrigger className="rounded-lg"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="CASH">Cash</SelectItem>
-              <SelectItem value="UPI">UPI / Digital</SelectItem>
-              <SelectItem value="CARD">Credit / Debit Card</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-4">
-          <ToggleCard title="Enable Dine In" desc="Dine-in seating orders" checked={dineIn} onChange={setDineIn} />
-          <ToggleCard title="Enable Parcel" desc="Packaged parcel orders" checked={parcel} onChange={setParcel} />
-          <ToggleCard title="Enable Takeaway" desc="Pick up takeaway orders" checked={takeaway} onChange={setTakeaway} />
-          <ToggleCard title="Enable QR Self-Order" desc="Table QR code self ordering" checked={qrOrdering} onChange={setQrOrdering} />
-        </div>
-
-        <div className="flex justify-end pt-2">
-          <Button disabled={saving} onClick={handleSave} className="rounded-full gradient-brand text-primary-foreground font-semibold">
-            {saving ? "Saving..." : "Save POS Settings"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
- * 9. SECURITY TAB
+ * 7. SECURITY TAB
  * ────────────────────────────────────────────────────────────────────────────*/
 function SecurityTab() {
   const [oldPass, setOldPass] = useState("");
   const [newPass, setNewPass] = useState("");
   const [changingPass, setChangingPass] = useState(false);
-  const [twoFactor, setTwoFactor] = useState(false);
 
   const [sessions, setSessions] = useState<UserSessionItem[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
@@ -808,31 +1029,33 @@ function SecurityTab() {
 
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
-    if (!oldPass || !newPass) {
-      toast.error("Please fill in both old and new password fields.");
+    if (!oldPass || !oldPass.trim()) {
+      toast.error("Current password is required.");
       return;
     }
+    if (!newPass || !newPass.trim()) {
+      toast.error("New password is required.");
+      return;
+    }
+    if (newPass.length < 8) {
+      toast.error("New password must be at least 8 characters.");
+      return;
+    }
+    if (oldPass === newPass) {
+      toast.error("New password cannot be the same as the current password.");
+      return;
+    }
+
     setChangingPass(true);
     try {
       const res = await changePasswordApi({ old_password: oldPass, new_password: newPass });
-      toast.success(res.message || "Password changed successfully!");
+      toast.success(res.message || "Password updated successfully.");
       setOldPass("");
       setNewPass("");
     } catch (e: any) {
-      toast.error(e.message || "Failed to change password");
+      toast.error(e.message || "Unable to update password. Please try again.");
     } finally {
       setChangingPass(false);
-    }
-  }
-
-  async function handleToggle2fa(val: boolean) {
-    setTwoFactor(val);
-    try {
-      const res = await toggle2faApi(val);
-      toast.success(res.message);
-    } catch (e: any) {
-      setTwoFactor(!val);
-      toast.error(e.message || "Failed to update 2FA");
     }
   }
 
@@ -869,66 +1092,76 @@ function SecurityTab() {
         </CardContent>
       </Card>
 
-      {/* Two-Factor Authentication & Active Sessions */}
-      <div className="space-y-6">
-        <Card className="rounded-2xl border shadow-sm">
-          <CardHeader>
-            <CardTitle className="font-display text-base flex items-center gap-2">
-              <Shield className="h-4 w-4 text-primary" /> Two-Factor Authentication (2FA)
-            </CardTitle>
-            <CardDescription>Enhance account security with SMS / App 2FA.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ToggleCard title="Enable 2FA Verification" desc="Require verification code on new device sign-ins" checked={twoFactor} onChange={handleToggle2fa} />
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-2xl border shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <div>
-              <CardTitle className="font-display text-base">Active Sessions</CardTitle>
-              <CardDescription>Devices logged into your account.</CardDescription>
-            </div>
-            <Button size="sm" variant="outline" className="rounded-full text-xs text-destructive" onClick={handleLogoutOthers}>
-              <LogOut className="mr-1.5 h-3.5 w-3.5" /> Logout Other Devices
-            </Button>
-          </CardHeader>
-          <CardContent className="divide-y text-xs">
-            {loadingSessions ? (
-              <div className="py-4 text-center text-muted-foreground">Loading active sessions...</div>
-            ) : sessions.length === 0 ? (
-              <div className="py-4 text-center text-muted-foreground">1 Active Session (Current Browser)</div>
-            ) : (
-              sessions.map((s) => (
-                <div key={s.id} className="py-2.5 flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-foreground">{s.user_agent || "Browser Session"}</p>
-                    <p className="text-[10px] text-muted-foreground">IP: {s.ip_address || "Localhost"}</p>
-                  </div>
-                  <Badge variant="outline" className="rounded-full text-[10px] border-emerald-500/40 text-emerald-600">Active</Badge>
+      {/* Active Sessions */}
+      <Card className="rounded-2xl border shadow-sm">
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <div>
+            <CardTitle className="font-display text-base">Active Sessions</CardTitle>
+            <CardDescription>Devices logged into your account.</CardDescription>
+          </div>
+          <Button size="sm" variant="outline" className="rounded-full text-xs text-destructive" onClick={handleLogoutOthers}>
+            <LogOut className="mr-1.5 h-3.5 w-3.5" /> Logout Other Devices
+          </Button>
+        </CardHeader>
+        <CardContent className="divide-y text-xs">
+          {loadingSessions ? (
+            <div className="py-4 text-center text-muted-foreground">Loading active sessions...</div>
+          ) : sessions.length === 0 ? (
+            <div className="py-4 text-center text-muted-foreground">1 Active Session (Current Browser)</div>
+          ) : (
+            sessions.map((s) => (
+              <div key={s.id} className="py-2.5 flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-foreground">{s.user_agent || "Browser Session"}</p>
+                  <p className="text-[10px] text-muted-foreground">IP: {s.ip_address || "Localhost"}</p>
                 </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                <Badge variant="outline" className="rounded-full text-[10px] border-emerald-500/40 text-emerald-600">Active</Badge>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
- * 10. BACKUP TAB
+ * 8. BACKUP TAB (Redesigned Clean PDF Exports)
  * ────────────────────────────────────────────────────────────────────────────*/
-function BackupTab() {
+function BackupTab({ isSalon }: { isSalon: boolean }) {
   const [downloading, setDownloading] = useState<string | null>(null);
 
-  async function handleExport(type: "database" | "customers" | "orders" | "menu") {
-    setDownloading(type);
+  async function handleExportCustomers() {
+    setDownloading("customers");
     try {
-      await downloadDataExportApi(type);
-      toast.success(`${type.toUpperCase()} export downloaded successfully!`);
+      await exportCustomersApi({ format: "pdf" });
+      toast.success("Customer PDF Report generated!");
     } catch (e: any) {
-      toast.error(e.message || `Failed to export ${type}`);
+      toast.error(e.message || "Failed to export Customer PDF");
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  async function handleExportActivity() {
+    setDownloading("activity");
+    try {
+      await downloadReportsPdfApi();
+      toast.success(isSalon ? "Appointments PDF Report generated!" : "Orders PDF Report generated!");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to export Activity PDF");
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  async function handleExportCatalog() {
+    setDownloading("catalog");
+    try {
+      await exportCatalogPdfApi();
+      toast.success(isSalon ? "Services Catalog PDF generated!" : "Menu Catalog PDF generated!");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to export Catalog PDF");
     } finally {
       setDownloading(null);
     }
@@ -937,37 +1170,35 @@ function BackupTab() {
   return (
     <Card className="rounded-2xl border shadow-sm">
       <CardHeader>
-        <CardTitle className="font-display text-base">Data Backup & Export</CardTitle>
-        <CardDescription>Export full database JSON bundles or targeted CSV reports anytime.</CardDescription>
+        <CardTitle className="font-display text-base">Data Exports & Reports</CardTitle>
+        <CardDescription>Download clean, professional PDF reports for your business records.</CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-4 sm:grid-cols-2">
-        <ExportCard
-          title="Export Full Database"
-          desc="Download complete JSON backup of business settings, customers, orders & menu"
-          type="database"
-          loading={downloading === "database"}
-          onClick={() => handleExport("database")}
-        />
-        <ExportCard
-          title="Export Customers List"
-          desc="Download CSV containing all customer profiles, spend history, and contacts"
-          type="customers"
+      <CardContent className="grid gap-4 sm:grid-cols-3">
+        <CleanExportCard
+          title="Export Customers (PDF)"
+          desc="Download branded PDF report of all customer directory details and lifetime spend."
           loading={downloading === "customers"}
-          onClick={() => handleExport("customers")}
+          onClick={handleExportCustomers}
         />
-        <ExportCard
-          title="Export Orders & Visits"
-          desc="Download CSV containing complete order records, bill totals, and payment status"
-          type="orders"
-          loading={downloading === "orders"}
-          onClick={() => handleExport("orders")}
+        <CleanExportCard
+          title={isSalon ? "Export Appointments (PDF)" : "Export Orders (PDF)"}
+          desc={
+            isSalon
+              ? "Download branded PDF report of appointment records, revenue trends, and visits."
+              : "Download branded PDF report of order records, revenue trends, and sales."
+          }
+          loading={downloading === "activity"}
+          onClick={handleExportActivity}
         />
-        <ExportCard
-          title="Export Menu / Services"
-          desc="Download CSV containing all categories, item prices, and availability status"
-          type="menu"
-          loading={downloading === "menu"}
-          onClick={() => handleExport("menu")}
+        <CleanExportCard
+          title={isSalon ? "Export Services (PDF)" : "Export Menu (PDF)"}
+          desc={
+            isSalon
+              ? "Download branded PDF catalog of salon services, categories, and prices."
+              : "Download branded PDF catalog of menu items, categories, and prices."
+          }
+          loading={downloading === "catalog"}
+          onClick={handleExportCatalog}
         />
       </CardContent>
     </Card>
@@ -979,7 +1210,11 @@ function Fld({ label, value, onChange, placeholder, type = "text" }: { label: st
   return (
     <div className="space-y-1.5">
       <Label className="text-xs font-semibold">{label}</Label>
-      <Input type={type} placeholder={placeholder} value={value || ""} onChange={(e) => onChange(e.target.value)} />
+      {type === "password" ? (
+        <PasswordInput placeholder={placeholder} value={value || ""} onChange={(e) => onChange(e.target.value)} />
+      ) : (
+        <Input type={type} placeholder={placeholder} value={value || ""} onChange={(e) => onChange(e.target.value)} />
+      )}
     </div>
   );
 }
@@ -996,18 +1231,18 @@ function ToggleCard({ title, desc, checked, onChange }: { title: string; desc: s
   );
 }
 
-function ExportCard({ title, desc, loading, onClick }: { title: string; desc: string; type: string; loading: boolean; onClick: () => void }) {
+function CleanExportCard({ title, desc, loading, onClick }: { title: string; desc: string; loading: boolean; onClick: () => void }) {
   return (
     <div className="rounded-xl border p-4 flex flex-col justify-between space-y-3 bg-card shadow-sm hover:border-primary/50 transition-all">
       <div>
         <p className="font-semibold text-sm text-foreground flex items-center gap-1.5">
-          <Database className="h-4 w-4 text-primary" /> {title}
+          <FileCheck className="h-4 w-4 text-primary" /> {title}
         </p>
         <p className="text-xs text-muted-foreground mt-1">{desc}</p>
       </div>
       <div className="pt-2 flex justify-end">
         <Button size="sm" variant="outline" disabled={loading} onClick={onClick} className="rounded-full text-xs gap-1.5">
-          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> : <Download className="h-3.5 w-3.5 text-primary" />} Download Export
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> : <Download className="h-3.5 w-3.5 text-primary" />} Download PDF
         </Button>
       </div>
     </div>

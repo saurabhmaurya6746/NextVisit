@@ -5,11 +5,10 @@ export interface SubscriptionPlanItem {
   name: string;
   monthly_price: number;
   trial_days: number;
-  max_customers: number;
   max_staff: number;
   max_active_devices: number;
-  max_campaigns_per_month: number;
   storage_limit_gb: number;
+  monthly_ai_credits: number;
   features: Record<string, boolean | string> | null;
   is_active: boolean;
 }
@@ -55,11 +54,10 @@ export interface MyPlanDetails {
   days_remaining: number | null;
   features: Record<string, boolean>;
   limits: {
-    max_customers: number;
     max_staff: number;
     max_active_devices: number;
-    max_campaigns_per_month: number;
     storage_limit_gb: number;
+    monthly_ai_credits: number;
   };
   has_pending_request: boolean;
   pending_request: SubscriptionUpgradeRequestItem | null;
@@ -120,6 +118,35 @@ export async function getBillingHistoryApi(): Promise<SubscriptionBillingHistory
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || "Failed to fetch billing history");
+  }
+  return await res.json();
+}
+
+export interface SubscriptionUsageSummary {
+  plan_name: string;
+  subscription_status: string;
+  staff_usage: {
+    plan_name: string;
+    active_count: number;
+    max_count: number;
+    remaining_slots: number;
+    limit_reached: boolean;
+  };
+  ai_usage: {
+    ai_enabled: boolean;
+    used_requests: number;
+    max_requests: number;
+    remaining_requests: number;
+    limit_reached: boolean;
+    reset_date: string;
+  };
+}
+
+export async function getSubscriptionUsageApi(): Promise<SubscriptionUsageSummary> {
+  const res = await apiFetch("/api/v1/subscription/usage");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to fetch subscription usage summary");
   }
   return await res.json();
 }

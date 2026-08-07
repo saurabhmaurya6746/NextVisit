@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import get_current_user
 from app.db.database import get_db
 from app.models.user import User
+from app.schemas.credit_management import AiCreditPackResponse
 from app.schemas.subscription import (
     MyPlanResponse,
     SubscriptionBillingHistoryResponse,
@@ -78,3 +79,44 @@ def get_billing_history(
 ):
     """Returns past subscription invoices, payment amounts, and renewal dates."""
     return SubscriptionService(db).get_billing_history(current_user)
+
+
+@router.get("/usage", summary="Get current subscription usage summary (Staff & AI limits)")
+def get_subscription_usage(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Returns current active plan limits, active staff count, and monthly AI usage."""
+    from app.services.subscription_limit_service import SubscriptionLimitService
+    return SubscriptionLimitService(db).get_full_usage_summary(current_user.business_id)
+
+
+@router.get("/credit-packs", response_model=list[AiCreditPackResponse], summary="List active AI credit packs for merchant purchasing")
+def list_merchant_credit_packs(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Returns active AI credit packs available for merchant top-up/purchase."""
+    from app.services.credit_management_service import CreditManagementService
+    return CreditManagementService(db).list_credit_packs(include_inactive=False)
+
+
+@router.post("/buy-credit-pack/{pack_id}", summary="Submit AI Credit Pack purchase request for approval")
+def buy_credit_pack(
+    pack_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Submits a purchase request for an AI credit pack for Super Admin approval."""
+    from app.services.credit_management_service import CreditManagementService
+    return CreditManagementService(db).purchase_credit_pack(pack_id, current_user)
+
+
+@router.get("/my-credit-requests", summary="Get merchant's AI credit purchase request history")
+def get_my_credit_requests(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Returns all AI credit purchase requests submitted by this merchant."""
+    from app.services.credit_management_service import CreditManagementService
+    return CreditManagementService(db).get_merchant_credit_requests(current_user)

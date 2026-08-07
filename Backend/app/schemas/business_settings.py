@@ -1,7 +1,10 @@
+import re
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+INDIAN_GST_REGEX = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$")
 
 
 class BusinessSettingsResponse(BaseModel):
@@ -43,7 +46,9 @@ class BusinessSettingsResponse(BaseModel):
     currency: str = "INR"
     timezone: str = "Asia/Kolkata"
     language: str = "en"
-    tax_percentage: float = 0.0
+    enable_gst: bool = True
+    tax_percentage: float = 18.0
+    price_includes_gst: bool = False
     service_charge: float = 0.0
     round_off_bill: bool = True
 
@@ -114,7 +119,9 @@ class BusinessSettingsUpdate(BaseModel):
     currency: str | None = Field(default=None, max_length=10)
     timezone: str | None = Field(default=None, max_length=50)
     language: str | None = Field(default=None, max_length=10)
-    tax_percentage: float | None = Field(default=None, ge=0)
+    enable_gst: bool | None = None
+    tax_percentage: float | None = Field(default=None, ge=0, le=100)
+    price_includes_gst: bool | None = None
     service_charge: float | None = Field(default=None, ge=0)
     round_off_bill: bool | None = None
 
@@ -146,6 +153,27 @@ class BusinessSettingsUpdate(BaseModel):
     logo: str | None = Field(default=None, max_length=500)
     cover_image: str | None = Field(default=None, max_length=500)
     default_discount: float | None = Field(default=None, ge=0)
+
+    @field_validator("gst_number")
+    @classmethod
+    def validate_gst_number(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v_clean = v.strip().upper()
+        if not v_clean:
+            return None
+        if not INDIAN_GST_REGEX.match(v_clean):
+            raise ValueError("Invalid Indian GST Number format. Example: 22AAAAA0000A1Z5")
+        return v_clean
+
+    @field_validator("tax_percentage")
+    @classmethod
+    def validate_tax_percentage(cls, v: float | None) -> float | None:
+        if v is None:
+            return None
+        if v < 0 or v > 100:
+            raise ValueError("GST Percentage must be between 0 and 100")
+        return round(v, 2)
 
 
 class RestaurantSetupSettingsResponse(BaseModel):
@@ -193,7 +221,7 @@ class RestaurantSetupSettingsUpdate(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     old_password: str = Field(..., min_length=1)
-    new_password: str = Field(..., min_length=6)
+    new_password: str = Field(..., min_length=1)
 
 
 class Toggle2faRequest(BaseModel):

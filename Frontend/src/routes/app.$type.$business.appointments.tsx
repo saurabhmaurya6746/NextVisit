@@ -28,6 +28,7 @@ import { customers as seedCustomers } from "@/lib/sample-data";
 import { fmt } from "@/lib/currency";
 import { AppointmentDetailSheet } from "@/components/appointment-detail-sheet";
 import { toast } from "sonner";
+import { sanitizePhoneInput } from "@/lib/validation";
 import {
   listSalonServiceAreasApi,
   listSalonChairsApi,
@@ -75,10 +76,30 @@ function inRange(iso: string, range: RangeKey) {
 const statusColor: Record<string, string> = {
   pending: "bg-warning/15 text-warning-foreground border-warning/30",
   checkedin: "bg-info/15 text-info border-info/30",
-  completed: "bg-success/15 text-success-foreground border-success/30",
+  completed: "bg-purple-500/15 text-purple-600 border-purple-500/30",
+  paid: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30",
   cancelled: "bg-destructive/15 text-destructive border-destructive/30",
 };
-const statusLabel: Record<string, string> = { pending: "Pending", checkedin: "Checked In", completed: "Completed", cancelled: "Cancelled" };
+const statusLabel: Record<string, string> = {
+  pending: "Pending",
+  checkedin: "In Service",
+  completed: "Completed",
+  paid: "Paid",
+  cancelled: "Cancelled",
+};
+
+function getDisplayStatus(a: Appointment) {
+  if (a.status === "cancelled") return { label: "Cancelled", color: statusColor.cancelled };
+  if (a.status === "pending") return { label: "Pending", color: statusColor.pending };
+  if (a.status === "checkedin") return { label: "In Service", color: statusColor.checkedin };
+  if (a.status === "completed") {
+    if (a.paymentStatus === "paid" || a.paidAt) {
+      return { label: "Paid", color: statusColor.paid };
+    }
+    return { label: "Completed", color: statusColor.completed };
+  }
+  return { label: a.status, color: "bg-muted text-muted-foreground" };
+}
 
 function AppointmentsPage() {
   const qc = useQueryClient();
@@ -119,34 +140,54 @@ function AppointmentsPage() {
     staleTime: 5000,
   });
 
-  const total = paginatedResult?.total || 0;
-  const totalPages = paginatedResult?.total_pages || 1;
-  const hasNext = paginatedResult?.has_next || false;
-  const hasPrevious = paginatedResult?.has_previous || false;
+  const rows = useMemo(() => {
+    return appts
+      .filter((a) => inRange(a.start, range))
+      .filter((a) => {
+        if (statusFilter === "all") return true;
+        const sf = statusFilter.toLowerCase();
+        const st = (a.status || "").toLowerCase();
+        if (sf === "open") return st === "pending" || st === "checkedin" || st === "open";
+        return st === sf;
+      })
+      .filter((a) => {
+        if (paymentStatus === "all") return true;
+        const ps = (a.paymentStatus || (a.paidAt ? "paid" : "unpaid")).toLowerCase();
+        return ps === paymentStatus.toLowerCase();
+      })
+      .filter((a) => !q || (a.customerName || "").toLowerCase().includes(q.toLowerCase()) || (a.customerPhone || "").includes(q) || (a.services || []).some((s) => s.name.toLowerCase().includes(q.toLowerCase())))
+      .sort((a, b) => {
+        if (sortBy === "oldest") return new Date(a.start).getTime() - new Date(b.start).getTime();
+        if (sortBy === "highest_amount") return (b.price || 0) - (a.price || 0);
+        if (sortBy === "lowest_amount") return (a.price || 0) - (b.price || 0);
+        return new Date(b.start).getTime() - new Date(a.start).getTime();
+      });
+  }, [appts, range, statusFilter, paymentStatus, q, sortBy]);
+
+  const total = rows.length;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const hasPrevious = page > 1;
+  const hasNext = page < totalPages;
 
   const fromItem = total > 0 ? (page - 1) * limit + 1 : 0;
   const toItem = Math.min(page * limit, total);
 
-  // Automatically adjust page if current page becomes empty after deletion/completion
+  const visibleRows = useMemo(() => {
+    return rows.slice((page - 1) * limit, page * limit);
+  }, [rows, page, limit]);
+
+  // Automatically adjust page if current page becomes empty after deletion/completion/filter change
   useEffect(() => {
     if (page > totalPages && totalPages >= 1) {
       setPage(totalPages);
     }
   }, [page, totalPages]);
 
-  const rows = useMemo(() => {
-    return appts
-      .filter((a) => inRange(a.start, range))
-      .filter((a) => statusFilter === "all" || a.status === statusFilter)
-      .filter((a) => !q || (a.customerName || "").toLowerCase().includes(q.toLowerCase()) || (a.customerPhone || "").includes(q) || (a.services || []).some((s) => s.name.toLowerCase().includes(q.toLowerCase())))
-      .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
-  }, [appts, range, statusFilter, q]);
-
   return (
     <PageTransition>
       <PageHeader
         title="Appointments"
-        description={`Showing ${fromItem}–${toItem} of ${total} appointments · Server-side Paginated`}
+        description={`Showing ${total} appointments · Real-time Sync`}
         actions={<Button size="sm" className="rounded-full gradient-brand text-primary-foreground" onClick={() => setOpenNew(true)}><Plus className="mr-1.5 h-4 w-4" /> New appointment</Button>}
       />
 
@@ -169,9 +210,10 @@ function AppointmentsPage() {
           <SelectTrigger className="h-9 w-[160px] rounded-full"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="OPEN">In Service (Open)</SelectItem>
-            <SelectItem value="COMPLETED">Completed</SelectItem>
-            <SelectItem value="CANCELLED">Cancelled</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="checkedin">Checked In</SelectItem>
+            <SelectItem value="completed">Completed</SelectItem>
+            <SelectItem value="cancelled">Cancelled</SelectItem>
           </SelectContent>
         </Select>
         <Select
@@ -217,15 +259,15 @@ function AppointmentsPage() {
         </div>
       </div>
 
-      {rows.length === 0 ? (
+      {visibleRows.length === 0 ? (
         <EmptyState title="No appointments found" description={q ? "No appointments match your search or filters." : "Book your first appointment to see it here."} icon={<Scissors className="h-7 w-7" />} action={<Button className="rounded-full gradient-brand text-primary-foreground" onClick={() => setOpenNew(true)}><Plus className="mr-1.5 h-4 w-4" /> New appointment</Button>} />
       ) : (
         <Card className="rounded-2xl">
           <CardContent className="p-0">
-            <div className="hidden grid-cols-[110px_1fr_1.2fr_120px_140px_120px_36px] items-center gap-2 border-b px-4 py-3 text-xs uppercase tracking-wider text-muted-foreground md:grid">
-              <div>ID</div><div>Customer</div><div>Services</div><div>Staff</div><div>Date & Time</div><div>Status</div><div />
+            <div className="hidden grid-cols-[100px_1fr_1.1fr_100px_100px_130px_100px_36px] items-center gap-2 border-b px-4 py-3 text-xs uppercase tracking-wider text-muted-foreground md:grid">
+              <div>ID</div><div>Customer</div><div>Services</div><div>Source</div><div>Staff</div><div>Date & Time</div><div>Status</div><div />
             </div>
-            {rows.map((a, i) => {
+            {visibleRows.map((a, i) => {
               const svcs = a.services && a.services.length ? a.services : [{ name: a.service, price: a.price, duration: a.duration || 0 }];
               const cleanPhone = (a.customerPhone || "").replace(/\D/g, "");
               const matchedCustomer = backendCustomers.find(
@@ -249,7 +291,7 @@ function AppointmentsPage() {
                       setDetail(a);
                     }
                   }}
-                  className={`group grid w-full cursor-pointer grid-cols-[110px_1fr_1.2fr_120px_140px_120px_36px] items-center gap-2 border-b px-4 py-3.5 text-left text-sm last:border-0 transition-all duration-200 ease-in-out ${
+                  className={`group grid w-full cursor-pointer grid-cols-[100px_1fr_1.1fr_100px_100px_130px_100px_36px] items-center gap-2 border-b px-4 py-3.5 text-left text-sm last:border-0 transition-all duration-200 ease-in-out ${
                     isSelected
                       ? "bg-primary/10 border-l-4 border-l-primary"
                       : "hover:bg-accent/50 hover:border-l-4 hover:border-l-primary/50"
@@ -279,14 +321,30 @@ function AppointmentsPage() {
                     <p className="truncate font-medium text-foreground">{svcs.map((s) => s.name).join(", ")}</p>
                     <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5">{fmt(a.price)}</p>
                   </div>
+                  <div>
+                    {a.isWalkIn ? (
+                      <Badge variant="outline" className="rounded-full text-[10px] px-2.5 py-0.5 font-medium border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                        Walk-In
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="rounded-full text-[10px] px-2.5 py-0.5 font-medium border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300">
+                        Appointment
+                      </Badge>
+                    )}
+                  </div>
                   <div className="truncate text-xs font-medium text-muted-foreground">{a.staff}</div>
                   <div className="text-xs text-muted-foreground">
                     {a.start ? new Date(a.start).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "—"}
                   </div>
                   <div>
-                    <Badge variant="outline" className={`rounded-full text-[10px] px-2.5 py-0.5 font-medium ${statusColor[a.status]}`}>
-                      {statusLabel[a.status]}
-                    </Badge>
+                    {(() => {
+                      const st = getDisplayStatus(a);
+                      return (
+                        <Badge variant="outline" className={`rounded-full text-[10px] px-2.5 py-0.5 font-medium ${st.color}`}>
+                          {st.label}
+                        </Badge>
+                      );
+                    })()}
                   </div>
                   <div className="text-muted-foreground group-hover:text-primary transition-colors">
                     <ChevronRight className="h-4 w-4 transform group-hover:translate-x-1 transition-transform duration-200" />
@@ -298,8 +356,8 @@ function AppointmentsPage() {
         </Card>
       )}
 
-      {/* SERVER-SIDE PAGINATION CONTROLS */}
-      {!loading && !isError && total > 0 && (
+      {/* FILTER-AWARE PAGINATION CONTROLS */}
+      {total > 0 && (
         <div className="mt-4 flex flex-col items-center justify-between gap-3 rounded-2xl border bg-card p-4 shadow-xs sm:flex-row">
           <div className="flex items-center gap-3">
             <p className="text-xs text-muted-foreground font-medium">
@@ -330,16 +388,6 @@ function AppointmentsPage() {
             <Button
               variant="outline"
               size="sm"
-              className="h-8 rounded-lg px-2 text-xs"
-              onClick={() => setPage(1)}
-              disabled={page === 1}
-              title="First Page"
-            >
-              <ChevronsLeft className="h-3.5 w-3.5 mr-1" /> First
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
               className="h-8 rounded-lg px-2.5 text-xs"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={!hasPrevious}
@@ -359,16 +407,6 @@ function AppointmentsPage() {
               title="Next Page"
             >
               Next <ChevronRight className="h-3.5 w-3.5 ml-1" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 rounded-lg px-2 text-xs"
-              onClick={() => setPage(totalPages)}
-              disabled={page === totalPages}
-              title="Last Page"
-            >
-              Last <ChevronsRight className="h-3.5 w-3.5 ml-1" />
             </Button>
           </div>
         </div>
@@ -484,15 +522,17 @@ export function NewAppointmentDialog({
   // WhatsApp Confirmation
   const [sendWhatsapp, setSendWhatsapp] = useState(true);
 
-  // Auto-Lookup Customer
+  // Auto-Lookup Customer - Only auto-selects if phone is EXACTLY 10 digits and matches
+  const cleanPhone = useMemo(() => phone.replace(/\D/g, ""), [phone]);
+  const isExact10 = cleanPhone.length === 10;
+
   const foundCustomer = useMemo(() => {
-    if (!phone.trim() || phone.trim().length < 3) return null;
-    const cleanPhone = phone.trim().toLowerCase().replace(/\D/g, "");
+    if (!isExact10) return null;
     return backendCustomers.find((c) => {
       const cPhone = (c.phone || "").replace(/\D/g, "");
-      return (cleanPhone.length >= 3 && cPhone.includes(cleanPhone)) || (c.name && c.name.toLowerCase().includes(phone.trim().toLowerCase()));
+      return cPhone === cleanPhone || cPhone.slice(-10) === cleanPhone;
     }) || null;
-  }, [phone, backendCustomers]);
+  }, [cleanPhone, isExact10, backendCustomers]);
 
   const availableChairsInArea = useMemo(() => {
     if (!serviceAreaId) return salonChairs;
@@ -654,6 +694,7 @@ export function NewAppointmentDialog({
       const startDate = new Date(when);
 
       // Create PostgreSQL Visit record if IDs are valid backend UUIDs
+      let createdVisitId: string | undefined;
       if (customerId && UUID_REGEX.test(customerId)) {
         const validServiceItems = selectedServices
           .filter((s) => UUID_REGEX.test(s.id))
@@ -661,12 +702,13 @@ export function NewAppointmentDialog({
         if (validServiceItems.length > 0) {
           try {
             const staffMatch = staffMembers.find((st) => st.name.toLowerCase() === assignedStaff.toLowerCase());
-            await createVisitApi({
+            const createdVisit = await createVisitApi({
               customer_id: customerId,
               staff_id: staffMatch && UUID_REGEX.test(staffMatch.id) ? staffMatch.id : undefined,
               notes: combinedNotes || undefined,
               services: validServiceItems,
             });
+            createdVisitId = createdVisit.id;
             queryClient.invalidateQueries({ queryKey: ["visits-list"] });
           } catch (vErr: any) {
             console.warn("Failed creating PostgreSQL visit record:", vErr);
@@ -688,6 +730,7 @@ export function NewAppointmentDialog({
       const finalStatus = chairId ? "checkedin" : apptStatus;
 
       saveAppointment({
+        id: createdVisitId,
         businessKey: business,
         serviceAreaId: serviceAreaId || undefined,
         serviceAreaName: selectedArea?.name || undefined,
@@ -708,11 +751,13 @@ export function NewAppointmentDialog({
         price: totalAmount,
         duration: totalDurationMinutes,
         paymentStatus: advancePaidNum >= totalAmount ? "paid" : "unpaid",
+        isWalkIn: !!presetChairId || !!presetServiceAreaId,
       });
 
       queryClient.invalidateQueries({ queryKey: ["customers-list"] });
       queryClient.invalidateQueries({ queryKey: ["salon-chairs"] });
       queryClient.invalidateQueries({ queryKey: ["salon-chairs-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-analytics"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
 
       if (sendWhatsapp) {
@@ -770,9 +815,10 @@ export function NewAppointmentDialog({
                 <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   className="pl-9 h-11 text-base font-medium rounded-xl"
-                  placeholder="Enter Customer Phone Number or Name to auto-populate…"
+                  placeholder="Enter 10-digit customer phone number…"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) => setPhone(sanitizePhoneInput(e.target.value))}
+                  maxLength={10}
                 />
               </div>
 
@@ -812,10 +858,17 @@ export function NewAppointmentDialog({
                     <div><span className="text-muted-foreground block text-[10px]">Loyalty Points</span><span className="font-bold text-emerald-600">{foundCustomer.points} pts</span></div>
                   </div>
                 </div>
-              ) : phone.trim().length >= 3 ? (
-                /* NEW CUSTOMER INLINE FORM */
+              ) : (
+                /* NEW / MANUAL CUSTOMER ENTRY FORM */
                 <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
-                  <p className="text-xs font-medium text-muted-foreground">New Customer Registration (Inline)</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-muted-foreground">Customer Information</p>
+                    {isExact10 && !foundCustomer && (
+                      <Badge variant="outline" className="rounded-full text-[10px] border-primary/40 text-primary font-medium">
+                        New Customer
+                      </Badge>
+                    )}
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <Label className="text-xs">Full Name *</Label>
@@ -846,7 +899,7 @@ export function NewAppointmentDialog({
                     <Input className="mt-1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="customer@email.com" />
                   </div>
                 </div>
-              ) : null}
+              )}
             </div>
 
             {/* SECTION 2: APPOINTMENT DETAILS */}
@@ -1130,7 +1183,7 @@ export function NewAppointmentDialog({
             <div className="pt-6 space-y-2">
               <Button
                 className="w-full rounded-xl gradient-brand text-primary-foreground font-semibold h-11 shadow-glow"
-                disabled={saving}
+                disabled={saving || selectedServices.length === 0}
                 onClick={() => handleSave()}
               >
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}

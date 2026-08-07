@@ -8,6 +8,8 @@ from app.core.dependencies import get_current_super_admin
 from app.db.database import get_db
 from app.models.admin import Admin
 from app.schemas.subscription import (
+    AdjustPurchasedCreditsRequest,
+    BusinessAiUsageResponse,
     BusinessSubscriptionAssignRequest,
     BusinessSubscriptionItemResponse,
     PaginatedSubscriptionUpgradeRequestsResponse,
@@ -163,3 +165,81 @@ def reject_upgrade_request(
     return SubscriptionService(db).reject_upgrade_request(
         current_admin, request_id, payload.reason
     )
+
+
+# ── Super Admin AI Usage Management ─────────────────────────────────────────
+
+@router.get(
+    "/ai-usage",
+    summary="List AI credit usage for all businesses (Super Admin)",
+)
+def list_all_ai_usage(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    search: str = Query("", description="Search by business name, owner, or email"),
+    business_type: str | None = Query(None, description="Filter by business type: restaurant | salon | all"),
+    plan: str | None = Query(None, description="Filter by plan name"),
+    status: str | None = Query(None, description="Filter by status: normal | warning | limit reached | all"),
+    current_admin: Admin = Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Returns paginated & filtered AI credit usage across all businesses for Super Admin monitoring."""
+    from app.services.subscription_limit_service import SubscriptionLimitService
+    return SubscriptionLimitService(db).get_all_businesses_ai_usage(
+        page=page,
+        limit=limit,
+        search=search,
+        business_type_filter=business_type,
+        plan_filter=plan,
+        status_filter=status,
+    )
+
+
+@router.post(
+    "/business/{business_id}/reset-monthly-credits",
+    summary="Reset monthly AI credits for a specific business",
+)
+def reset_business_monthly_credits(
+    business_id: UUID,
+    current_admin: Admin = Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Resets the monthly AI used credits for a specific merchant back to 0."""
+    from app.services.subscription_limit_service import SubscriptionLimitService
+    return SubscriptionLimitService(db).reset_business_monthly_credits(business_id, current_admin=current_admin)
+
+
+@router.post(
+    "/business/{business_id}/adjust-credits",
+    summary="Add or remove purchased AI credits for a business",
+)
+def adjust_purchased_credits(
+    business_id: UUID,
+    payload: AdjustPurchasedCreditsRequest,
+    current_admin: Admin = Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Adjusts purchased (non-expiring) AI credits for a merchant. Requires reason."""
+    from app.services.subscription_limit_service import SubscriptionLimitService
+    return SubscriptionLimitService(db).adjust_purchased_credits(
+        business_id=business_id,
+        amount=payload.amount,
+        reason=payload.reason,
+        notes=payload.notes,
+        current_admin=current_admin,
+    )
+
+
+@router.get(
+    "/business/{business_id}/ai-audit-logs",
+    summary="Get AI credit adjustment audit logs for a business",
+)
+def get_ai_audit_logs(
+    business_id: UUID,
+    current_admin: Admin = Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Returns audit log history of all AI credit adjustments for a business."""
+    from app.services.subscription_limit_service import SubscriptionLimitService
+    return SubscriptionLimitService(db).get_business_ai_audit_logs(business_id)
+

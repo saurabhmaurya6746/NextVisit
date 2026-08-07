@@ -1,102 +1,66 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "./auth";
 
-export type WhatsAppKind = "birthday" | "anniversary" | "recovery" | "review" | "campaign" | "manual";
-
-export interface WhatsAppLog {
+export interface CampaignHistoryItem {
   id: string;
-  customerId: string;
-  customerName?: string;
-  customerPhone?: string;
-  kind: WhatsAppKind;
+  customer_id: string;
+  customer_name: string;
+  customer_phone: string;
+  customer_email?: string | null;
+  business_id: string;
+  business_name: string;
+  business_type: string;
+  campaign_id?: string | null;
+  campaign_name: string;
+  campaign_type: string;
   message: string;
-  date: string; // ISO
-  status: "sent" | "opened" | "pending" | "failed";
+  message_preview: string;
+  coupon_code?: string | null;
+  status: string;
+  sent_by: string;
+  sent_by_role?: string | null;
+  created_at: string;
+  sent_at?: string | null;
 }
 
-const KEY = "growthos:wa-history";
+export interface PaginatedCampaignHistoryResponse {
+  items: CampaignHistoryItem[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+  has_next: boolean;
+  has_previous: boolean;
+}
 
-const seed: WhatsAppLog[] = [
-  { id: "seed-1", customerId: "u1", customerName: "Sarah Johnson", customerPhone: "+1 415 555 0142", kind: "birthday", message: "Happy Birthday Sarah 🎉", date: "2026-07-08T09:00:00", status: "sent" },
-  { id: "seed-2", customerId: "u1", customerName: "Sarah Johnson", customerPhone: "+1 415 555 0142", kind: "review", message: "Thanks for visiting — could you leave us a review?", date: "2026-06-20T18:20:00", status: "sent" },
-  { id: "seed-3", customerId: "u1", customerName: "Sarah Johnson", customerPhone: "+1 415 555 0142", kind: "campaign", message: "New menu launch this Friday", date: "2026-05-12T10:00:00", status: "sent" },
-];
-
-function read(): WhatsAppLog[] {
-  if (typeof window === "undefined") return seed;
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return seed;
-    return JSON.parse(raw);
-  } catch {
-    return seed;
+export function logWhatsApp(entry: any) {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("growthos:wa-changed"));
   }
 }
 
-function write(list: WhatsAppLog[]) {
-  localStorage.setItem(KEY, JSON.stringify(list));
-  window.dispatchEvent(new Event("growthos:wa-changed"));
-}
+export async function fetchBackendCampaignHistoryApi(params: {
+  page?: number;
+  limit?: number;
+  search?: string;
+  campaign_type?: string;
+  status?: string;
+  date_range?: string;
+  sort?: string;
+}): Promise<PaginatedCampaignHistoryResponse> {
+  const query = new URLSearchParams();
+  if (params.page) query.set("page", params.page.toString());
+  if (params.limit) query.set("limit", params.limit.toString());
+  if (params.search?.trim()) query.set("search", params.search.trim());
+  if (params.campaign_type && params.campaign_type !== "all") query.set("campaign_type", params.campaign_type);
+  if (params.status && params.status !== "all") query.set("status", params.status);
+  if (params.date_range && params.date_range !== "all") query.set("date_range", params.date_range);
+  if (params.sort) query.set("sort", params.sort);
 
-export function logWhatsApp(entry: Omit<WhatsAppLog, "id" | "date" | "status"> & { date?: string }) {
-  const list = read();
-  const next: WhatsAppLog = {
-    id: crypto.randomUUID(),
-    date: entry.date || new Date().toISOString(),
-    status: "sent",
-    customerId: entry.customerId,
-    customerName: entry.customerName,
-    customerPhone: entry.customerPhone,
-    kind: entry.kind,
-    message: entry.message,
-  };
-  write([next, ...list]);
-}
-
-export function useWhatsAppHistory(customerId?: string) {
-  const [list, setList] = useState<WhatsAppLog[]>(() => read());
-  useEffect(() => {
-    const on = () => setList(read());
-    window.addEventListener("growthos:wa-changed", on);
-    window.addEventListener("storage", on);
-    return () => {
-      window.removeEventListener("growthos:wa-changed", on);
-      window.removeEventListener("storage", on);
-    };
-  }, []);
-  return customerId ? list.filter((l) => l.customerId === customerId) : list;
-}
-
-/**
- * Fetches real SENT backend campaign execution logs from /api/v1/campaign-logs/sent
- */
-export async function fetchBackendCampaignLogsApi(): Promise<WhatsAppLog[]> {
-  try {
-    const res = await apiFetch("/api/v1/campaign-logs/sent");
-    if (!res.ok) return [];
-    const data = await res.json();
-
-    const mapKind = (typeStr: string): WhatsAppKind => {
-      const t = (typeStr || "").toLowerCase();
-      if (t.includes("birthday")) return "birthday";
-      if (t.includes("anniversary")) return "anniversary";
-      if (t.includes("recovery")) return "recovery";
-      if (t.includes("review")) return "review";
-      if (t.includes("campaign")) return "campaign";
-      return "campaign";
-    };
-
-    return (data || []).map((item: any) => ({
-      id: item.id,
-      customerId: item.customer_id,
-      customerName: item.customer_name || "Guest",
-      customerPhone: item.customer_phone || "—",
-      kind: mapKind(item.campaign_type || item.campaign_name),
-      message: item.message || item.campaign_name || "WhatsApp Notification",
-      date: item.sent_at || item.created_at || new Date().toISOString(),
-      status: "sent",
-    }));
-  } catch (e) {
-    return [];
+  const res = await apiFetch(`/api/v1/campaign-logs/history?${query.toString()}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to fetch WhatsApp history (HTTP ${res.status})`);
   }
+  return res.json();
 }

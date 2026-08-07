@@ -18,6 +18,59 @@ class CustomerRepository(BaseRepository):
         )
         return list(self.db.scalars(stmt).unique().all())
 
+    def get_all_filtered_by_business(
+        self,
+        business_id: UUID,
+        search: str | None = None,
+        sort: str | None = "newest",
+        filter: str | None = "all",
+    ) -> list[Customer]:
+        from sqlalchemy import or_
+
+        query = select(Customer).options(joinedload(Customer.loyalty)).where(Customer.business_id == business_id)
+
+        # Apply Filters
+        if filter:
+            f_lower = filter.lower()
+            if f_lower == "active":
+                query = query.where(Customer.is_active.is_(True))
+            elif f_lower == "inactive":
+                query = query.where(Customer.is_active.is_(False))
+            elif f_lower == "vip":
+                query = query.where(or_(Customer.total_spent >= 2500, Customer.visit_count >= 5))
+            elif f_lower == "new":
+                query = query.where(Customer.visit_count <= 1)
+
+        # Apply Search
+        if search and search.strip():
+            s_clean = f"%{search.strip()}%"
+            query = query.where(
+                or_(
+                    Customer.name.ilike(s_clean),
+                    Customer.phone.ilike(s_clean),
+                    Customer.email.ilike(s_clean),
+                )
+            )
+
+        # Apply Sorting
+        s_lower = (sort or "newest").lower()
+        if s_lower == "oldest":
+            query = query.order_by(Customer.created_at.asc())
+        elif s_lower in ("highest_spend", "spend_desc", "spent"):
+            query = query.order_by(Customer.total_spent.desc())
+        elif s_lower in ("most_visits", "visits_desc", "visits"):
+            query = query.order_by(Customer.visit_count.desc())
+        elif s_lower in ("highest_loyalty", "loyalty_desc", "points"):
+            query = query.order_by(Customer.created_at.desc())
+        elif s_lower == "name_asc":
+            query = query.order_by(Customer.name.asc())
+        elif s_lower == "name_desc":
+            query = query.order_by(Customer.name.desc())
+        else:
+            query = query.order_by(Customer.created_at.desc())
+
+        return list(self.db.scalars(query).unique().all())
+
     def get_paginated_by_business(
         self,
         business_id: UUID,

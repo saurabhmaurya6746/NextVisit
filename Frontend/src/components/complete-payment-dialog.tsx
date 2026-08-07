@@ -16,6 +16,8 @@ import { awardPointsForOrder, useLoyaltySettings } from "@/lib/loyalty-store";
 import { openWhatsApp } from "@/lib/celebration-utils";
 import { logWhatsApp } from "@/lib/whatsapp-history";
 import { Sparkles, MessageCircle } from "lucide-react";
+import { PaymentCouponSection } from "@/components/payment-coupon-section";
+import { redeemCouponApi, CouponValidateResponse } from "@/lib/coupons-api";
 
 interface Props {
   order: Order;
@@ -36,14 +38,40 @@ export function CompletePaymentDialog({ order, open, onOpenChange, onCompleted }
   const [anni, setAnni] = useState("");
   const [gender, setGender] = useState("");
   const [payment, setPayment] = useState<Payment>("cash");
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponValidateResponse | null>(null);
   const [success, setSuccess] = useState<{ customerId?: string; customerName: string; customerPhone: string; earned: number; balance: number } | null>(null);
 
-  const found = phone.trim().length >= 6 ? findCustomerByPhone(phone) : null;
+  const cleanPhone = phone.replace(/\D/g, "");
+  const isExact10 = cleanPhone.length === 10;
+  const found = isExact10 ? findCustomerByPhone(phone) : null;
 
-  function reset() { setStep(0); setPhone(order.customerPhone || ""); setName(order.customerName || ""); setEmail(""); setBday(""); setAnni(""); setGender(""); setPayment("cash"); setSuccess(null); }
+  // Calculation Engine: Subtotal -> Apply Coupon -> Taxable -> GST -> Grand Total
+  const subtotalVal = order.subtotal || order.total;
+  const couponDiscount = appliedCoupon?.calculated_discount || 0;
+  const netVal = Math.max(0, subtotalVal - couponDiscount);
+  const gstRate = profile.gstEnabled ? (profile.gstPercent || 18) : 0;
+  const isInclusive = (profile as any)?.priceIncludesGst ?? false;
+
+  let taxableVal = netVal;
+  let gstVal = 0;
+  let finalTotal = netVal;
+
+  if (profile.gstEnabled && gstRate > 0) {
+    if (isInclusive) {
+      finalTotal = netVal;
+      taxableVal = Math.round((finalTotal / (1 + gstRate / 100)) * 100) / 100;
+      gstVal = Math.round((finalTotal - taxableVal) * 100) / 100;
+    } else {
+      taxableVal = netVal;
+      gstVal = Math.round((taxableVal * (gstRate / 100)) * 100) / 100;
+      finalTotal = Math.round((taxableVal + gstVal) * 100) / 100;
+    }
+  }
+
+  function reset() { setStep(0); setPhone(order.customerPhone || ""); setName(order.customerName || ""); setEmail(""); setBday(""); setAnni(""); setGender(""); setPayment("cash"); setAppliedCoupon(null); setSuccess(null); }
   function close() { reset(); onOpenChange(false); }
 
-  function complete() {
+  async function complete() {
     let customerId: string | undefined;
     let customerName: string | undefined;
     let customerPhone: string | undefined = phone.trim() || undefined;
@@ -56,19 +84,33 @@ export function CompletePaymentDialog({ order, open, onOpenChange, onCompleted }
         customerName = found.name;
         // Only bump visit if this session hasn't been counted before
         if (found.source === "extra" && !order.visitCounted) {
-          bumpExtraCustomer(found.id, { spent: order.total, visitDate, favorite });
+          bumpExtraCustomer(found.id, { spent: finalTotal, visitDate, favorite });
         }
       } else {
         const c = createCustomerFromOrder({ phone: phone.trim(), name: name || undefined, birthday: bday || undefined, anniversary: anni || undefined, spent: 0, visitDate, favorite });
         if (gender) (c as any).gender = gender;
         customerId = c.id; customerName = c.name;
-        if (!order.visitCounted) bumpExtraCustomer(c.id, { spent: order.total, visitDate, favorite });
+        if (!order.visitCounted) bumpExtraCustomer(c.id, { spent: finalTotal, visitDate, favorite });
+      }
+    }
+
+    // Redeem coupon if applied
+    if (appliedCoupon && appliedCoupon.coupon) {
+      try {
+        await redeemCouponApi({
+          code: appliedCoupon.coupon.code,
+          customer_id: customerId,
+          order_amount: subtotalVal,
+          order_id: order.id,
+        });
+      } catch (err) {
+        console.warn("Failed redeeming coupon in backend:", err);
       }
     }
 
     const updated = markOrderPaid(order.id, payment, { id: customerId, name: customerName, phone: customerPhone });
-    if (customerId) markPending(customerId, visitDate, order.total);
-    const rewarded = awardPointsForOrder(order.id, customerId, order.total, { visitBonus: true });
+    if (customerId) markPending(customerId, visitDate, finalTotal);
+    const rewarded = awardPointsForOrder(order.id, customerId, finalTotal, { visitBonus: true });
     if (updated) onCompleted?.(updated);
     setSuccess({
       customerId,
@@ -133,15 +175,22 @@ export function CompletePaymentDialog({ order, open, onOpenChange, onCompleted }
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input placeholder="Enter phone number…" value={phone} onChange={(e) => setPhone(e.target.value)} className="pl-9" />
                 </div>
-                {phone && found && (
+                {isExact10 && found && (
                   <div className="mt-2 flex items-center justify-between rounded-lg bg-primary/5 p-3 text-sm">
                     <div className="flex items-center gap-2"><User className="h-4 w-4 text-primary" /><span>Existing: <strong>{found.name}</strong></span></div>
-                    <Badge variant="outline" className="rounded-full text-[10px]">Will link & update</Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="rounded-full text-[10px]">Will link & update</Badge>
+                      {(found as any).status === "VIP" && (
+                        <Badge className="rounded-full text-[10px] bg-gradient-to-r from-amber-400 to-orange-500 text-white font-bold border-0">
+                          👑 VIP Client
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 )}
-                {phone && !found && (
+                {isExact10 && !found && (
                   <div className="mt-3 space-y-2">
-                    <p className="text-xs text-muted-foreground">New customer</p>
+                    <p className="text-xs text-muted-foreground font-medium text-primary">New customer</p>
                     <div className="grid gap-2 sm:grid-cols-2">
                       <div><Label className="text-xs">Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
                       <div><Label className="text-xs">Email</Label><Input value={email} onChange={(e) => setEmail(e.target.value)} /></div>
@@ -173,16 +222,36 @@ export function CompletePaymentDialog({ order, open, onOpenChange, onCompleted }
                 <Chip label="Cash" icon={Banknote} active={payment === "cash"} onClick={() => setPayment("cash")} />
                 <Chip label="UPI" icon={Smartphone} active={payment === "upi"} onClick={() => setPayment("upi")} />
                 <Chip label="Card" icon={CreditCard} active={payment === "card"} onClick={() => setPayment("card")} />
-                <div className="mt-3 rounded-xl bg-muted/40 p-3 text-sm">
+
+                {/* PAYMENT COUPON SECTION */}
+                <PaymentCouponSection
+                  subtotal={order.subtotal || order.total}
+                  customerId={found?.id}
+                  appliedCoupon={appliedCoupon}
+                  onCouponApplied={setAppliedCoupon}
+                />
+
+                {/* FINANCIAL BREAKDOWN WITH TAX & COUPON */}
+                <div className="mt-2 rounded-xl bg-card border p-3 text-xs space-y-1.5">
                   <div className="flex items-center justify-between"><span>Table</span><span className="font-medium">{order.table}</span></div>
                   <div className="flex items-center justify-between"><span>Items</span><span className="font-medium">{order.items.reduce((s, i) => s + i.qty, 0)}</span></div>
+                  <div className="flex items-center justify-between"><span>Subtotal</span><span className="font-mono">{fmt(subtotalVal)}</span></div>
+                  {couponDiscount > 0 && (
+                    <div className="flex items-center justify-between text-emerald-600 font-semibold">
+                      <span>Coupon Discount ({appliedCoupon?.coupon?.code})</span>
+                      <span className="font-mono">-{fmt(couponDiscount)}</span>
+                    </div>
+                  )}
                   {profile.gstEnabled && (
                     <>
-                      <div className="flex items-center justify-between"><span>Subtotal</span><span>{fmt(order.subtotal)}</span></div>
-                      <div className="flex items-center justify-between"><span>GST ({profile.gstPercent}%)</span><span>{fmt(order.gst)}</span></div>
+                      <div className="flex items-center justify-between text-muted-foreground"><span>Taxable Amount</span><span className="font-mono">{fmt(taxableVal)}</span></div>
+                      <div className="flex items-center justify-between text-violet-600 dark:text-violet-400"><span>GST ({profile.gstPercent}%)</span><span className="font-mono">{fmt(gstVal)}</span></div>
                     </>
                   )}
-                  <div className="mt-1 flex items-center justify-between border-t pt-2"><span className="text-muted-foreground">Total</span><span className="font-display text-lg font-semibold">{fmt(order.total)}</span></div>
+                  <div className="mt-1 flex items-center justify-between border-t pt-2 font-bold text-sm">
+                    <span className="text-foreground">Grand Total</span>
+                    <span className="font-display text-lg font-semibold text-primary">{fmt(finalTotal)}</span>
+                  </div>
                 </div>
               </div>
               <div className="rounded-2xl border p-4 text-center">

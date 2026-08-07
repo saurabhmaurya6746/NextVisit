@@ -62,6 +62,22 @@ class PaginatedCustomersResponse(BaseModel):
     has_previous: bool
 
 
+class CustomerImportErrorItem(BaseModel):
+    row: int
+    field: str | None = None
+    reason: str
+
+
+class CustomerImportResponse(BaseModel):
+    total_rows: int
+    imported_count: int
+    skipped_count: int
+    failed_count: int
+    duplicate_count: int
+    errors: list[CustomerImportErrorItem] = []
+    message: str
+
+
 # ---------------------------------------------------------------------------
 # Customer Segmentation Schemas
 # ---------------------------------------------------------------------------

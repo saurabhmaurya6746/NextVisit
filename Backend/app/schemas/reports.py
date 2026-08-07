@@ -43,6 +43,10 @@ class ReportFilterOptionsResponse(BaseModel):
 
 class ReportsKpiSummary(BaseModel):
     total_revenue: float = 0.0
+    gross_sales: float = 0.0
+    discounts: float = 0.0
+    taxable_sales: float = 0.0
+    gst_collected: float = 0.0
     net_revenue: float = 0.0
     total_appointments_or_orders: int = 0
     completed_visits: int = 0
@@ -56,7 +60,6 @@ class ReportsKpiSummary(BaseModel):
     total_loyalty_points_earned: int = 0
     coupons_redeemed: int = 0
     campaign_revenue: float = 0.0
-    gst_collected: float = 0.0
     discount_given: float = 0.0
 
 

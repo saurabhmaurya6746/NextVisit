@@ -312,8 +312,9 @@ export function QrOrderView({ table, business }: { table: string; business?: str
   // ---------------------------------------------------------------------------
   async function handleDetectCustomer(inputPhone?: string) {
     const targetPhone = (inputPhone || phone).trim();
-    if (!targetPhone) {
-      toast.error("Please enter a valid phone number.");
+    const cleanPhone = targetPhone.replace(/\D/g, "");
+    if (cleanPhone.length !== 10) {
+      toast.error("Please enter a valid 10-digit mobile number.");
       return;
     }
 

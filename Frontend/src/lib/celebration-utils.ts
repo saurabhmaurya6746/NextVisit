@@ -1,4 +1,7 @@
 import { customers } from "./sample-data";
+import { apiFetch } from "./auth";
+import { toast } from "sonner";
+import { logWhatsApp } from "./whatsapp-history";
 
 export const DEMO_TODAY = new Date("2026-07-17T00:00:00");
 
@@ -52,9 +55,86 @@ export function messageFor(kind: Kind, name: string) {
     : `Cheers to another year, ${first} ❤️\nCelebrate with us — coupon ${code} unlocks 20% off your favourite.\nCan't wait to have you back.`;
 }
 
-export function openWhatsApp(phone: string, message: string) {
-  const clean = phone.replace(/[^\d+]/g, "").replace(/^\+/, "");
-  window.open(`https://wa.me/${clean}?text=${encodeURIComponent(message)}`, "_blank");
+export function normalizeWhatsAppPhone(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, "");
+  if (!digits || digits.length < 10) return null;
+
+  if (digits.length === 10) {
+    return `91${digits}`;
+  }
+  if (digits.length === 11 && digits.startsWith("0")) {
+    return `91${digits.slice(1)}`;
+  }
+  if (digits.length === 12 && digits.startsWith("91")) {
+    return digits;
+  }
+  if (digits.length >= 10 && digits.length <= 15) {
+    return digits;
+  }
+  return null;
+}
+
+export function openWhatsApp(phone: string | null | undefined, message: string): boolean {
+  const normalized = normalizeWhatsAppPhone(phone);
+  if (!normalized) {
+    toast.error("Invalid or missing phone number for WhatsApp.");
+    return false;
+  }
+
+  const encodedMsg = encodeURIComponent(message);
+  const waUrl = `https://wa.me/${normalized}?text=${encodedMsg}`;
+  window.open(waUrl, "_blank");
+  return true;
+}
+
+export async function sendWhatsAppWithStatusTracking(options: {
+  customerId: string;
+  customerPhone: string;
+  message: string;
+  campaignType: string;
+  campaignId?: string;
+  onSuccess?: () => void;
+  onError?: (err: any) => void;
+}): Promise<boolean> {
+  const { customerId, customerPhone, message, campaignType, campaignId, onSuccess, onError } = options;
+
+  try {
+    const payload: any = {
+      customer_id: customerId,
+      campaign_type: campaignType.toUpperCase(),
+      message: message,
+    };
+    if (campaignId && campaignId.length > 20 && !campaignId.includes("global")) {
+      payload.campaign_id = campaignId;
+    }
+
+    // 1. Call Backend BEFORE opening wa.me
+    const res = await apiFetch("/api/v1/campaign-logs/record-send", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || `Failed to update campaign status (HTTP ${res.status})`);
+    }
+
+    // 2. Save to local WhatsApp history
+    logWhatsApp({ customerId, kind: "campaign", message });
+
+    // 3. Open wa.me AFTER successful backend update
+    openWhatsApp(customerPhone, message);
+
+    // 4. Trigger callback (React Query refetch)
+    if (onSuccess) onSuccess();
+    return true;
+  } catch (err: any) {
+    console.error("WhatsApp status update failed:", err);
+    toast.error(`Could not update campaign status: ${err.message || "Backend error"}`);
+    if (onError) onError(err);
+    return false;
+  }
 }
 
 export function groupByDate(list: any[], kind: Kind) {

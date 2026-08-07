@@ -122,6 +122,23 @@ class CampaignLog(BaseModel):
         nullable=True,
     )
 
+    # Generated AI Message & Coupon details
+    sent_message: Mapped[str | None] = mapped_column(
+        String(2000),
+        nullable=True,
+    )
+
+    coupon_code: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    sent_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
     # Review Booster Tracking Fields
     visit_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -159,4 +176,5 @@ class CampaignLog(BaseModel):
     customer = relationship("Customer")
     visit = relationship("Visit")
     reviewer = relationship("User", foreign_keys=[reviewed_by])
+    sender = relationship("User", foreign_keys=[sent_by_user_id])
 

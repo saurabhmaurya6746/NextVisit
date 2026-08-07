@@ -177,6 +177,9 @@ class UserService:
                 detail="Only Business Owners can create staff members.",
             )
 
+        from app.services.subscription_limit_service import SubscriptionLimitService
+        SubscriptionLimitService(self.db).check_staff_limit(current_user.business_id)
+
         business = self.db.scalar(
             select(Business)
             .options(joinedload(Business.business_type))

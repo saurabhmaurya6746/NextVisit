@@ -1,5 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -27,6 +28,7 @@ import { listCustomersApi, type CustomerModel } from "@/lib/customers-api";
 export const Route = createFileRoute("/app/$type/$business/bookings")({ component: BookingsPage });
 
 function BookingsPage() {
+  const qc = useQueryClient();
   const [visits, setVisits] = useState<VisitModel[]>([]);
   const [customers, setCustomers] = useState<CustomerModel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,6 +93,8 @@ function BookingsPage() {
     try {
       await completeVisitApi(id);
       toast.success("Visit marked as completed!");
+      qc.invalidateQueries({ queryKey: ["dashboard-analytics"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
       await loadData();
     } catch (err: any) {
       console.error("[VISITS] Complete visit error:", err);

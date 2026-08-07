@@ -23,6 +23,7 @@ import {
   groupByDate,
   messageFor,
   openWhatsApp,
+  sendWhatsAppWithStatusTracking,
   type Bucket,
   type Kind,
 } from "@/lib/celebration-utils";
@@ -50,7 +51,7 @@ export function CelebrationDetailPage({ kind, bucket }: Props) {
   const listEndpoint = isBday ? "/api/v1/customers/birthday-list" : "/api/v1/customers/anniversary-list";
 
   // Fetch real database celebration customer list with server-side pagination
-  const { data: celData, isLoading } = useQuery({
+  const { data: celData, isLoading, refetch } = useQuery({
     queryKey: [isBday ? "birthday-list" : "anniversary-list", bucket, page, search, sortBy, sortOrder],
     queryFn: async () => {
       const query = new URLSearchParams({
@@ -90,10 +91,15 @@ export function CelebrationDetailPage({ kind, bucket }: Props) {
   const campaignPath = isBday ? "birthday-campaigns" : "anniversary-campaigns";
   const backHref = `/app/${type}/${business}/${campaignPath}`;
 
-  function handleSend(c: any) {
+  async function handleSend(c: any) {
     const msg = customMessages[c.id] ?? messageFor(kind, c.name);
-    openWhatsApp(c.phone, msg);
-    logWhatsApp({ customerId: c.id, kind, message: msg });
+    await sendWhatsAppWithStatusTracking({
+      customerId: c.id,
+      customerPhone: c.phone,
+      message: msg,
+      campaignType: isBday ? "BIRTHDAY" : "ANNIVERSARY",
+      onSuccess: () => refetch(),
+    });
   }
 
   const grouped = groupByDate(list, kind);
@@ -154,7 +160,7 @@ export function CelebrationDetailPage({ kind, bucket }: Props) {
           <Button
             variant="outline"
             size="sm"
-            className="h-9 rounded-full text-xs font-mono"
+            className="h-9 rounded-full text-xs"
             onClick={() => setSortOrder((o) => (o === "asc" ? "desc" : "asc"))}
           >
             {sortOrder.toUpperCase()}
@@ -257,6 +263,7 @@ export function CelebrationDetailPage({ kind, bucket }: Props) {
         couponCode={couponFor(kind)}
         discountPercent="20%"
         customers={list}
+        onComplete={() => refetch()}
       />
     </PageTransition>
   );
@@ -308,9 +315,14 @@ function CelebrantCard({
               <p className="text-[11px] text-muted-foreground font-mono">{c.phone}</p>
             </div>
 
-            <Badge variant="outline" className="rounded-full font-mono text-[10px] shrink-0">
-              {coupon}
-            </Badge>
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <Badge variant="outline" className="rounded-full font-mono text-[10px]">
+                {coupon}
+              </Badge>
+              <Badge variant="secondary" className={`rounded-full text-[9px] ${c.status === "Sent" ? "bg-emerald-500/10 text-emerald-600 font-semibold" : ""}`}>
+                {c.status || "Pending"}
+              </Badge>
+            </div>
           </div>
 
           <div className="rounded-xl border bg-muted/40 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">

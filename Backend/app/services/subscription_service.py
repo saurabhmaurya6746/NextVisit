@@ -319,18 +319,16 @@ class SubscriptionService:
         pending_resp = self._format_upgrade_request(pending_req) if pending_req else None
 
         features = plan.features if (plan and plan.features) else {
-          "analytics": True,
-          "ai_generator": True,
-          "priority_support": False,
-          "custom_branding": False,
+            "ai_enabled": True,
+            "pdf_export": True,
+            "priority_support": False,
         }
 
         limits = {
-            "max_customers": plan.max_customers if plan else 500,
             "max_staff": plan.max_staff if plan else 5,
             "max_active_devices": plan.max_active_devices if plan else 5,
-            "max_campaigns_per_month": plan.max_campaigns_per_month if plan else 20,
             "storage_limit_gb": plan.storage_limit_gb if plan else 2.0,
+            "monthly_ai_credits": plan.monthly_ai_credits if plan else 0,
         }
 
         return MyPlanResponse(

@@ -47,15 +47,45 @@ class AuthService:
                     detail=f"Business type '{data.business.business_type_id}' does not exist.",
                 )
 
-            # 2. Guard: duplicate email
-            existing_user = self.user_repo.get_by_email(
-                data.owner.owner_email
+            clean_email = data.owner.owner_email.strip().lower()
+
+            # 2. Guard: duplicate email (ignore soft-deleted users/businesses)
+            existing_user = self.db.scalar(
+                select(User)
+                .join(Business, User.business_id == Business.id)
+                .where(
+                    func.lower(User.email) == clean_email,
+                    Business.is_deleted.is_(False),
+                    User.is_active.is_(True),
+                    User.status != "DELETED",
+                )
             )
             if existing_user:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="An account with this email already exists.",
                 )
+
+            # Cleanup legacy soft-deleted business/user rows that have clean_email to avoid SQL UNIQUE constraint failure
+            legacy_deleted_bizs = list(self.db.scalars(
+                select(Business).where(
+                    func.lower(Business.email) == clean_email,
+                    Business.is_deleted.is_(True),
+                )
+            ).all())
+            for b in legacy_deleted_bizs:
+                import uuid as uuid_lib
+                b.email = f"deleted_{uuid_lib.uuid4().hex[:8]}_{b.email}"
+
+            legacy_deleted_users = list(self.db.scalars(
+                select(User).where(
+                    func.lower(User.email) == clean_email,
+                    (User.is_active.is_(False) | (User.status == "DELETED")),
+                )
+            ).all())
+            for u in legacy_deleted_users:
+                import uuid as uuid_lib
+                u.email = f"deleted_{uuid_lib.uuid4().hex[:8]}_{u.email}"
 
             # 3. Create Business
             business = Business(
@@ -147,14 +177,28 @@ class AuthService:
         if not identifier:
             raise _invalid
 
-        # 1. Detection: If identifier contains '@', lookup by email; else lookup by login_id
+        # 1. Detection: If identifier contains '@', lookup by email; else lookup by login_id (ignore soft-deleted)
         if "@" in identifier:
             user = self.db.scalar(
-                select(User).where(func.lower(User.email) == identifier.lower())
+                select(User)
+                .join(Business, User.business_id == Business.id)
+                .where(
+                    func.lower(User.email) == identifier.lower(),
+                    Business.is_deleted.is_(False),
+                    User.is_active.is_(True),
+                    User.status != "DELETED",
+                )
             )
         else:
             user = self.db.scalar(
-                select(User).where(func.lower(User.login_id) == identifier.lower())
+                select(User)
+                .join(Business, User.business_id == Business.id)
+                .where(
+                    func.lower(User.login_id) == identifier.lower(),
+                    Business.is_deleted.is_(False),
+                    User.is_active.is_(True),
+                    User.status != "DELETED",
+                )
             )
 
         if not user:
@@ -167,7 +211,7 @@ class AuthService:
             raise _invalid
 
         # 3. Guard: active account and status ACTIVE
-        if not user.is_active or (user.status and user.status.upper() == "INACTIVE"):
+        if not user.is_active or (user.status and user.status.upper() in ["INACTIVE", "DELETED"]):
             logger.warning("Login rejected — account inactive | user_id=%s", user.id)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -176,14 +220,16 @@ class AuthService:
 
         # 4. Guard: business status must be ACTIVE
         business = self.business_repo.get_by_id(user.business_id)
-        if not business or business.status != "ACTIVE":
-            status_val = business.status if business else "UNKNOWN"
+        if not business or business.is_deleted or business.status != "ACTIVE":
+            status_val = business.status if (business and not business.is_deleted) else "DELETED"
             logger.warning(
                 "Login rejected — business status not ACTIVE | business_id=%s status=%s",
                 user.business_id,
                 status_val,
             )
-            if status_val == "PENDING":
+            if status_val == "DELETED":
+                raise _invalid
+            elif status_val == "PENDING":
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Your business account registration is pending administrator approval.",

@@ -185,11 +185,35 @@ function SubscriptionPage() {
           </div>
 
           <div>
-            <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Plan Entitlements</p>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Plan Features</p>
             <div className="mt-1 space-y-1 text-xs text-foreground font-medium">
-              <p>👥 Up to {myPlan?.limits.max_customers.toLocaleString()} Customers</p>
-              <p>💻 Up to {myPlan?.limits.max_active_devices} Active Devices</p>
-              <p>📢 {myPlan?.limits.max_campaigns_per_month} Campaigns / Mo</p>
+              <p className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                <Check className="h-3.5 w-3.5 shrink-0" /> Up to {myPlan?.limits.max_staff || currentPlan?.max_staff || 5} Active Staff Accounts
+              </p>
+              <p className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                <Check className="h-3.5 w-3.5 shrink-0" /> Up to {myPlan?.limits.max_active_devices || currentPlan?.max_active_devices || 5} Active Devices
+              </p>
+              <p className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                <Check className="h-3.5 w-3.5 shrink-0" /> {myPlan?.limits.storage_limit_gb || currentPlan?.storage_limit_gb || 2} GB Storage
+              </p>
+              <p className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                <Check className="h-3.5 w-3.5 shrink-0" />
+                {(myPlan?.limits.monthly_ai_credits ?? currentPlan?.monthly_ai_credits ?? 0) > 0 ? (
+                  `${myPlan?.limits.monthly_ai_credits ?? currentPlan?.monthly_ai_credits} AI Credits / Month`
+                ) : (
+                  "AI Not Included"
+                )}
+              </p>
+              {(myPlan?.features?.pdf_export !== false && currentPlan?.features?.pdf_export !== false) && (
+                <p className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                  <Check className="h-3.5 w-3.5 shrink-0" /> PDF Export
+                </p>
+              )}
+              {Boolean(myPlan?.features?.priority_support || currentPlan?.features?.priority_support) && (
+                <p className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                  <Check className="h-3.5 w-3.5 shrink-0" /> Priority Support
+                </p>
+              )}
             </div>
           </div>
         </CardContent>
@@ -247,32 +271,42 @@ function SubscriptionPage() {
                     <ul className="space-y-2 text-xs">
                       <li className="flex items-center gap-2">
                         <Check className="h-4 w-4 text-emerald-500 flex-shrink-0" />
-                        <span>Up to <strong>{p.max_customers.toLocaleString()}</strong> customers</span>
+                        <span>Up to <strong>{p.max_staff}</strong> Active Staff Accounts</span>
                       </li>
                       <li className="flex items-center gap-2">
                         <Check className="h-4 w-4 text-emerald-500 flex-shrink-0" />
-                        <span>Up to <strong>{p.max_active_devices}</strong> active POS devices</span>
+                        <span>Up to <strong>{p.max_active_devices}</strong> Active Devices</span>
                       </li>
                       <li className="flex items-center gap-2">
                         <Check className="h-4 w-4 text-emerald-500 flex-shrink-0" />
-                        <span><strong>{p.max_campaigns_per_month}</strong> WhatsApp campaigns/mo</span>
+                        <span><strong>{p.storage_limit_gb} GB</strong> Storage</span>
                       </li>
                       <li className="flex items-center gap-2">
                         <Check className="h-4 w-4 text-emerald-500 flex-shrink-0" />
-                        <span><strong>{p.storage_limit_gb} GB</strong> cloud storage</span>
+                        <span>
+                          {p.monthly_ai_credits > 0 ? (
+                            <><strong>{p.monthly_ai_credits} AI Credits</strong> / Month</>
+                          ) : (
+                            <span>AI Not Included</span>
+                          )}
+                        </span>
                       </li>
-                      {p.features?.analytics && (
+                      {p.features?.pdf_export !== false && (
                         <li className="flex items-center gap-2">
                           <Check className="h-4 w-4 text-emerald-500 flex-shrink-0" />
-                          <span>Advanced Sales & Customer Analytics</span>
+                          <span>PDF Export</span>
                         </li>
                       )}
-                      {p.features?.ai_generator && (
+                      {Boolean(p.features?.priority_support) && (
                         <li className="flex items-center gap-2">
                           <Check className="h-4 w-4 text-emerald-500 flex-shrink-0" />
-                          <span>Gemini AI Copywriting Engine</span>
+                          <span>Priority Support</span>
                         </li>
                       )}
+                      <li className="flex items-center gap-2 text-muted-foreground">
+                        <Check className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span>{p.trial_days} Day Trial</span>
+                      </li>
                     </ul>
 
                     <div className="pt-2">

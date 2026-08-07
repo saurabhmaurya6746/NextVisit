@@ -250,6 +250,17 @@ class VisitService:
             customer.last_visit_at = now_ts
             self.customer_repo.update(customer)
 
+            # Automatic VIP recalculation
+            try:
+                from app.services.customer_service import CustomerService
+                cs = CustomerService(self.db)
+                v_set = cs.get_or_create_vip_settings(visit.business_id)
+                is_vip, _ = cs.evaluate_customer_vip_status(customer, v_set)
+                if is_vip:
+                    customer.status = "VIP"
+            except Exception as ex:
+                logger.warning("Failed to evaluate VIP status on visit completion: %s", ex)
+
         # Loyalty points calculation & CustomerLoyalty update
         earned_points = 0
         loyalty_repo = LoyaltyRepository(self.db)

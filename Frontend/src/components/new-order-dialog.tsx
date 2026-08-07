@@ -167,18 +167,29 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
     setStep(1);
   }
 
+  useEffect(() => {
+    const clean = searchPhone.replace(/\D/g, "");
+    if (clean.length < 10) {
+      setFoundCustomer(null);
+    }
+  }, [searchPhone]);
+
   // Handle phone search
   async function handlePhoneSearch() {
-    if (!searchPhone.trim()) return;
+    const cleanPhone = searchPhone.replace(/\D/g, "");
+    if (cleanPhone.length !== 10) {
+      toast.error("Please enter a valid 10-digit mobile number.");
+      return;
+    }
     setSearchingPhone(true);
     try {
-      const cust = await getCustomerByPhoneApi(searchPhone.trim());
+      const cust = await getCustomerByPhoneApi(cleanPhone);
       if (cust) {
         setFoundCustomer(cust);
         toast.success(`Found customer: ${cust.name}`);
       } else {
         setFoundCustomer(null);
-        toast.info("No existing customer found with this phone. Switch to 'New Customer' to register.");
+        toast.info("No existing customer found with this 10-digit phone number. Switch to 'New Customer' to register.");
       }
     } catch {
       setFoundCustomer(null);

@@ -1,6 +1,7 @@
 import { AppLink } from "@/lib/app-nav";
 import { useQuery } from "@tanstack/react-query";
 import { getSalonChairMetricsApi } from "@/lib/salon-chairs-api";
+import { useAppointments } from "@/lib/appointments-store";
 import {
   DollarSign, Calendar, Users, Cake, Gift, UserMinus, Ticket, Star,
   Sparkles, ChevronRight, ListChecks, Scissors,
@@ -59,16 +60,74 @@ export function SalonDashboard({
   displayName,
   displayBizName,
 }: SalonDashboardProps) {
-  // Core Salon Metrics from Database
-  const todaysAppointments = dashData?.today_orders ?? dashData?.today_visits ?? 0;
-  const todaysRevenue = dashData?.today_revenue ?? 0;
-  const openAppointments = dashData?.open_visits ?? 0;
-  const completedServices = dashData?.completed_visits ?? 0;
+  // Core Salon Metrics & Real-Time Sync
+  const appts = useAppointments();
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  // 1. Today's Appointments (Booked Appointments ONLY — Excludes Walk-Ins & Start Walk-in Booking)
+  const todaysApptsList = appts.filter((a) => {
+    if (a.status === "cancelled") return false;
+    if (a.isWalkIn === true) return false;
+    const dt = a.start ? a.start.split("T")[0] : "";
+    return dt === todayStr;
+  });
+  const todaysAppointments = todaysApptsList.length;
+
+  const completedCount = todaysApptsList.filter(
+    (a) => a.status === "completed" || a.paymentStatus === "paid"
+  ).length;
+
+  const remainingCount = todaysApptsList.filter(
+    (a) => a.status === "pending" || a.status === "checkedin"
+  ).length;
+
+  const todaysApptsSubtitle = `Completed: ${completedCount} | Remaining: ${remainingCount}`;
+
+  // 2. Today's Revenue (Only Successful Payments Today)
+  const paidTodayList = appts.filter(
+    (a) =>
+      a.paymentStatus === "paid" &&
+      a.paidAt &&
+      a.paidAt.split("T")[0] === todayStr
+  );
+  const todaysRevenue = paidTodayList.length > 0 ? paidTodayList.reduce((sum, a) => sum + (a.price || 0), 0) : (dashData?.today_revenue ?? 0);
+
+  // 3. Ongoing Appointments (Checked-In / In Service, not completed/paid)
+  const ongoingApptsList = appts.filter(
+    (a) => a.status === "checkedin" && a.paymentStatus !== "paid"
+  );
+  const ongoingAppointments = ongoingApptsList.length > 0 ? ongoingApptsList.length : (dashData?.open_visits ?? 0);
+  const ongoingSubtitle = `Today's Total: ${todaysAppointments} Bookings`;
+
+  // 4. Ongoing Services (In Service with workstation active)
+  const ongoingServices = appts.filter(
+    (a) => a.status === "checkedin" && a.chairId && a.paymentStatus !== "paid"
+  ).length;
+
+  // 5. Completed Services Today (Mark Completed today)
+  const completedServices = todaysApptsList.filter(
+    (a) => a.status === "completed" || a.paymentStatus === "paid"
+  ).length || (dashData?.completed_visits ?? 0);
+
+  // 7. Total Clients
   const totalCustomers = dashData?.total_customers ?? 0;
   const activeCustomers = dashData?.active_customers ?? 0;
-  const averageServiceValue = dashData?.average_bill ?? 0;
+
+  // 8. Average Service Value (Completed AND Paid appointments)
+  const allPaidAppts = appts.filter((a) => a.paymentStatus === "paid");
+  const averageServiceValue =
+    allPaidAppts.length > 0
+      ? allPaidAppts.reduce((sum, a) => sum + (a.price || 0), 0) / allPaidAppts.length
+      : (dashData?.average_bill ?? 0);
+
+  // 9. Avg Daily Revenue
   const avgDailyRevenue = dashData?.avg_daily_revenue ?? 0;
-  const totalRevenue = dashData?.total_revenue ?? 0;
+
+  // 10. Total Revenue (Lifetime Successful Payments)
+  const totalRevenue =
+    allPaidAppts.length > 0
+      ? allPaidAppts.reduce((sum, a) => sum + (a.price || 0), 0)
+      : (dashData?.total_revenue ?? 0);
 
   // Action Tasks from DB
   const tasksData = dashData?.tasks || {
@@ -164,11 +223,12 @@ export function SalonDashboard({
           )}
 
           {/* SALON TOP CARDS GRID */}
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4">
             <AppLink path="appointments">
               <StatCard
                 label="Today's Appointments"
                 value={todaysAppointments}
+                delta={todaysApptsSubtitle}
                 icon={Calendar}
                 accent="primary"
                 index={0}
@@ -187,11 +247,11 @@ export function SalonDashboard({
             </AppLink>
             <AppLink path="appointments">
               <StatCard
-                label="Ongoing Appointments"
-                value={openAppointments}
+                label="Ongoing Services"
+                value={ongoingServices}
                 delta="currently in service"
-                icon={Clock}
-                accent="info"
+                icon={Activity}
+                accent="primary"
                 index={2}
               />
             </AppLink>
@@ -199,6 +259,7 @@ export function SalonDashboard({
               <StatCard
                 label="Completed Services"
                 value={completedServices}
+                delta="services completed today"
                 icon={CheckCircle2}
                 accent="warning"
                 index={3}
@@ -218,7 +279,7 @@ export function SalonDashboard({
               <StatCard
                 label="Average Service Value"
                 value={fmt(averageServiceValue)}
-                delta="per completed service"
+                delta="per paid service"
                 icon={TrendingUp}
                 accent="destructive"
                 index={5}

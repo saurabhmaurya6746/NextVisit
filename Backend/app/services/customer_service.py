@@ -1,7 +1,8 @@
 import logging
 from uuid import UUID
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, UploadFile
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.customer import Customer
@@ -533,7 +534,7 @@ class CustomerService:
         from sqlalchemy import extract, func, or_, select
         from app.models.customer import Customer
         from app.models.order import Order
-        from app.models.campaign import CampaignLog
+        from app.models.campaign import Campaign, CampaignLog, CampaignLogStatus, CampaignType
 
         now = datetime.now(timezone.utc)
         start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -695,7 +696,12 @@ class CustomerService:
 
             welcome_log = self.db.scalar(
                 select(CampaignLog)
-                .where(CampaignLog.customer_id == c.id)
+                .join(Campaign, CampaignLog.campaign_id == Campaign.id)
+                .where(
+                    CampaignLog.customer_id == c.id,
+                    Campaign.campaign_type == CampaignType.WELCOME,
+                    CampaignLog.status == CampaignLogStatus.SENT,
+                )
             )
             w_status = "Sent" if (welcome_log or (c.notes and "welcome" in c.notes.lower())) else "Pending"
 
@@ -793,6 +799,7 @@ class CustomerService:
         from sqlalchemy.orm import joinedload
         from app.models.customer import Customer
         from app.models.business import Business
+        from app.models.campaign import Campaign, CampaignLog, CampaignLogStatus, CampaignType
 
         business_id = current_user.business_id
         business = self.db.scalar(select(Business).where(Business.id == business_id))
@@ -926,6 +933,18 @@ class CustomerService:
             age = (today_date.year - event_dt.year) if event_dt else None
             initials = "".join([part[0] for part in c.name.split() if part])[:2].upper() if c.name else "NV"
 
+            target_camp_type = CampaignType.BIRTHDAY if kind == "birthday" else CampaignType.ANNIVERSARY
+            celeb_log = self.db.scalar(
+                select(CampaignLog)
+                .join(Campaign, CampaignLog.campaign_id == Campaign.id)
+                .where(
+                    CampaignLog.customer_id == c.id,
+                    Campaign.campaign_type == target_camp_type,
+                    CampaignLog.status == CampaignLogStatus.SENT,
+                )
+            )
+            c_status = "Sent" if celeb_log else "Pending"
+
             items.append({
                 "id": c.id,
                 "name": c.name,
@@ -945,6 +964,7 @@ class CustomerService:
                 "favorite_item": "Specialties",
                 "favorites": ["Signature Dishes"],
                 "initials": initials,
+                "status": c_status,
             })
 
         logger.info(
@@ -963,6 +983,138 @@ class CustomerService:
             "has_previous": page > 1,
         }
 
+    def get_or_create_vip_settings(self, business_id: UUID):
+        from app.models.vip_settings import VipSettings
+        v_set = self.db.scalar(select(VipSettings).where(VipSettings.business_id == business_id))
+        if not v_set:
+            v_set = VipSettings(
+                business_id=business_id,
+                min_lifetime_spend=10000.0,
+                min_visits=15,
+                min_avg_bill=0.0,
+                last_visit_within_days=None,
+                rule_logic="ANY",
+                is_active=True,
+            )
+            self.db.add(v_set)
+            self.db.commit()
+            self.db.refresh(v_set)
+        return v_set
+
+    def format_vip_rule_display(self, v_set) -> str:
+        rules = []
+        if v_set.min_lifetime_spend > 0:
+            rules.append(f"Lifetime Spend ≥ ₹{v_set.min_lifetime_spend:,.2f}")
+        if v_set.min_visits > 0:
+            rules.append(f"Visits ≥ {v_set.min_visits}")
+        if v_set.min_avg_bill > 0:
+            rules.append(f"Average Bill ≥ ₹{v_set.min_avg_bill:,.2f}")
+        if v_set.last_visit_within_days is not None and v_set.last_visit_within_days > 0:
+            rules.append(f"Last Visit within {v_set.last_visit_within_days} days")
+        
+        if not rules:
+            return "VIP qualification is currently disabled."
+        
+        joiner = " OR " if str(v_set.rule_logic).upper() == "ANY" else " AND "
+        return f"Current VIP Rule: {joiner.join(rules)} (Rule Logic: {str(v_set.rule_logic).upper()}). Configured in Business Settings."
+
+    def evaluate_customer_vip_status(self, customer: Customer, v_set) -> tuple[bool, str]:
+        from datetime import datetime, timezone
+        if not v_set or not v_set.is_active:
+            return False, "VIP program is disabled."
+        
+        spent = float(customer.total_spent or 0.0)
+        visits = int(customer.visit_count or 0)
+        avg_bill = round(spent / max(1, visits), 2) if (spent > 0 and visits > 0) else 0.0
+        
+        now_dt = datetime.now(timezone.utc)
+        days_since_last = None
+        if customer.last_visit_at:
+            lv_dt = customer.last_visit_at
+            if lv_dt.tzinfo is None:
+                lv_dt = lv_dt.replace(tzinfo=timezone.utc)
+            days_since_last = (now_dt - lv_dt).days
+
+        cond_results = []
+        reasons = []
+
+        if v_set.min_lifetime_spend > 0:
+            passed = (spent >= v_set.min_lifetime_spend)
+            cond_results.append(passed)
+            if passed:
+                reasons.append(f"Lifetime Spend (₹{spent:,.2f}) ≥ ₹{v_set.min_lifetime_spend:,.2f}")
+
+        if v_set.min_visits > 0:
+            passed = (visits >= v_set.min_visits)
+            cond_results.append(passed)
+            if passed:
+                reasons.append(f"Visits ({visits}) ≥ {v_set.min_visits}")
+
+        if v_set.min_avg_bill > 0:
+            passed = (avg_bill >= v_set.min_avg_bill)
+            cond_results.append(passed)
+            if passed:
+                reasons.append(f"Average Bill (₹{avg_bill:,.2f}) ≥ ₹{v_set.min_avg_bill:,.2f}")
+
+        if v_set.last_visit_within_days is not None and v_set.last_visit_within_days > 0:
+            passed = (days_since_last is not None and days_since_last <= v_set.last_visit_within_days)
+            cond_results.append(passed)
+            if passed:
+                reasons.append(f"Last Visit ({days_since_last} days ago) ≤ {v_set.last_visit_within_days} days")
+
+        if not cond_results:
+            return False, "No active VIP rules configured."
+
+        is_vip = any(cond_results) if str(v_set.rule_logic).upper() == "ANY" else all(cond_results)
+        
+        if is_vip:
+            reason_str = f"Qualified because: {' OR '.join(reasons) if str(v_set.rule_logic).upper() == 'ANY' else ' AND '.join(reasons)}"
+        else:
+            reason_str = "Does not meet the active VIP rule thresholds."
+            
+        return is_vip, reason_str
+
+    def update_vip_settings(self, current_user: User, data) -> dict:
+        v_set = self.get_or_create_vip_settings(current_user.business_id)
+        v_set.min_lifetime_spend = data.min_lifetime_spend
+        v_set.min_visits = data.min_visits
+        v_set.min_avg_bill = data.min_avg_bill
+        v_set.last_visit_within_days = data.last_visit_within_days
+        v_set.rule_logic = data.rule_logic.upper()
+        v_set.is_active = data.is_active
+        
+        self.db.commit()
+        self.db.refresh(v_set)
+
+        formatted_rule = self.format_vip_rule_display(v_set)
+        
+        # Trigger automatic recalculation of VIP statuses for all customers of this business
+        self.recalculate_all_vips_for_business(current_user.business_id)
+
+        return {
+            "id": v_set.id,
+            "business_id": v_set.business_id,
+            "min_lifetime_spend": v_set.min_lifetime_spend,
+            "min_visits": v_set.min_visits,
+            "min_avg_bill": v_set.min_avg_bill,
+            "last_visit_within_days": v_set.last_visit_within_days,
+            "rule_logic": v_set.rule_logic,
+            "is_active": v_set.is_active,
+            "formatted_rule_display": formatted_rule,
+            "created_at": v_set.created_at,
+            "updated_at": v_set.updated_at,
+        }
+
+    def recalculate_all_vips_for_business(self, business_id: UUID):
+        v_set = self.get_or_create_vip_settings(business_id)
+        customers = list(self.db.scalars(select(Customer).where(Customer.business_id == business_id, Customer.is_active == True)).all())
+        vips = []
+        for c in customers:
+            is_vip, reason = self.evaluate_customer_vip_status(c, v_set)
+            if is_vip:
+                vips.append(c)
+        logger.info("RECALCULATE VIPS | business_id=%s total_vips=%d", business_id, len(vips))
+
     def get_vip_customers(
         self,
         current_user: User,
@@ -970,21 +1122,19 @@ class CustomerService:
         page_size: int = 20,
         search: str | None = None,
         sort_by: str = "spend_desc",
-        # VIP thresholds — configurable per business (future: pull from BusinessSettings)
-        min_spend: float = 500.0,
-        min_visits: int = 10,
+        min_spend: float | None = None,
+        min_visits: int | None = None,
     ) -> dict:
         """
-        Returns database-driven VIP customer list.
-        VIP = customers whose total_spent >= min_spend OR visit_count >= min_visits.
-        Favorite item is computed from order_items (most frequently ordered item_name).
-        Supports search by name/phone, sort, and server-side pagination.
+        Returns database-driven VIP customer list evaluated dynamically using VipSettings.
         """
         from sqlalchemy import select, func
         from app.models.order import Order, OrderItem
         from sqlalchemy.orm import joinedload
 
         business_id = current_user.business_id
+        v_set = self.get_or_create_vip_settings(business_id)
+        formatted_rule = self.format_vip_rule_display(v_set)
 
         # ── 1. Pull all active customers of the business ──────────────────────
         stmt = (
@@ -997,23 +1147,23 @@ class CustomerService:
         )
         all_customers = list(self.db.scalars(stmt).unique().all())
 
-        # ── 2. Filter VIPs ───────────────────────────────────────────────────
-        vips = [
-            c for c in all_customers
-            if float(c.total_spent or 0) >= min_spend or (c.visit_count or 0) >= min_visits
-        ]
+        # ── 2. Evaluate and Filter VIPs dynamically ───────────────────────────
+        vip_entries = []
+        for c in all_customers:
+            is_vip, reason = self.evaluate_customer_vip_status(c, v_set)
+            if is_vip:
+                vip_entries.append((c, reason))
 
         # ── 3. Apply search ──────────────────────────────────────────────────
         if search and search.strip():
             term = search.strip().lower()
-            vips = [
-                c for c in vips
+            vip_entries = [
+                (c, r) for c, r in vip_entries
                 if term in (c.name or "").lower() or term in (c.phone or "")
             ]
 
         # ── 4. Compute favorite item per VIP customer via order_items ────────
-        # Single efficient query: GROUP BY customer_id, item_name → pick max count per customer
-        vip_ids = [c.id for c in vips]
+        vip_ids = [c.id for c, _ in vip_entries]
         fav_map: dict = {}
         if vip_ids:
             fav_stmt = (
@@ -1032,7 +1182,6 @@ class CustomerService:
             )
             fav_rows = self.db.execute(fav_stmt).all()
 
-            # Build {customer_id: top_item_name}
             for row in fav_rows:
                 cid = row.customer_id
                 if cid not in fav_map:
@@ -1040,32 +1189,37 @@ class CustomerService:
 
         # ── 5. Sort ──────────────────────────────────────────────────────────
         if sort_by == "spend_desc":
-            vips.sort(key=lambda c: float(c.total_spent or 0), reverse=True)
+            vip_entries.sort(key=lambda item: float(item[0].total_spent or 0), reverse=True)
         elif sort_by == "spend_asc":
-            vips.sort(key=lambda c: float(c.total_spent or 0))
+            vip_entries.sort(key=lambda item: float(item[0].total_spent or 0))
         elif sort_by == "visits_desc":
-            vips.sort(key=lambda c: c.visit_count or 0, reverse=True)
+            vip_entries.sort(key=lambda item: item[0].visit_count or 0, reverse=True)
         elif sort_by == "visits_asc":
-            vips.sort(key=lambda c: c.visit_count or 0)
+            vip_entries.sort(key=lambda item: item[0].visit_count or 0)
+        elif sort_by == "avg_bill_desc":
+            vip_entries.sort(
+                key=lambda item: (float(item[0].total_spent or 0) / max(1, item[0].visit_count or 1)),
+                reverse=True,
+            )
         elif sort_by == "points_desc":
-            vips.sort(
-                key=lambda c: (c.loyalty.current_points if c.loyalty else 0),
+            vip_entries.sort(
+                key=lambda item: (item[0].loyalty.current_points if item[0].loyalty else item[0].loyalty_points),
                 reverse=True,
             )
         elif sort_by == "recent":
-            vips.sort(
-                key=lambda c: c.last_visit_at or c.created_at,
+            vip_entries.sort(
+                key=lambda item: item[0].last_visit_at or item[0].created_at,
                 reverse=True,
             )
         else:
-            vips.sort(key=lambda c: float(c.total_spent or 0), reverse=True)
+            vip_entries.sort(key=lambda item: float(item[0].total_spent or 0), reverse=True)
 
-        # ── 6. Summary cards (before pagination, over full filtered set) ──────
-        total_vip = len(vips)
-        total_lifetime_spend = sum(float(c.total_spent or 0) for c in vips)
-        total_visits_sum = sum(c.visit_count or 0 for c in vips)
+        # ── 6. Summary cards ─────────────────────────────────────────────────
+        total_vip = len(vip_entries)
+        total_lifetime_spend = sum(float(c.total_spent or 0) for c, _ in vip_entries)
+        total_visits_sum = sum(c.visit_count or 0 for c, _ in vip_entries)
         total_loyalty_points = sum(
-            (c.loyalty.current_points if c.loyalty else 0) for c in vips
+            (c.loyalty.current_points if c.loyalty else c.loyalty_points) for c, _ in vip_entries
         )
         avg_visits = round(total_visits_sum / total_vip, 1) if total_vip else 0.0
         avg_lifetime_spend = round(total_lifetime_spend / total_vip, 2) if total_vip else 0.0
@@ -1076,40 +1230,40 @@ class CustomerService:
             "avg_visits": avg_visits,
             "avg_lifetime_spend": avg_lifetime_spend,
             "total_loyalty_points": total_loyalty_points,
+            "formatted_rule_display": formatted_rule,
         }
 
         # ── 7. Pagination ────────────────────────────────────────────────────
         total_pages = max(1, (total_vip + page_size - 1) // page_size) if total_vip else 1
         page = max(1, min(page, total_pages))
         start = (page - 1) * page_size
-        page_slice = vips[start: start + page_size]
+        page_slice = vip_entries[start: start + page_size]
 
         # ── 8. Build response items ──────────────────────────────────────────
         items = []
-        for c in page_slice:
-            pts = c.loyalty.current_points if c.loyalty else 0
+        for c, reason in page_slice:
+            pts = c.loyalty.current_points if c.loyalty else c.loyalty_points
             spent = float(c.total_spent or 0)
-
-            if spent >= 2000 or (c.visit_count or 0) >= 30:
-                segment = "Diamond VIP"
-            elif spent >= 1000 or (c.visit_count or 0) >= 20:
-                segment = "Gold VIP"
-            else:
-                segment = "VIP"
+            v_cnt = c.visit_count or 0
+            avg_bill = round(spent / max(1, v_cnt), 2) if (spent > 0 and v_cnt > 0) else 0.0
 
             items.append({
                 "id": c.id,
                 "name": c.name,
                 "phone": c.phone or "",
                 "email": c.email,
-                "visit_count": c.visit_count or 0,
+                "visit_count": v_cnt,
                 "total_spent": spent,
+                "avg_bill": avg_bill,
                 "loyalty_points": pts,
                 "favorite_item": fav_map.get(c.id, "No favorite yet"),
+                "vip_since_date": c.first_visit_at or c.created_at,
                 "last_visit_at": c.last_visit_at,
                 "first_visit_at": c.first_visit_at,
                 "created_at": c.created_at,
-                "segment": segment,
+                "status": "VIP",
+                "segment": "VIP",
+                "reason_qualified": reason,
             })
 
         logger.info(
@@ -1119,6 +1273,17 @@ class CustomerService:
 
         return {
             "summary": summary,
+            "settings": {
+                "id": v_set.id,
+                "business_id": v_set.business_id,
+                "min_lifetime_spend": v_set.min_lifetime_spend,
+                "min_visits": v_set.min_visits,
+                "min_avg_bill": v_set.min_avg_bill,
+                "last_visit_within_days": v_set.last_visit_within_days,
+                "rule_logic": v_set.rule_logic,
+                "is_active": v_set.is_active,
+                "formatted_rule_display": formatted_rule,
+            },
             "items": items,
             "page": page,
             "page_size": page_size,
@@ -1126,4 +1291,459 @@ class CustomerService:
             "total_pages": total_pages,
             "has_next": page < total_pages,
             "has_previous": page > 1,
+        }
+
+    def export_customers(
+        self,
+        current_user: User,
+        search: str | None = None,
+        sort: str | None = "newest",
+        filter: str | None = "all",
+        file_format: str = "csv",
+    ):
+        import csv
+        import io
+        from datetime import datetime
+        from fastapi.responses import Response
+
+        customers = self.repo.get_all_filtered_by_business(
+            business_id=current_user.business_id,
+            search=search,
+            sort=sort,
+            filter=filter,
+        )
+
+        fmt_clean = (file_format or "csv").lower().strip()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # 1. PDF Export Format
+        if fmt_clean == "pdf":
+            from app.services.pdf_service import generate_customer_export_pdf_bytes
+
+            biz_name = current_user.business.name if current_user.business else "NextVisit Merchant"
+            biz_type_name = (
+                current_user.business.business_type.name
+                if (current_user.business and current_user.business.business_type)
+                else "Business"
+            )
+            biz_address = current_user.business.address if current_user.business else None
+            biz_phone = current_user.business.phone if current_user.business else None
+            biz_email = current_user.business.email if current_user.business else None
+            logo_url = current_user.business.logo_url if current_user.business else None
+
+            customer_dicts = []
+            for c in customers:
+                is_vip = (c.total_spent >= 500 or c.visit_count >= 10 or getattr(c, "status", None) == "VIP")
+                bday = c.birth_date.strftime("%Y-%m-%d") if c.birth_date else ""
+                anniv = c.anniversary_date.strftime("%Y-%m-%d") if c.anniversary_date else ""
+                last_visit = c.last_visit_at.strftime("%Y-%m-%d %H:%M") if c.last_visit_at else "Never"
+
+                customer_dicts.append({
+                    "name": c.name,
+                    "phone": c.phone,
+                    "email": c.email or "",
+                    "gender": c.gender or "",
+                    "birth_date": bday,
+                    "anniversary_date": anniv,
+                    "is_vip": is_vip,
+                    "loyalty_points": c.loyalty_points,
+                    "visit_count": c.visit_count or 0,
+                    "total_spent": float(c.total_spent or 0.0),
+                    "last_visit_at": last_visit,
+                })
+
+            pdf_bytes = generate_customer_export_pdf_bytes(
+                business_name=biz_name,
+                business_type_name=biz_type_name,
+                business_address=biz_address,
+                business_phone=biz_phone,
+                business_email=biz_email,
+                logo_url=logo_url,
+                search_query=search,
+                filter_segment=filter,
+                sort_order=sort,
+                customers=customer_dicts,
+            )
+
+            filename = f"customers_export_{timestamp}.pdf"
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Access-Control-Expose-Headers": "Content-Disposition",
+                },
+            )
+
+        # 2. Excel (.xlsx) Export Format
+        if fmt_clean in ("excel", "xlsx"):
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            from openpyxl.utils import get_column_letter
+
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Customers"
+            ws.views.sheetView[0].showGridLines = True
+
+            biz_name = current_user.business.name if current_user.business else "NextVisit Merchant"
+            ws.merge_cells("A1:L1")
+            title_cell = ws["A1"]
+            title_cell.value = f"{biz_name} — Customer Directory & Performance Report"
+            title_cell.font = Font(name="Arial", size=14, bold=True, color="1E293B")
+            title_cell.alignment = Alignment(vertical="center")
+
+            ws.merge_cells("A2:L2")
+            meta_cell = ws["A2"]
+            meta_cell.value = f"Generated: {datetime.now().strftime('%d %b %Y, %I:%M %p')}  |  Search: '{search or 'All'}'  |  Segment: '{filter or 'All'}'  |  Sorting: '{sort or 'Newest'}'"
+            meta_cell.font = Font(name="Arial", size=9, italic=True, color="64748B")
+
+            ws.append([])
+
+            headers = [
+                "Customer Name", "Phone Number", "Email Address", "Gender",
+                "Birthday", "Anniversary", "VIP Status", "Loyalty Points",
+                "Visits", "Total Spend (₹)", "Last Visit", "Created Date"
+            ]
+            ws.append(headers)
+
+            header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+            header_font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+            for col_idx in range(1, len(headers) + 1):
+                cell = ws.cell(row=4, column=col_idx)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+
+            thin_border = Border(
+                left=Side(style='thin', color='E2E8F0'),
+                right=Side(style='thin', color='E2E8F0'),
+                top=Side(style='thin', color='E2E8F0'),
+                bottom=Side(style='thin', color='E2E8F0')
+            )
+            alt_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+
+            for r_idx, c in enumerate(customers, start=5):
+                is_vip = "Yes" if (c.total_spent >= 500 or c.visit_count >= 10 or getattr(c, "status", None) == "VIP") else "No"
+                bday = c.birth_date.strftime("%Y-%m-%d") if c.birth_date else ""
+                anniv = c.anniversary_date.strftime("%Y-%m-%d") if c.anniversary_date else ""
+                last_visit = c.last_visit_at.strftime("%Y-%m-%d %H:%M") if c.last_visit_at else "Never"
+                created_at = c.created_at.strftime("%Y-%m-%d %H:%M") if c.created_at else ""
+
+                row_vals = [
+                    c.name,
+                    c.phone,
+                    c.email or "",
+                    c.gender or "",
+                    bday,
+                    anniv,
+                    is_vip,
+                    c.loyalty_points,
+                    c.visit_count or 0,
+                    float(c.total_spent or 0.0),
+                    last_visit,
+                    created_at,
+                ]
+                ws.append(row_vals)
+
+                is_even = (r_idx % 2 == 0)
+                for col_idx in range(1, len(row_vals) + 1):
+                    cell = ws.cell(row=r_idx, column=col_idx)
+                    cell.border = thin_border
+                    cell.font = Font(name="Arial", size=9)
+                    if is_even:
+                        cell.fill = alt_fill
+                    if col_idx in (7, 8, 9):
+                        cell.alignment = Alignment(horizontal="center")
+                    elif col_idx == 10:
+                        cell.number_format = '"₹"#,##0.00'
+                        cell.alignment = Alignment(horizontal="right")
+
+            for col in ws.columns:
+                max_len = 0
+                col_letter = get_column_letter(col[0].column)
+                for cell in col:
+                    val_str = str(cell.value or "")
+                    if len(val_str) > max_len:
+                        max_len = len(val_str)
+                ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
+            excel_buf = io.BytesIO()
+            wb.save(excel_buf)
+            excel_bytes = excel_buf.getvalue()
+
+            filename = f"customers_export_{timestamp}.xlsx"
+            return Response(
+                content=excel_bytes,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Access-Control-Expose-Headers": "Content-Disposition",
+                },
+            )
+
+        # 3. CSV Export Format
+        headers = [
+            "Customer Name", "Phone", "Email", "Gender", "Birthday",
+            "Anniversary", "VIP Status", "Loyalty Points", "Visits",
+            "Total Spend", "Last Visit", "Created Date",
+        ]
+
+        rows = []
+        for c in customers:
+            is_vip = "Yes" if (c.total_spent >= 500 or c.visit_count >= 10 or getattr(c, "status", None) == "VIP") else "No"
+            bday = c.birth_date.strftime("%Y-%m-%d") if c.birth_date else ""
+            anniv = c.anniversary_date.strftime("%Y-%m-%d") if c.anniversary_date else ""
+            last_visit = c.last_visit_at.strftime("%Y-%m-%d %H:%M") if c.last_visit_at else "Never"
+            created_at = c.created_at.strftime("%Y-%m-%d %H:%M") if c.created_at else ""
+
+            rows.append([
+                c.name,
+                c.phone,
+                c.email or "",
+                c.gender or "",
+                bday,
+                anniv,
+                is_vip,
+                c.loyalty_points,
+                c.visit_count or 0,
+                f"₹{c.total_spent:.2f}",
+                last_visit,
+                created_at,
+            ])
+
+        output = io.StringIO()
+        output.write("\ufeff")
+        writer = csv.writer(output)
+        writer.writerow(headers)
+        writer.writerows(rows)
+
+        filename = f"customers_export_{timestamp}.csv"
+        csv_bytes = output.getvalue().encode("utf-8")
+
+        return Response(
+            content=csv_bytes,
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition",
+            },
+        )
+
+    def import_customers(
+        self,
+        current_user: User,
+        file: UploadFile,
+    ) -> dict:
+        import csv
+        import io
+        import re
+        from datetime import datetime, date
+
+        filename = (file.filename or "").lower()
+        content_bytes = file.file.read()
+
+        if not content_bytes or len(content_bytes) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Uploaded file is empty.",
+            )
+
+        rows = []
+        if filename.endswith(".xlsx") or filename.endswith(".xls"):
+            try:
+                import openpyxl
+                wb = openpyxl.load_workbook(filename=io.BytesIO(content_bytes), data_only=True)
+                sheet = wb.active
+                for row in sheet.iter_rows(values_only=True):
+                    if any(cell is not None and str(cell).strip() != "" for cell in row):
+                        rows.append([str(c if c is not None else "").strip() for c in row])
+            except Exception as e:
+                logger.warning("Failed to parse Excel file, falling back to CSV text parse: %s", e)
+                text_content = content_bytes.decode("utf-8-sig", errors="ignore")
+                reader = csv.reader(io.StringIO(text_content))
+                rows = list(reader)
+        else:
+            try:
+                text_content = content_bytes.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                text_content = content_bytes.decode("latin-1", errors="ignore")
+
+            reader = csv.reader(io.StringIO(text_content))
+            rows = list(reader)
+
+        if not rows or len(rows) < 2:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File contains no data rows to import.",
+            )
+
+        header_row = [str(cell).strip().lower() for cell in rows[0]]
+
+        def find_col_idx(aliases: list[str]) -> int | None:
+            for alias in aliases:
+                for idx, col in enumerate(header_row):
+                    if alias in col:
+                        return idx
+            return None
+
+        col_name = find_col_idx(["customer name", "name", "full name", "customer"])
+        col_phone = find_col_idx(["phone number", "phone", "mobile", "contact"])
+        col_email = find_col_idx(["email address", "email"])
+        col_gender = find_col_idx(["gender", "sex"])
+        col_bday = find_col_idx(["birthday", "birth date", "dob", "date of birth"])
+        col_anniv = find_col_idx(["anniversary", "anniversary date"])
+        col_notes = find_col_idx(["notes", "note", "address"])
+
+        if col_name is None or col_phone is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="CSV/Excel file must contain 'Customer Name' and 'Phone' header columns.",
+            )
+
+        existing_phones = set(
+            self.db.scalars(
+                select(Customer.phone).where(Customer.business_id == current_user.business_id)
+            ).all()
+        )
+        seen_in_batch = set()
+
+        def clean_phone_number(p_str: str) -> str | None:
+            if not p_str:
+                return None
+            digits = "".join(c for c in str(p_str) if c.isdigit())
+            if len(digits) == 12 and digits.startswith("91"):
+                digits = digits[2:]
+            elif len(digits) == 11 and digits.startswith("0"):
+                digits = digits[1:]
+            if len(digits) == 10:
+                return digits
+            return None
+
+        def parse_date_val(d_str: str) -> date | None:
+            if not d_str or not str(d_str).strip():
+                return None
+            s = str(d_str).strip()
+            for fmt in ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%Y/%m/%d"]:
+                try:
+                    return datetime.strptime(s, fmt).date()
+                except ValueError:
+                    pass
+            return None
+
+        email_regex = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+        total_rows = len(rows) - 1
+        imported_count = 0
+        skipped_count = 0
+        failed_count = 0
+        duplicate_count = 0
+        errors = []
+
+        valid_customers = []
+
+        for row_idx, row in enumerate(rows[1:], start=2):
+            if not row or not any(str(cell).strip() for cell in row):
+                skipped_count += 1
+                continue
+
+            raw_name = str(row[col_name]).strip() if col_name < len(row) else ""
+            raw_phone = str(row[col_phone]).strip() if col_phone < len(row) else ""
+            raw_email = str(row[col_email]).strip() if col_email is not None and col_email < len(row) else ""
+            raw_gender = str(row[col_gender]).strip() if col_gender is not None and col_gender < len(row) else ""
+            raw_bday = str(row[col_bday]).strip() if col_bday is not None and col_bday < len(row) else ""
+            raw_anniv = str(row[col_anniv]).strip() if col_anniv is not None and col_anniv < len(row) else ""
+            raw_notes = str(row[col_notes]).strip() if col_notes is not None and col_notes < len(row) else ""
+
+            if not raw_name:
+                failed_count += 1
+                errors.append({
+                    "row": row_idx,
+                    "field": "Customer Name",
+                    "reason": "Customer Name is required",
+                })
+                continue
+
+            if not raw_phone:
+                failed_count += 1
+                errors.append({
+                    "row": row_idx,
+                    "field": "Phone",
+                    "reason": "Phone Number is required",
+                })
+                continue
+
+            clean_phone = clean_phone_number(raw_phone)
+            if not clean_phone:
+                failed_count += 1
+                errors.append({
+                    "row": row_idx,
+                    "field": "Phone",
+                    "reason": f"Invalid phone '{raw_phone}'. Must be a valid 10-digit number.",
+                })
+                continue
+
+            if clean_phone in existing_phones or clean_phone in seen_in_batch:
+                duplicate_count += 1
+                skipped_count += 1
+                errors.append({
+                    "row": row_idx,
+                    "field": "Phone",
+                    "reason": f"Duplicate customer phone number '{clean_phone}' skipped.",
+                })
+                continue
+
+            clean_email = None
+            if raw_email:
+                if not email_regex.match(raw_email):
+                    failed_count += 1
+                    errors.append({
+                        "row": row_idx,
+                        "field": "Email",
+                        "reason": f"Invalid email format '{raw_email}'.",
+                    })
+                    continue
+                clean_email = raw_email
+
+            bday_val = parse_date_val(raw_bday)
+            anniv_val = parse_date_val(raw_anniv)
+
+            customer = Customer(
+                business_id=current_user.business_id,
+                name=raw_name,
+                phone=clean_phone,
+                email=clean_email,
+                gender=raw_gender if raw_gender in ["Male", "Female", "Other"] else (raw_gender or None),
+                birth_date=bday_val,
+                anniversary_date=anniv_val,
+                notes=raw_notes or None,
+                is_active=True,
+            )
+            valid_customers.append(customer)
+            seen_in_batch.add(clean_phone)
+            existing_phones.add(clean_phone)
+            imported_count += 1
+
+        if valid_customers:
+            self.db.bulk_save_objects(valid_customers)
+            self.db.commit()
+
+        logger.info(
+            "CUSTOMER IMPORT COMPLETED | business_id=%s total=%d imported=%d skipped=%d failed=%d duplicates=%d",
+            current_user.business_id,
+            total_rows,
+            imported_count,
+            skipped_count,
+            failed_count,
+            duplicate_count,
+        )
+
+        return {
+            "total_rows": total_rows,
+            "imported_count": imported_count,
+            "skipped_count": skipped_count,
+            "failed_count": failed_count,
+            "duplicate_count": duplicate_count,
+            "errors": errors,
+            "message": f"Successfully imported {imported_count} customers out of {total_rows} rows.",
         }

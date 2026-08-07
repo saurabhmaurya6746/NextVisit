@@ -155,7 +155,12 @@ function WorkstationsPage() {
     if (c.status === "Available") {
       setAvailableActionChair(c);
     } else {
-      const active = appointments.find((a) => a.chairId === c.id && a.status !== "cancelled");
+      const active =
+        appointments.find(
+          (a) => a.chairId === c.id && a.status !== "cancelled" && a.paymentStatus !== "paid"
+        ) ||
+        appointments.find((a) => a.chairId === c.id && a.status !== "cancelled");
+
       if (active) {
         setActiveApptSheet(active);
       } else {
@@ -170,6 +175,8 @@ function WorkstationsPage() {
       await updateSalonChairStatusApi(targetChair.id, "Occupied");
       qc.invalidateQueries({ queryKey: ["salon-chairs"] });
       qc.invalidateQueries({ queryKey: ["salon-chairs-metrics"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-analytics"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
 
       updateAppointment(apptItem.id, {
         status: "checkedin",
@@ -243,6 +250,8 @@ function WorkstationsPage() {
       toast.success("Workstation created successfully");
       qc.invalidateQueries({ queryKey: ["salon-chairs"] });
       qc.invalidateQueries({ queryKey: ["salon-chairs-metrics"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-analytics"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
       setCreateOpen(false);
       resetForm();
     } catch (err: any) {
@@ -268,6 +277,8 @@ function WorkstationsPage() {
       toast.success("Workstation updated");
       qc.invalidateQueries({ queryKey: ["salon-chairs"] });
       qc.invalidateQueries({ queryKey: ["salon-chairs-metrics"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-analytics"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
       setEditChair(null);
       resetForm();
     } catch (err: any) {
@@ -283,6 +294,8 @@ function WorkstationsPage() {
       toast.success("Workstation deleted");
       qc.invalidateQueries({ queryKey: ["salon-chairs"] });
       qc.invalidateQueries({ queryKey: ["salon-chairs-metrics"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-analytics"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
       setDeleteId(null);
     } catch (err: any) {
       toast.error(err?.message || "Failed deleting workstation");
@@ -423,7 +436,9 @@ function WorkstationsPage() {
                   {areaChairs.map((c) => {
                     const isAvailable = c.status === "Available";
                     const statusTheme = isAvailable ? STATUS_CONFIG.Available : STATUS_CONFIG.Occupied;
-                    const activeAppt = appointments.find((a) => a.chairId === c.id && a.status !== "cancelled");
+                    const activeAppt = appointments.find(
+                      (a) => a.chairId === c.id && a.status !== "cancelled" && a.paymentStatus !== "paid"
+                    );
 
                     return (
                       <Card

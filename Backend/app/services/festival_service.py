@@ -115,6 +115,9 @@ class FestivalService:
         results = []
         for fest in festivals:
             camp = campaigns_map.get(fest.id)
+            if camp and camp.is_deleted:
+                continue
+
             coupon = f"{fest.festival_name.upper().replace(' ', '')[:6]}20"
 
             if is_salon:
@@ -134,6 +137,7 @@ class FestivalService:
                         tone="Festive",
                         message=salon_msg,
                         enabled=True,
+                        is_deleted=False,
                     )
                     self.db.add(camp)
                     self.db.flush()
@@ -156,6 +160,7 @@ class FestivalService:
                         tone="Festive",
                         message=rest_msg,
                         enabled=True,
+                        is_deleted=False,
                     )
                     self.db.add(camp)
                     self.db.flush()
@@ -393,9 +398,12 @@ class FestivalService:
             raise HTTPException(status_code=404, detail="Festival campaign not found")
 
         fest = camp.festival
-        self.db.delete(camp)
+        camp.is_deleted = True
+        camp.enabled = False
 
         if fest and fest.business_id == current_user.business_id:
+            fest.is_active = False
+            self.db.delete(camp)
             self.db.delete(fest)
 
         self.db.commit()

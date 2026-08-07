@@ -146,6 +146,12 @@ class Business(BaseModel):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    vip_settings = relationship(
+        "VipSettings",
+        back_populates="business",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
     dining_areas = relationship(
         "DiningArea",
         back_populates="business",

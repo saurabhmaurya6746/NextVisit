@@ -15,6 +15,7 @@ from sqlalchemy import extract, func, or_, select, and_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.business import Business
+from app.models.business_settings import BusinessSettings
 from app.models.campaign import Campaign, CampaignLog, CampaignLogStatus
 from app.models.coupon import Coupon, CouponRedemption
 from app.models.customer import Customer
@@ -381,11 +382,17 @@ class ReportsService:
         if filter_params.status and filter_params.status.lower() != "all":
             st_upper = filter_params.status.upper()
             if st_upper == "COMPLETED":
-                order_conditions.append(Order.status.in_([OrderStatus.SERVED, OrderStatus.READY, OrderStatus.PAID]))
+                order_conditions.append(Order.status.in_([OrderStatus.SERVED, OrderStatus.READY]))
             elif st_upper == "CANCELLED":
                 order_conditions.append(Order.status == OrderStatus.CANCELLED)
             elif st_upper == "OPEN":
                 order_conditions.append(Order.status.in_([OrderStatus.OPEN, OrderStatus.PREPARING]))
+
+        # Fetch Business Settings for GST Configuration
+        b_settings = self.db.scalar(select(BusinessSettings).where(BusinessSettings.business_id == biz_id))
+        enable_gst = b_settings.enable_gst if b_settings else True
+        price_includes_gst = b_settings.price_includes_gst if b_settings else False
+        tax_pct = (b_settings.tax_percentage if b_settings else 18.0) if enable_gst else 0.0
 
         # ---------------------------------------------------------------------------
         # 2. KPI Summary Calculation
@@ -393,6 +400,7 @@ class ReportsService:
         if is_salon:
             completed_stmt = select(
                 func.count(Visit.id).label("count"),
+                func.sum(Visit.subtotal).label("sum_subtotal"),
                 func.sum(Visit.total_amount).label("total_rev"),
                 func.sum(Visit.discount).label("total_disc"),
             ).where(*visit_conditions, Visit.status == VisitStatus.COMPLETED)
@@ -401,33 +409,56 @@ class ReportsService:
             completed_count = comp_res.count or 0
             total_rev = float(comp_res.total_rev or 0.0)
             total_disc = float(comp_res.total_disc or 0.0)
-            
+            raw_subtotal = float(comp_res.sum_subtotal or 0.0)
+            if raw_subtotal <= 0 and total_rev > 0:
+                raw_subtotal = total_rev + total_disc
+
+            gross_sales = round(raw_subtotal, 2)
+            discounts = round(total_disc, 2)
+            taxable_sales = round(max(0.0, gross_sales - discounts), 2)
+
+            if enable_gst and tax_pct > 0:
+                if price_includes_gst:
+                    taxable_sales = round(gross_sales - discounts / (1.0 + (tax_pct / 100.0)), 2)
+                    gst_calc = round(taxable_sales * (tax_pct / 100.0), 2)
+                else:
+                    gst_calc = round(taxable_sales * (tax_pct / 100.0), 2)
+            else:
+                gst_calc = 0.0
+
             cancelled_stmt = select(func.count(Visit.id)).where(*visit_conditions, Visit.status == VisitStatus.CANCELLED)
             cancelled_count = self.db.scalar(cancelled_stmt) or 0
             
             total_appts_or_orders = completed_count + cancelled_count
-            net_rev = total_rev - total_disc
+            net_rev = round(taxable_sales + (gst_calc if not price_includes_gst else 0.0), 2)
             avg_ticket = round(total_rev / completed_count, 2) if completed_count else 0.0
-            gst_calc = round(total_rev * 0.05, 2)
         else:
             completed_stmt = select(
                 func.count(Order.id).label("count"),
+                func.sum(Order.subtotal).label("sum_subtotal"),
                 func.sum(Order.total_amount).label("total_rev"),
                 func.sum(Order.discount_amount).label("total_disc"),
                 func.sum(Order.tax_amount).label("total_tax"),
-            ).where(*order_conditions, Order.status.in_([OrderStatus.SERVED, OrderStatus.READY, OrderStatus.PAID]))
+            ).where(*order_conditions, Order.status.in_([OrderStatus.SERVED, OrderStatus.READY]))
             comp_res = self.db.execute(completed_stmt).first()
 
             completed_count = comp_res.count or 0
             total_rev = float(comp_res.total_rev or 0.0)
             total_disc = float(comp_res.total_disc or 0.0)
-            gst_calc = float(comp_res.total_tax or 0.0)
+            raw_subtotal = float(comp_res.sum_subtotal or 0.0)
+            if raw_subtotal <= 0 and total_rev > 0:
+                raw_subtotal = total_rev + total_disc
+
+            gross_sales = round(raw_subtotal, 2)
+            discounts = round(total_disc, 2)
+            taxable_sales = round(max(0.0, gross_sales - discounts), 2)
+            gst_calc = float(comp_res.total_tax or 0.0) if enable_gst else 0.0
 
             cancelled_stmt = select(func.count(Order.id)).where(*order_conditions, Order.status == OrderStatus.CANCELLED)
             cancelled_count = self.db.scalar(cancelled_stmt) or 0
 
             total_appts_or_orders = completed_count + cancelled_count
-            net_rev = total_rev - total_disc
+            net_rev = round(taxable_sales + (gst_calc if not price_includes_gst else 0.0), 2)
             avg_ticket = round(total_rev / completed_count, 2) if completed_count else 0.0
 
         num_days = max(1, (end_dt - start_dt).days + 1)
@@ -466,7 +497,7 @@ class ReportsService:
             )
         else:
             completed_order_amounts = self.db.scalars(
-                select(Order.total_amount).where(*order_conditions, Order.status.in_([OrderStatus.SERVED, OrderStatus.READY, OrderStatus.PAID]))
+                select(Order.total_amount).where(*order_conditions, Order.status.in_([OrderStatus.SERVED, OrderStatus.READY]))
             ).all()
             total_points_earned = sum(
                 int((float(o_amt or 0.0) / amt_req) * pts_per_amt)
@@ -485,6 +516,10 @@ class ReportsService:
 
         kpi_summary = ReportsKpiSummary(
             total_revenue=round(total_rev, 2),
+            gross_sales=round(gross_sales, 2),
+            discounts=round(discounts, 2),
+            taxable_sales=round(taxable_sales, 2),
+            gst_collected=round(gst_calc, 2),
             net_revenue=round(net_rev, 2),
             total_appointments_or_orders=total_appts_or_orders,
             completed_visits=completed_count,
@@ -498,7 +533,6 @@ class ReportsService:
             total_loyalty_points_earned=int(total_points_earned),
             coupons_redeemed=coupons_redeemed_count,
             campaign_revenue=round(float(campaign_rev or 0.0), 2),
-            gst_collected=gst_calc,
             discount_given=round(total_disc, 2),
         )
 
@@ -557,7 +591,7 @@ class ReportsService:
                         Order.business_id == biz_id,
                         Order.created_at >= d_start,
                         Order.created_at <= d_end,
-                        Order.status.in_([OrderStatus.SERVED, OrderStatus.READY, OrderStatus.PAID]),
+                        Order.status.in_([OrderStatus.SERVED, OrderStatus.READY]),
                     )
                 ).first()
 
@@ -610,7 +644,7 @@ class ReportsService:
                     func.sum(Order.total_amount).label("rev"),
                     func.count(Order.id).label("cnt"),
                 )
-                .where(*order_conditions, Order.status.in_([OrderStatus.SERVED, OrderStatus.READY, OrderStatus.PAID]))
+                .where(*order_conditions, Order.status.in_([OrderStatus.SERVED, OrderStatus.READY]))
                 .group_by(Order.order_source)
             ).all()
             for r in pm_rows:

@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, Users, CreditCard, Settings, LifeBuoy, LogOut, ClipboardCheck, Activity } from "lucide-react";
+import { LayoutDashboard, Users, CreditCard, Settings, LifeBuoy, LogOut, ClipboardCheck, Activity, Coins } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter } from "@/components/ui/sidebar";
 import { BrandLogo } from "@/components/brand-logo";
 
@@ -9,6 +9,7 @@ const items = [
   { title: "Approvals", url: "/admin/approvals", icon: ClipboardCheck },
   { title: "Monitoring", url: "/admin/monitoring", icon: Activity },
   { title: "Subscriptions", url: "/admin/subscriptions", icon: CreditCard },
+  { title: "Credit Management", url: "/admin/credits", icon: Coins },
   { title: "System Settings", url: "/admin/settings", icon: Settings },
 ];
 
