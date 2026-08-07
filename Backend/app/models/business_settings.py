@@ -84,6 +84,7 @@ class BusinessSettings(BaseModel):
     # Payment QR & Branding
     payment_qr_image: Mapped[str | None] = mapped_column(String(500), nullable=True)
     payment_upi_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    payment_payee_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     logo: Mapped[str | None] = mapped_column(String(500), nullable=True)
     cover_image: Mapped[str | None] = mapped_column(String(500), nullable=True)
     default_discount: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)

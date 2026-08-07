@@ -11,6 +11,7 @@ class PlatformSettingsResponse(BaseModel):
     platform_name: str
     logo_url: str | None = None
     support_email: EmailStr
+    support_phone: str | None = None
     default_plan: str
     trial_days: int
     default_currency: str
@@ -25,6 +26,7 @@ class PlatformSettingsUpdate(BaseModel):
     platform_name: str | None = Field(default=None, min_length=1, max_length=150)
     logo_url: str | None = Field(default=None, max_length=500)
     support_email: EmailStr | None = None
+    support_phone: str | None = Field(default=None, max_length=50)
     default_plan: str | None = Field(default=None, max_length=50)
     trial_days: int | None = Field(default=None, ge=0, le=365)
     default_currency: str | None = Field(default=None, min_length=1, max_length=20)

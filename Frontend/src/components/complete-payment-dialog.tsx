@@ -16,8 +16,9 @@ import { awardPointsForOrder, useLoyaltySettings } from "@/lib/loyalty-store";
 import { openWhatsApp } from "@/lib/celebration-utils";
 import { logWhatsApp } from "@/lib/whatsapp-history";
 import { Sparkles, MessageCircle } from "lucide-react";
-import { PaymentCouponSection } from "@/components/payment-coupon-section";
 import { redeemCouponApi, CouponValidateResponse } from "@/lib/coupons-api";
+import { useQuery } from "@tanstack/react-query";
+import { getBusinessSettingsApi } from "@/lib/business-settings-api";
 
 interface Props {
   order: Order;
@@ -28,6 +29,11 @@ interface Props {
 
 export function CompletePaymentDialog({ order, open, onOpenChange, onCompleted }: Props) {
   const profile = useProfile("restaurant");
+  const { data: bizSettings } = useQuery({
+    queryKey: ["business-settings"],
+    queryFn: getBusinessSettingsApi,
+    staleTime: 5000,
+  });
   const loyalty = useLoyaltySettings();
   void loyalty;
   const [step, setStep] = useState(0);
@@ -255,24 +261,46 @@ export function CompletePaymentDialog({ order, open, onOpenChange, onCompleted }
                 </div>
               </div>
               <div className="rounded-2xl border p-4 text-center">
-                {payment === "upi" ? (
-                  profile.upiQr ? (
-                    <img src={profile.upiQr} alt="UPI QR" className="mx-auto h-52 w-52 rounded-xl object-contain" />
-                  ) : (
-                    <div className="mx-auto grid h-52 w-52 place-items-center rounded-xl bg-muted/60">
-                      <div className="text-center">
-                        <QrCode className="mx-auto h-16 w-16 text-primary" />
-                        <p className="mt-2 text-xs text-muted-foreground">Add UPI QR in Settings to display it here.</p>
-                        {profile.upiId && <p className="mt-1 text-[11px] font-mono">{profile.upiId}</p>}
+                {payment === "upi" ? (() => {
+                  const upiId = (bizSettings?.payment_upi_id || "").trim();
+                  const payeeName = (bizSettings?.payment_payee_name || (bizSettings as any)?.payment_payee_name || "").trim();
+                  const payableTotal = finalTotal || order.total || 0;
+                  const formattedPayable = payableTotal.toFixed(2);
+
+                  if (upiId && payeeName) {
+                    const rawUpiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(payeeName)}&am=${formattedPayable}&cu=INR`;
+                    const dynamicQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&margin=8&data=${encodeURIComponent(rawUpiUri)}`;
+                    return (
+                      <div className="space-y-2 text-center">
+                        <p className="text-xs font-bold text-foreground">Scan QR Code to Pay</p>
+                        <p className="text-[11px] text-muted-foreground font-semibold">{payeeName}</p>
+                        <img src={dynamicQrUrl} alt={`Dynamic Payment QR for ${payeeName}`} className="mx-auto h-48 w-48 rounded-xl border bg-white p-2 shadow-sm object-contain" />
+                        <div className="flex flex-wrap items-center justify-center gap-1.5 pt-1">
+                          <span className="text-[11px] font-mono font-semibold text-primary bg-primary/10 px-2.5 py-0.5 rounded-full">
+                            UPI: {upiId}
+                          </span>
+                          <span className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full">
+                            ₹{formattedPayable}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  )
-                ) : (
+                    );
+                  } else {
+                    return (
+                      <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-700 dark:text-amber-300 text-xs space-y-1 text-center">
+                        <p className="font-semibold text-xs">No Payment QR Configured</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Please enter your UPI ID & Payee Name in Setup ➔ Payment Configuration.
+                        </p>
+                      </div>
+                    );
+                  }
+                })() : (
                   <div className="mx-auto grid h-52 w-52 place-items-center rounded-xl bg-muted/40 text-muted-foreground">
                     Confirm payment received
                   </div>
                 )}
-                <p className="mt-3 text-sm font-medium">Amount due · {fmt(order.total)}</p>
+                <p className="mt-3 text-sm font-medium">Amount due · {fmt(finalTotal)}</p>
               </div>
               <div className="md:col-span-2 flex items-center justify-between">
                 <Button variant="ghost" onClick={() => setStep(0)}>Back</Button>

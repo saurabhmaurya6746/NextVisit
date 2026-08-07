@@ -36,6 +36,20 @@ def get_platform_settings(
     return PlatformSettingsService(db).get_or_create_settings()
 
 
+@router.get(
+    "/public",
+    response_model=PlatformSettingsResponse,
+    summary="Get public platform settings",
+)
+def get_public_platform_settings(
+    db: Session = Depends(get_db),
+):
+    """
+    Returns public platform settings (support email, support phone, etc.) for merchants.
+    """
+    return PlatformSettingsService(db).get_or_create_settings()
+
+
 @router.put(
     "",
     response_model=PlatformSettingsResponse,

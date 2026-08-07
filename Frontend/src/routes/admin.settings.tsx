@@ -99,6 +99,12 @@ function SettingsPage() {
               value={settings.support_email}
               onChange={(v) => setSettings({ ...settings, support_email: v })}
             />
+            <Field
+              label="Support Phone"
+              value={settings.support_phone || ""}
+              onChange={(v) => setSettings({ ...settings, support_phone: v })}
+              placeholder="+91 98765 43210"
+            />
           </CardContent>
         </Card>
 

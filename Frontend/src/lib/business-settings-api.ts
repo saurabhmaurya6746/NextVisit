@@ -80,6 +80,7 @@ export interface BusinessSettings {
   // Branding & Payments
   payment_qr_image: string | null;
   payment_upi_id: string | null;
+  payment_payee_name: string | null;
   logo: string | null;
   cover_image: string | null;
   default_discount: number;

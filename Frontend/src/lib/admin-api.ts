@@ -478,6 +478,7 @@ export interface PlatformSettingsModel {
   platform_name: string;
   logo_url: string | null;
   support_email: string;
+  support_phone: string | null;
   default_plan: string;
   trial_days: number;
   default_currency: string;
@@ -493,6 +494,15 @@ export async function getPlatformSettingsApi(): Promise<PlatformSettingsModel> {
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
     throw new Error(errData.detail || "Failed to fetch platform settings");
+  }
+  return await res.json();
+}
+
+export async function getPublicPlatformSettingsApi(): Promise<PlatformSettingsModel> {
+  const res = await apiFetch("/api/v1/admin/settings/public");
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to fetch public platform settings");
   }
   return await res.json();
 }

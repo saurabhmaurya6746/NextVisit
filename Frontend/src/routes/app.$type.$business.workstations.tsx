@@ -94,6 +94,27 @@ function WorkstationTypeIcon({ type }: { type: string }) {
   }
 }
 
+export function getNextUniqueChairName(chairs: { chair_name?: string }[], prefix = "Chair"): string {
+  const existingNames = new Set(chairs.map((c) => (c.chair_name || "").toLowerCase().trim()));
+  let maxDigit = 0;
+  for (const c of chairs) {
+    const match = (c.chair_name || "").match(/(\d+)/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxDigit) maxDigit = num;
+    }
+  }
+  let candidateNum = Math.max(chairs.length + 1, maxDigit + 1);
+  while (
+    existingNames.has(`${prefix.toLowerCase()}${candidateNum}`) ||
+    existingNames.has(`${prefix.toLowerCase()} ${candidateNum}`) ||
+    existingNames.has(`${prefix.toLowerCase()}-${candidateNum}`)
+  ) {
+    candidateNum++;
+  }
+  return `${prefix}${candidateNum}`;
+}
+
 function WorkstationsPage() {
   const qc = useQueryClient();
 
@@ -192,12 +213,17 @@ function WorkstationsPage() {
     }
   }
 
-  // Reset Form
-  function resetForm() {
-    setChairName("");
+  // Reset Form with auto-generated unique default name across the salon
+  function resetForm(targetAreaId?: string) {
+    if (targetAreaId) {
+      setAreaId(targetAreaId);
+    } else if (serviceAreas.length > 0) {
+      setAreaId(serviceAreas[0].id);
+    }
+    const defaultName = getNextUniqueChairName(chairs, "Chair");
+    setChairName(defaultName);
     setChairNumber("");
     setWorkstationType("Chair");
-    setAreaId("");
     setIsActive(true);
   }
 
@@ -334,7 +360,6 @@ function WorkstationsPage() {
               className="rounded-full gradient-brand text-primary-foreground text-xs"
               onClick={() => {
                 resetForm();
-                if (serviceAreas.length > 0) setAreaId(serviceAreas[0].id);
                 setCreateOpen(true);
               }}
             >
@@ -418,8 +443,7 @@ function WorkstationsPage() {
                   size="sm"
                   className="rounded-full text-xs text-primary h-7"
                   onClick={() => {
-                    resetForm();
-                    setAreaId(area.id);
+                    resetForm(area.id);
                     setCreateOpen(true);
                   }}
                 >

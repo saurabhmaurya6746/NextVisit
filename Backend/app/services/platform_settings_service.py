@@ -24,6 +24,7 @@ class PlatformSettingsService:
             settings = PlatformSettings(
                 platform_name="NextVisit",
                 support_email="support@nextvisit.com",
+                support_phone="+91 98765 43210",
                 default_plan="STARTER",
                 trial_days=14,
                 default_currency="INR",

@@ -51,12 +51,11 @@ import {
   Users,
   Leaf,
   RefreshCw,
+  Smartphone,
 } from "lucide-react";
 import {
   getRestaurantSetupSettingsApi,
   saveRestaurantSetupSettingsApi,
-  uploadPaymentQRApi,
-  deletePaymentQRApi,
   getBusinessSettingsApi,
   updateBusinessSettingsApi,
   type RestaurantSetupSettings,
@@ -102,6 +101,7 @@ import {
   type SalonServiceArea,
   type SalonChair,
 } from "@/lib/salon-chairs-api";
+import { getNextUniqueChairName } from "./app.$type.$business.workstations";
 import {
   listSalonServiceCategoriesApi,
   createSalonServiceCategoryApi,
@@ -111,6 +111,7 @@ import {
   type SalonServiceCategory,
 } from "@/lib/salon-categories-api";
 import { Scissors } from "lucide-react";
+import { TestPaymentDialog } from "@/components/test-payment-dialog";
 
 export const Route = createFileRoute("/app/$type/$business/setup")({
   component: RestaurantSetupPage,
@@ -221,7 +222,7 @@ function RestaurantSetupPage() {
             </Card>
           ) : (
             <BusinessSettingsStep
-              initialData={setupSettings!}
+              initialData={setupSettings}
               onSuccess={() => {
                 qc.invalidateQueries({ queryKey: ["setup", "business-settings"] });
                 qc.invalidateQueries({ queryKey: ["business", "profile"] });
@@ -257,6 +258,28 @@ function RestaurantSetupPage() {
   );
 }
 
+const defaultSetupSettings: RestaurantSetupSettings = {
+  name: "",
+  phone: "",
+  email: "",
+  address: "",
+  city: "",
+  state: "",
+  country: "India",
+  currency: "INR",
+  timezone: "Asia/Kolkata",
+  gst_number: "",
+  opening_time: "09:00",
+  closing_time: "21:00",
+  enable_qr_ordering: true,
+  enable_staff_ordering: true,
+  enable_parcel: true,
+  enable_takeaway: true,
+  tax_percentage: 18,
+  invoice_prefix: "INV-",
+  is_saved: false,
+};
+
 // =============================================================================
 // STEP 1: BUSINESS SETTINGS COMPONENT
 // =============================================================================
@@ -264,16 +287,21 @@ function BusinessSettingsStep({
   initialData,
   onSuccess,
 }: {
-  initialData: RestaurantSetupSettings;
+  initialData?: RestaurantSetupSettings;
   onSuccess: () => void;
 }) {
   const routerParams = useParams({ strict: false }) as Record<string, string>;
   const isSalon = routerParams?.type === "salon";
-  const [formData, setFormData] = useState<RestaurantSetupSettings>(initialData);
+  const [formData, setFormData] = useState<RestaurantSetupSettings>(() => ({
+    ...defaultSetupSettings,
+    ...(initialData || {}),
+  }));
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    setFormData(initialData);
+    if (initialData) {
+      setFormData({ ...defaultSetupSettings, ...initialData });
+    }
   }, [initialData]);
 
   const saveMutation = useMutation({
@@ -289,13 +317,13 @@ function BusinessSettingsStep({
 
   const validate = () => {
     const errs: Record<string, string> = {};
-    if (!formData.name.trim()) errs.name = isSalon ? "Salon Name is required." : "Restaurant Name is required.";
-    if (!formData.phone.trim()) errs.phone = "Phone Number is required.";
-    if (!formData.email.trim()) errs.email = "Email Address is required.";
-    if (!formData.address.trim()) errs.address = "Address is required.";
-    if (!formData.country.trim()) errs.country = "Country is required.";
-    if (!formData.currency.trim()) errs.currency = "Currency is required.";
-    if (!formData.timezone.trim()) errs.timezone = "Timezone is required.";
+    if (!(formData?.name || "").trim()) errs.name = isSalon ? "Salon Name is required." : "Restaurant Name is required.";
+    if (!(formData?.phone || "").trim()) errs.phone = "Phone Number is required.";
+    if (!(formData?.email || "").trim()) errs.email = "Email Address is required.";
+    if (!(formData?.address || "").trim()) errs.address = "Address is required.";
+    if (!(formData?.country || "").trim()) errs.country = "Country is required.";
+    if (!(formData?.currency || "").trim()) errs.currency = "Currency is required.";
+    if (!(formData?.timezone || "").trim()) errs.timezone = "Timezone is required.";
 
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -2260,24 +2288,22 @@ function MenuStep() {
 // =============================================================================
 // STEP 5: PAYMENT QR COMPONENT
 // =============================================================================
-// =============================================================================
-// STEP 5: PAYMENT QR COMPONENT
-// =============================================================================
 function PaymentQrStep() {
   const qc = useQueryClient();
   const [upiId, setUpiId] = useState("");
-  const [uploading, setUploading] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const [payeeName, setPayeeName] = useState("");
+  const [testModalOpen, setTestModalOpen] = useState(false);
 
-  const { data: settings } = useQuery({
+  const { data: settings, isLoading } = useQuery({
     queryKey: ["business-settings"],
     queryFn: getBusinessSettingsApi,
+    staleTime: 5000,
   });
 
   useEffect(() => {
     if (settings) {
       setUpiId(settings.payment_upi_id || "");
+      setPayeeName(settings.payment_payee_name || (settings as any).payment_payee_name || "");
     }
   }, [settings]);
 
@@ -2285,248 +2311,119 @@ function PaymentQrStep() {
     mutationFn: updateBusinessSettingsApi,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["business-settings"] });
-      toast.success("UPI ID saved successfully!");
+      toast.success("Payment configuration saved successfully!");
     },
-    onError: (err: Error) => toast.error(err.message || "Failed to save UPI ID."),
+    onError: (err: Error) => toast.error(err.message || "Failed to save payment configuration."),
   });
 
-  const validateFile = (file: File): boolean => {
-    const allowedExts = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
-    const ext = file.name.split(".").pop()?.toLowerCase();
+  const handleSavePaymentConfig = () => {
+    const trimmedPayee = (payeeName || "").trim();
+    const trimmedUpi = (upiId || "").trim();
 
-    if (!allowedExts.includes(file.type) && !["png", "jpg", "jpeg", "webp"].includes(ext || "")) {
-      toast.error("Invalid file format. Only PNG, JPG, and JPEG files are allowed.");
-      return false;
-    }
-
-    const maxSizeMB = 5;
-    if (file.size > maxSizeMB * 1024 * 1024) {
-      toast.error(`File size exceeds maximum limit of ${maxSizeMB}MB.`);
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleQrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!validateFile(file)) {
-      e.target.value = "";
+    if (!trimmedPayee) {
+      toast.error("Payee Name is required.");
       return;
     }
 
-    const isReplace = Boolean(settings?.payment_qr_image);
-    setUploading(true);
-
-    try {
-      await uploadPaymentQRApi(file);
-      qc.invalidateQueries({ queryKey: ["business-settings"] });
-      toast.success(isReplace ? "Payment QR image replaced successfully!" : "Payment QR image uploaded successfully!");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to upload Payment QR image.");
-    } finally {
-      setUploading(false);
-      e.target.value = "";
+    if (!trimmedUpi) {
+      toast.error("UPI ID is required.");
+      return;
     }
+
+    if (!trimmedUpi.includes("@") || trimmedUpi.startsWith("@") || trimmedUpi.endsWith("@")) {
+      toast.error("Please enter a valid UPI ID (e.g. merchant@upi).");
+      return;
+    }
+
+    saveUpiMut.mutate({
+      payment_payee_name: trimmedPayee,
+      payment_upi_id: trimmedUpi,
+    } as any);
   };
 
-  const handleDeleteQr = async () => {
-    setDeleting(true);
-    try {
-      await deletePaymentQRApi();
-      qc.invalidateQueries({ queryKey: ["business-settings"] });
-      toast.success("Payment QR deleted successfully.");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to delete Payment QR image.");
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  const qrUrl = settings?.payment_qr_image
-    ? settings.payment_qr_image.startsWith("http")
-      ? settings.payment_qr_image
-      : `${API_BASE_URL}${settings.payment_qr_image.startsWith("/") ? "" : "/"}${settings.payment_qr_image}`
-    : null;
+  if (isLoading) {
+    return (
+      <Card className="rounded-2xl shadow-sm p-6">
+        <SkeletonRows rows={4} cols={2} />
+      </Card>
+    );
+  }
 
   return (
     <Card className="rounded-2xl shadow-sm">
       <CardHeader className="border-b pb-4">
         <CardTitle className="font-display text-lg flex items-center gap-2">
-          <QrCode className="h-5 w-5 text-primary" /> Step 5: Payment QR Code
+          <QrCode className="h-5 w-5 text-primary" /> Step 5: Payment Configuration
         </CardTitle>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Upload your restaurant's official UPI Payment QR Code. This QR image will be displayed to staff & customers for manual payment collection.
+          These details are used to generate a secure payment QR automatically during payment collection.
         </p>
       </CardHeader>
 
       <CardContent className="space-y-6 pt-6">
-        {/* UPI ID SECTION */}
-        <div className="rounded-xl border p-4 bg-muted/20 space-y-2">
-          <Label className="text-xs font-semibold">Store UPI ID (Optional)</Label>
-          <p className="text-[11px] text-muted-foreground">
-            Enter your primary UPI ID (VPA) for manual verification (e.g. restaurant@upi, 9876543210@paytm).
-          </p>
-          <div className="flex gap-2 mt-2 sm:max-w-md">
-            <Input
-              value={upiId}
-              onChange={(e) => setUpiId(e.target.value)}
-              placeholder="e.g. myrestaurant@upi"
-              className="text-xs h-9 rounded-xl"
-            />
+        <div className="rounded-xl border p-4 bg-muted/20 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Payee Name *</Label>
+              <p className="text-[11px] text-muted-foreground">
+                Enter the account holder / merchant name exactly as registered with the UPI account.
+              </p>
+              <Input
+                value={payeeName}
+                onChange={(e) => setPayeeName(e.target.value)}
+                placeholder="e.g. Saurabh Maurya"
+                className="text-xs h-9 rounded-xl mt-1"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">UPI ID *</Label>
+              <p className="text-[11px] text-muted-foreground">
+                Enter your primary UPI ID (VPA) for receiving payments.
+              </p>
+              <Input
+                value={upiId}
+                onChange={(e) => setUpiId(e.target.value)}
+                placeholder="e.g. saurabhmauryajnp28-1@oksbi"
+                className="text-xs h-9 rounded-xl mt-1"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-2.5 pt-1">
             <Button
-              className="rounded-full gradient-brand text-primary-foreground shrink-0 shadow-sm h-9 px-4 text-xs"
-              onClick={() => saveUpiMut.mutate({ payment_upi_id: upiId.trim() || undefined })}
+              variant="outline"
+              className="rounded-full border-primary/30 text-primary hover:bg-primary/10 h-9 px-5 text-xs font-semibold"
+              onClick={() => {
+                if (!payeeName.trim()) {
+                  toast.error("Please enter Payee Name before testing.");
+                  return;
+                }
+                if (!upiId.trim() || !upiId.includes("@")) {
+                  toast.error("Please enter a valid UPI ID before testing.");
+                  return;
+                }
+                setTestModalOpen(true);
+              }}
+            >
+              <Smartphone className="mr-1.5 h-3.5 w-3.5" /> Test Payment
+            </Button>
+            <Button
+              className="rounded-full gradient-brand text-primary-foreground shrink-0 shadow-sm h-9 px-6 text-xs font-semibold"
+              onClick={handleSavePaymentConfig}
               disabled={saveUpiMut.isPending}
             >
-              {saveUpiMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save UPI"}
+              {saveUpiMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save Payment Configuration"}
             </Button>
           </div>
         </div>
 
-        {/* PAYMENT QR UPLOAD & PREVIEW SECTION */}
-        <div className="space-y-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Payment QR Code Image
-          </h4>
-
-          {qrUrl ? (
-            /* PREVIEW CARD */
-            <div className="rounded-2xl border p-5 bg-card flex flex-col sm:flex-row items-center gap-6">
-              {/* Image Preview Box */}
-              <div
-                className="relative h-44 w-44 rounded-xl border p-2 bg-white shadow-sm flex items-center justify-center cursor-pointer group"
-                onClick={() => setPreviewOpen(true)}
-                title="Click to view full preview"
-              >
-                <img
-                  src={qrUrl}
-                  alt="Payment QR Code"
-                  className="h-full w-full object-contain rounded-lg transition-transform group-hover:scale-105"
-                />
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center text-white text-xs font-medium">
-                  Click to Zoom
-                </div>
-              </div>
-
-              {/* QR Details & Actions */}
-              <div className="space-y-3 flex-1 text-center sm:text-left">
-                <div>
-                  <div className="flex items-center justify-center sm:justify-start gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                    <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
-                      Payment QR Active
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Your Payment QR code image is saved and configured for this business.
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 pt-1">
-                  {/* Replace Button */}
-                  <Label
-                    htmlFor="qr-replace-upload"
-                    className="cursor-pointer inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium border bg-card hover:bg-muted shadow-sm transition-all"
-                  >
-                    {uploading ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-3.5 w-3.5 text-primary" />
-                    )}
-                    <span>Replace QR</span>
-                  </Label>
-                  <input
-                    id="qr-replace-upload"
-                    type="file"
-                    accept="image/png, image/jpeg, image/jpg, image/webp"
-                    className="hidden"
-                    onChange={handleQrUpload}
-                    disabled={uploading || deleting}
-                  />
-
-                  {/* Delete Button */}
-                  <Button
-                    variant="outline"
-                    className="rounded-full text-xs text-destructive hover:bg-destructive/10 border-destructive/30 px-4 h-9"
-                    onClick={handleDeleteQr}
-                    disabled={deleting || uploading}
-                  >
-                    {deleting ? (
-                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                    )}
-                    Delete QR
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* UPLOAD DROP ZONE */
-            <div className="rounded-2xl border-2 border-dashed p-8 text-center bg-muted/10 hover:bg-muted/20 transition-all">
-              <div className="mx-auto h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
-                <QrCode className="h-6 w-6 text-primary" />
-              </div>
-              <h4 className="text-sm font-semibold">Upload Payment QR Code</h4>
-              <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
-                Supported file formats: <strong>PNG, JPG, JPEG</strong> (Max size: <strong>5 MB</strong>).
-              </p>
-
-              <div className="mt-5">
-                <Label
-                  htmlFor="qr-file-upload"
-                  className="cursor-pointer inline-flex items-center gap-2 rounded-full gradient-brand text-primary-foreground px-6 py-2.5 text-xs font-medium shadow-sm hover:opacity-95 transition-all"
-                >
-                  {uploading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" /> Uploading…
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="h-4 w-4" /> Select QR Image File
-                    </>
-                  )}
-                </Label>
-                <input
-                  id="qr-file-upload"
-                  type="file"
-                  accept="image/png, image/jpeg, image/jpg, image/webp"
-                  className="hidden"
-                  onChange={handleQrUpload}
-                  disabled={uploading}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* FULL IMAGE ZOOM DIALOG */}
-        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-          <DialogContent className="sm:max-w-md rounded-2xl p-6 text-center">
-            <DialogHeader>
-              <DialogTitle className="font-display text-lg">Payment QR Code Preview</DialogTitle>
-            </DialogHeader>
-
-            {qrUrl && (
-              <div className="py-2 flex justify-center">
-                <img
-                  src={qrUrl}
-                  alt="Full Payment QR Code"
-                  className="max-h-80 w-auto object-contain rounded-xl border p-2 bg-white"
-                />
-              </div>
-            )}
-
-            <DialogFooter className="sm:justify-center">
-              <Button variant="outline" className="rounded-full px-6" onClick={() => setPreviewOpen(false)}>
-                Close Preview
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <TestPaymentDialog
+          open={testModalOpen}
+          onOpenChange={setTestModalOpen}
+          payeeName={payeeName}
+          upiId={upiId}
+        />
       </CardContent>
     </Card>
   );
@@ -2775,7 +2672,7 @@ function SalonChairsStep() {
   const resetForm = () => {
     setEditingChair(null);
     setServiceAreaId(areas[0]?.id || "");
-    setChairName("");
+    setChairName(getNextUniqueChairName(chairs, "Chair"));
     setChairNumber("");
     setWorkstationType("Chair");
     setStatusVal("Available");
@@ -2783,8 +2680,13 @@ function SalonChairsStep() {
   };
 
   const openNew = () => {
-    resetForm();
+    setEditingChair(null);
     if (areas.length > 0) setServiceAreaId(areas[0].id);
+    setChairName(getNextUniqueChairName(chairs, "Chair"));
+    setChairNumber("");
+    setWorkstationType("Chair");
+    setStatusVal("Available");
+    setIsActive(true);
     setDialogOpen(true);
   };
 

@@ -55,7 +55,7 @@ function getDisplayStatus(a: Appointment) {
 }
 
 import { useEffect } from "react";
-import { Download, MessageCircle, Check, Plus, Search } from "lucide-react";
+import { Download, MessageCircle, Check, Plus, Search, QrCode } from "lucide-react";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -1078,42 +1078,79 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
                 </Select>
               </div>
 
-              {/* DYNAMIC SALON PAYMENT QR CODE OR WARNING */}
-              {payment === "upi" && (
-                <div className="text-center border p-4 rounded-2xl bg-muted/20 space-y-3">
-                  <div className="space-y-0.5">
-                    <p className="text-xs font-bold text-foreground">Scan Salon QR to Pay</p>
-                    <p className="text-[11px] text-muted-foreground font-semibold">{bizName}</p>
-                  </div>
-                  {paymentQrUrl ? (
-                    <div className="space-y-2">
-                      <img
-                        src={paymentQrUrl}
-                        alt="Salon Payment QR"
-                        className="h-48 w-48 object-contain mx-auto rounded-xl border bg-white p-2 shadow-xs"
-                        onError={(e) => {
-                          console.error("Failed loading QR image URL:", paymentQrUrl);
-                        }}
-                      />
-                      {businessSettings?.payment_upi_id && (
-                        <p className="text-xs font-mono font-semibold text-primary bg-primary/10 px-3 py-1 rounded-full inline-block">
-                          UPI ID: {businessSettings.payment_upi_id}
+              {/* DYNAMIC SALON PAYMENT QR CODE OR FALLBACK UPLOADED QR / WARNING */}
+              {payment === "upi" && (() => {
+                const upiId = (businessSettings?.payment_upi_id || (businessSettings as any)?.payment_upi_id || "").trim();
+                const payeeName = (businessSettings?.payment_payee_name || (businessSettings as any)?.payment_payee_name || "").trim();
+                const payableTotal = Math.max(0, grandTotal - advancePaid);
+                const formattedPayable = payableTotal.toFixed(2);
+
+                if (upiId && payeeName) {
+                  // CASE 1: Both UPI ID and Payee Name available -> Dynamic UPI QR generated at runtime using saved Payee Name
+                  const rawUpiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(payeeName)}&am=${formattedPayable}&cu=INR`;
+                  const dynamicQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&margin=8&data=${encodeURIComponent(rawUpiUri)}`;
+
+                  return (
+                    <div className="text-center border p-4 rounded-2xl bg-muted/20 space-y-3">
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-bold text-foreground flex items-center justify-center gap-1.5">
+                          <QrCode className="h-4 w-4 text-primary" /> Dynamic UPI Payment QR
                         </p>
-                      )}
+                        <p className="text-[11px] text-muted-foreground font-semibold">Payee: {payeeName}</p>
+                      </div>
+                      <div className="space-y-2">
+                        <img
+                          src={dynamicQrUrl}
+                          alt={`Dynamic UPI Payment QR for ${payeeName}`}
+                          className="h-48 w-48 object-contain mx-auto rounded-xl border bg-white p-2 shadow-sm"
+                        />
+                        <div className="flex flex-wrap items-center justify-center gap-2">
+                          <span className="text-xs font-mono font-semibold text-primary bg-primary/10 px-3 py-1 rounded-full">
+                            UPI ID: {upiId}
+                          </span>
+                          <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full">
+                            Payable: ₹{formattedPayable}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-700 dark:text-amber-300 text-xs space-y-1">
+                  );
+                } else if (paymentQrUrl) {
+                  // CASE 2: No complete UPI ID + Payee Name pair -> Fallback to uploaded QR image
+                  const salonName = (businessSettings as any)?.name || (businessSettings as any)?.business_name || "Vivazen Salon";
+                  return (
+                    <div className="text-center border p-4 rounded-2xl bg-muted/20 space-y-3">
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-bold text-foreground">Scan Salon QR to Pay</p>
+                        <p className="text-[11px] text-muted-foreground font-semibold">{salonName}</p>
+                      </div>
+                      <div className="space-y-2">
+                        <img
+                          src={paymentQrUrl}
+                          alt="Salon Payment QR"
+                          className="h-48 w-48 object-contain mx-auto rounded-xl border bg-white p-2 shadow-xs"
+                          onError={(e) => {
+                            console.error("Failed loading QR image URL:", paymentQrUrl);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                } else {
+                  // CASE 3: Neither exists -> Show validation warning
+                  return (
+                    <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-700 dark:text-amber-300 text-xs space-y-1 text-center">
                       <div className="flex items-center justify-center gap-1.5 font-semibold">
                         <AlertCircle className="h-4 w-4 text-amber-600" />
-                        No Payment QR has been uploaded yet.
+                        No Payment QR configured.
                       </div>
                       <p className="text-[11px] text-muted-foreground">
-                        Please upload your Salon Payment QR in Salon Setup ➔ Step 5 Payment QR.
+                        Please configure your Salon UPI ID & Payee Name or Upload Payment QR in Salon Setup ➔ Step 5 Payment QR.
                       </p>
                     </div>
-                  )}
-                </div>
-              )}
+                  );
+                }
+              })()}
 
               <div className="flex justify-end gap-2 pt-2 border-t">
                 <Button variant="ghost" className="rounded-full text-xs" onClick={() => setPayOpen(false)}>Cancel</Button>

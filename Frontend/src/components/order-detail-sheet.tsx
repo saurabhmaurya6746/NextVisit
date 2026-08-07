@@ -1055,26 +1055,38 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                   </div>
 
                   {/* STORE PAYMENT QR PREVIEW IF UPI */}
-                  {paymentMethod === "UPI" && (
-                    <div className="rounded-xl border p-3 bg-muted/20 text-center space-y-2">
-                      {qrUrl ? (
-                        <div className="space-y-1">
+                  {paymentMethod === "UPI" && (() => {
+                    const upiId = (bizSettings?.payment_upi_id || "").trim();
+                    const payeeName = (bizSettings?.payment_payee_name || (bizSettings as any)?.payment_payee_name || "").trim();
+                    const payableTotal = grandTotal || billTotal || 0;
+                    const formattedPayable = payableTotal.toFixed(2);
+
+                    if (upiId && payeeName) {
+                      const rawUpiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(payeeName)}&am=${formattedPayable}&cu=INR`;
+                      const dynamicQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&margin=8&data=${encodeURIComponent(rawUpiUri)}`;
+                      return (
+                        <div className="rounded-xl border p-3 bg-muted/20 text-center space-y-2">
                           <p className="text-[11px] font-semibold text-muted-foreground">Scan Store Payment QR</p>
-                          <img src={qrUrl} alt="Store Payment QR" className="h-32 w-32 object-contain mx-auto rounded-lg border bg-white p-1" />
-                          {bizSettings?.payment_upi_id && (
-                            <p className="text-[11px] font-mono font-medium text-muted-foreground mt-1">
-                              UPI ID: {bizSettings.payment_upi_id}
-                            </p>
-                          )}
+                          <img src={dynamicQrUrl} alt="Store Payment QR" className="h-36 w-36 object-contain mx-auto rounded-lg border bg-white p-1.5 shadow-sm" />
+                          <div className="flex flex-wrap items-center justify-center gap-1">
+                            <span className="text-[10px] font-mono font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                              UPI: {upiId}
+                            </span>
+                            <span className="text-[10px] font-mono font-bold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                              ₹{formattedPayable}
+                            </span>
+                          </div>
                         </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground py-2">
-                          No Payment QR uploaded in Restaurant Setup. (Merchant manually confirms payment)
-                        </p>
-                      )}
-                      <p className="text-[10px] text-muted-foreground">Merchant manually confirms payment receipt.</p>
-                    </div>
-                  )}
+                      );
+                    } else {
+                      return (
+                        <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-700 dark:text-amber-300 text-xs space-y-1 text-center">
+                          <p className="font-semibold text-[11px]">No Payment QR Configured</p>
+                          <p className="text-[10px] text-muted-foreground">Configure your UPI ID and Payee Name in Setup.</p>
+                        </div>
+                      );
+                    }
+                  })()}
                 </div>
               )
             )}

@@ -77,6 +77,7 @@ class BusinessSettingsResponse(BaseModel):
     # Branding & Payments
     payment_qr_image: str | None = None
     payment_upi_id: str | None = None
+    payment_payee_name: str | None = None
     logo: str | None = None
     cover_image: str | None = None
     default_discount: float = 0.0
@@ -150,6 +151,7 @@ class BusinessSettingsUpdate(BaseModel):
     # Branding & Payments
     payment_qr_image: str | None = Field(default=None, max_length=500)
     payment_upi_id: str | None = Field(default=None, max_length=100)
+    payment_payee_name: str | None = Field(default=None, max_length=100)
     logo: str | None = Field(default=None, max_length=500)
     cover_image: str | None = Field(default=None, max_length=500)
     default_discount: float | None = Field(default=None, ge=0)

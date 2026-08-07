@@ -34,7 +34,10 @@ import {
   Brain,
   RefreshCw,
   FileCheck,
+  Users,
+  Smartphone,
 } from "lucide-react";
+import { TestPaymentDialog } from "@/components/test-payment-dialog";
 import { API_BASE_URL } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
 import {
@@ -441,12 +444,28 @@ function InvoiceTab({
   const [footer, setFooter] = useState(settings.invoice_footer || defaultFooter);
   const [showGst, setShowGst] = useState(settings.show_gst_on_invoice);
   const [showQr, setShowQr] = useState(settings.show_qr_on_invoice);
-  const [qrImage, setQrImage] = useState(settings.payment_qr_image || "");
+  const [payeeName, setPayeeName] = useState(settings.payment_payee_name || (settings as any).payment_payee_name || "");
   const [upiId, setUpiId] = useState(settings.payment_upi_id || "");
-  const [uploadingQr, setUploadingQr] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [testModalOpen, setTestModalOpen] = useState(false);
 
   async function handleSave() {
+    const trimmedPayee = payeeName.trim();
+    const trimmedUpi = upiId.trim();
+
+    if (!trimmedPayee) {
+      toast.error("Payee Name is required");
+      return;
+    }
+    if (!trimmedUpi) {
+      toast.error("UPI ID is required");
+      return;
+    }
+    if (!trimmedUpi.includes("@") || trimmedUpi.startsWith("@") || trimmedUpi.endsWith("@")) {
+      toast.error("Please enter a valid UPI ID (e.g. merchant@upi)");
+      return;
+    }
+
     setSaving(true);
     try {
       await updateBusinessSettingsApi({
@@ -454,84 +473,73 @@ function InvoiceTab({
         invoice_footer: footer.trim() || undefined,
         show_gst_on_invoice: showGst,
         show_qr_on_invoice: showQr,
-        payment_upi_id: upiId.trim() || undefined,
-      });
-      toast.success("Invoice settings updated!");
+        payment_payee_name: trimmedPayee,
+        payment_upi_id: trimmedUpi,
+      } as any);
+      toast.success("Invoice & payment settings updated!");
       onSaved();
     } catch (e: any) {
-      toast.error(e.message || "Failed to update invoice settings");
+      toast.error(e.message || "Failed to update settings");
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handleQrUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadingQr(true);
-    try {
-      const res = await uploadPaymentQRApi(file);
-      setQrImage(res.payment_qr_image);
-      toast.success("Payment QR code uploaded successfully!");
-      onSaved();
-    } catch (e: any) {
-      toast.error(e.message || "Failed to upload QR image");
-    } finally {
-      setUploadingQr(false);
     }
   }
 
   return (
     <Card className="rounded-2xl border shadow-sm">
       <CardHeader>
-        <CardTitle className="font-display text-base">Invoice & Receipt Setup</CardTitle>
-        <CardDescription>Format printed receipts, invoice numbering, and UPI payment details.</CardDescription>
+        <CardTitle className="font-display text-base">Invoice & Payment Setup</CardTitle>
+        <CardDescription>Format printed receipts, invoice numbering, and UPI payment details for dynamic QR generation.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid gap-4 sm:grid-cols-2">
           <Fld label="Invoice Prefix" value={prefix} onChange={setPrefix} placeholder="INV-" />
-          <Fld label="Payment UPI ID" value={upiId} onChange={setUpiId} placeholder="merchant@upi" />
+          <Fld label="Payee Name *" value={payeeName} onChange={setPayeeName} placeholder="e.g. Saurabh Maurya" />
         </div>
 
-        <div className="space-y-1.5">
-          <Label className="text-xs font-semibold">Invoice Footer Text</Label>
-          <Input value={footer} onChange={(e) => setFooter(e.target.value)} placeholder={defaultFooter} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Fld label="Payment UPI ID *" value={upiId} onChange={setUpiId} placeholder="saurabhmauryajnp28-1@oksbi" />
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold">Invoice Footer Text</Label>
+            <Input value={footer} onChange={(e) => setFooter(e.target.value)} placeholder={defaultFooter} />
+          </div>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
           <ToggleCard title="Show GST Breakup" desc="Display itemized tax details on printed bills" checked={showGst} onChange={setShowGst} />
-          <ToggleCard title="Show UPI QR Code" desc="Print payment QR code image on invoice" checked={showQr} onChange={setShowQr} />
+          <ToggleCard title="Show UPI QR Code" desc="Print dynamic payment QR code on invoice" checked={showQr} onChange={setShowQr} />
         </div>
 
-        {/* QR Code Upload Section */}
-        <div className="rounded-xl border p-4 space-y-3 bg-muted/20">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold flex items-center gap-1.5">
-                <QrCode className="h-4 w-4 text-primary" /> Invoice UPI QR Code Image
-              </p>
-              <p className="text-xs text-muted-foreground">Upload a PNG/JPG QR image printed on bills.</p>
-            </div>
-            <div className="relative">
-              <input type="file" id="inv-qr-file" accept="image/*" className="hidden" onChange={handleQrUpload} disabled={uploadingQr} />
-              <Label htmlFor="inv-qr-file" className="cursor-pointer inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium border bg-background hover:bg-muted transition-colors">
-                {uploadingQr ? <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> : <Upload className="h-3.5 w-3.5 text-primary" />} Upload QR
-              </Label>
-            </div>
-          </div>
-          {qrImage && (
-            <div className="flex items-center gap-3 pt-2">
-              <img src={qrImage.startsWith("http") ? qrImage : `${API_BASE_URL}${qrImage.startsWith("/") ? "" : "/"}${qrImage}`} alt="Payment QR" className="h-20 w-20 object-contain rounded-lg border bg-background" />
-              <span className="text-[11px] font-mono text-muted-foreground truncate">{qrImage}</span>
-            </div>
-          )}
-        </div>
-
-        <div className="flex justify-end pt-2">
-          <Button disabled={saving} onClick={handleSave} className="rounded-full gradient-brand text-primary-foreground font-semibold">
-            {saving ? "Saving..." : "Save Invoice Settings"}
+        <div className="flex flex-wrap items-center justify-end gap-2.5 pt-2 border-t">
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-full border-primary/30 text-primary hover:bg-primary/10 font-semibold text-xs px-5 h-9"
+            onClick={() => {
+              if (!payeeName.trim()) {
+                toast.error("Please enter Payee Name before testing.");
+                return;
+              }
+              if (!upiId.trim() || !upiId.includes("@")) {
+                toast.error("Please enter a valid UPI ID before testing.");
+                return;
+              }
+              setTestModalOpen(true);
+            }}
+          >
+            <Smartphone className="mr-1.5 h-3.5 w-3.5" /> Test Payment
+          </Button>
+          <Button disabled={saving} onClick={handleSave} className="rounded-full gradient-brand text-primary-foreground font-semibold h-9 px-6 text-xs">
+            {saving ? "Saving..." : "Save Settings"}
           </Button>
         </div>
+
+        <TestPaymentDialog
+          open={testModalOpen}
+          onOpenChange={setTestModalOpen}
+          payeeName={payeeName}
+          upiId={upiId}
+        />
       </CardContent>
     </Card>
   );
