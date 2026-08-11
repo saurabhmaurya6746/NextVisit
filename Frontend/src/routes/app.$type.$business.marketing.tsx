@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ const templates = [
   { channel: "SMS", icon: Phone, title: "Flash coupon", copy: "Today only: 20% off dinner with code FLASH20." },
 ];
 
-function MarketingPage() {
+export default function MarketingPage() {
   return (
     <>
       <PageHeader title="Marketing" description="Festivals, templates and AI ideas — all in one place."

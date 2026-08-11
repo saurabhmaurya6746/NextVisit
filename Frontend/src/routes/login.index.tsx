@@ -1,4 +1,5 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { ArrowRight } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,7 @@ export const Route = createFileRoute("/login/")({
   component: UnifiedLogin,
 });
 
-function UnifiedLogin() {
+export default function UnifiedLogin() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

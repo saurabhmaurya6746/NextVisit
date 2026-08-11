@@ -1,4 +1,4 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useLocation } from "react-router-dom";
 import { LayoutDashboard, Users, CreditCard, Settings, LifeBuoy, LogOut, ClipboardCheck, Activity, Coins } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter } from "@/components/ui/sidebar";
 import { BrandLogo } from "@/components/brand-logo";
@@ -14,7 +14,8 @@ const items = [
 ];
 
 export function AdminSidebar() {
-  const pathname = useRouterState({ select: (r) => r.location.pathname });
+  const location = useLocation();
+  const pathname = location.pathname;
   const isActive = (url: string, exact?: boolean) => (exact ? pathname === url : pathname.startsWith(url));
   return (
     <Sidebar collapsible="icon">

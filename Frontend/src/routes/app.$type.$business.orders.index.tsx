@@ -1,5 +1,6 @@
 import { AppLink } from "@/lib/app-nav";
-import { createFileRoute } from "@tanstack/react-router";
+import { useSearchParams } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { useEffect, useMemo, useState } from "react";
 import {
   Plus, ShoppingBag, QrCode, ExternalLink, Copy, AlertCircle, Search,
@@ -39,12 +40,13 @@ const STATUS_TONE: Record<string, string> = {
   CANCELLED: "bg-rose-500/15 text-rose-700 dark:text-rose-300",
 };
 
-function OrdersPage() {
+export default function OrdersPage() {
   const profile = useProfile("restaurant");
   const [open, setOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [filter, setFilter] = useState<string>("all");
-  const search = Route.useSearch();
+  const [searchParams] = useSearchParams();
+  const search = { payment: searchParams.get("payment") || undefined };
   const [payFilter, setPayFilter] = useState<string>(search.payment ?? "all");
 
   useEffect(() => {

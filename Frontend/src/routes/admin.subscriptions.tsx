@@ -1,4 +1,5 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import {
   Check, Plus, Loader2, Edit2, Clock, Search, Trash2, RotateCcw, PlusCircle,
   Brain, Shield, Sparkles, AlertTriangle, History, Eye, CheckSquare, XCircle
@@ -29,7 +30,7 @@ import {
 import { formatCurrency } from "@/lib/currency";
 
 export const Route = createFileRoute("/admin/subscriptions")({ component: SubscriptionsPage });
-function SubscriptionsPage() {
+export default function SubscriptionsPage() {
   const navigate = useNavigate();
   const [plans, setPlans] = useState<SubscriptionPlanModel[]>([]);
   const [businessSubs, setBusinessSubs] = useState<BusinessSubscriptionItemModel[]>([]);

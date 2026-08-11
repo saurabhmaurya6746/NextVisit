@@ -1,4 +1,5 @@
-import { createFileRoute, Outlet, redirect, useParams, useRouterState } from "@tanstack/react-router";
+import { useParams, useLocation, Outlet } from "react-router-dom";
+import { redirect, createFileRoute } from "@/lib/route-compat";
 import { useState, useEffect } from "react";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { BusinessSidebar } from "@/components/business-sidebar";
@@ -56,9 +57,9 @@ export const Route = createFileRoute("/app/$type/$business")({
   component: AppLayout,
 });
 
-function AppLayout() {
+export function AppLayout() {
   const params = useParams({ strict: false }) as { type?: string; business?: string };
-  const pathname = useRouterState({ select: (r) => r.location.pathname });
+  const pathname = useLocation().pathname;
   const session = useSession();
 
   const authBiz = useAuthenticatedBusiness();

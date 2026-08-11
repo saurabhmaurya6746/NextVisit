@@ -1,5 +1,6 @@
 import { AppLink } from "@/lib/app-nav";
-import { createFileRoute } from "@tanstack/react-router";
+import { useParams } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,8 +38,8 @@ const BUCKET_CONFIG = [
   { key: 90, title: "90+ Days", subtext: "90+ days — at risk", tone: "from-destructive/25 to-destructive/5", badgeClass: "bg-destructive/10 text-destructive border-destructive/20", coupon: "COMEBACK90", defaultOffer: "20% Off + Free Dessert" },
 ] as const;
 
-function RecoveryPage() {
-  const { type } = Route.useParams();
+export default function RecoveryPage() {
+  const { type } = useParams<{ type?: string }>();
   const isSalon = type === "salon";
   const session = getSession();
   const queryClient = useQueryClient();

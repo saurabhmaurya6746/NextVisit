@@ -1,5 +1,5 @@
 import { AppLink } from "@/lib/app-nav";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
@@ -41,7 +41,7 @@ export const Route = createFileRoute("/app/$type/$business/customers/")({ compon
 const VIEW_KEY = "growthos:customers-view";
 const sanitizePhoneInput = (v: string) => (v || "").replace(/\D/g, "").slice(0, 10);
 
-function CustomersPage() {
+export default function CustomersPage() {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");

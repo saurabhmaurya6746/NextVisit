@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowRight, Github, Crown, Store, Eye, EyeOff } from "lucide-react";
 import { useState, type FormEvent } from "react";

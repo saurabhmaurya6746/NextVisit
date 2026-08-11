@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -54,7 +54,7 @@ interface QrModalTable {
   path: string;
 }
 
-function TablesPage() {
+export default function TablesPage() {
   const profile = useProfile("restaurant");
   const [presetTableId, setPresetTableId] = useState<string | null>(null);
   const [presetTableName, setPresetTableName] = useState<string | null>(null);

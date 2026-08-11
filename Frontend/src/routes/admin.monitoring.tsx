@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -59,7 +59,7 @@ function formatTimestamp(isoStr?: string | null): string {
   }
 }
 
-function Monitoring() {
+export default function Monitoring() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
   const [activityTypeFilter, setActivityTypeFilter] = useState("ALL");

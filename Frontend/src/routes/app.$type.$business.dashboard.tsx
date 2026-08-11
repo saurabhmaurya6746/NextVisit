@@ -1,4 +1,5 @@
-import { createFileRoute, useParams } from "@tanstack/react-router";
+import { useParams } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { useQuery } from "@tanstack/react-query";
 import { useBusinessType, resolveBusinessType } from "@/lib/business-type";
 import { useAuthenticatedBusiness } from "@/lib/business-profile";
@@ -10,7 +11,7 @@ export const Route = createFileRoute("/app/$type/$business/dashboard")({
   component: BusinessDashboardRoute,
 });
 
-function BusinessDashboardRoute() {
+export default function BusinessDashboardRoute() {
   const routeParams = useParams({ strict: false }) as { type?: string };
   const session = getSession();
   const authBiz = useAuthenticatedBusiness();

@@ -1,4 +1,5 @@
-import { createFileRoute, useParams } from "@tanstack/react-router";
+import { useParams } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { useState, useEffect, useCallback } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -64,7 +65,7 @@ import { downloadReportsPdfApi } from "@/lib/reports-api";
 
 export const Route = createFileRoute("/app/$type/$business/settings")({ component: SettingsPage });
 
-function SettingsPage() {
+export default function SettingsPage() {
   const params = useParams({ strict: false }) as Record<string, string>;
   const typeParam = params?.type || "";
 

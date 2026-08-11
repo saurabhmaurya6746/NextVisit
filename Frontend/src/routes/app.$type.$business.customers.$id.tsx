@@ -1,5 +1,6 @@
 import { AppLink } from "@/lib/app-nav";
-import { createFileRoute } from "@tanstack/react-router";
+import { useParams } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import {
   ArrowLeft, MessageCircle, Phone, Edit, FileText, ChevronDown, ChevronRight,
   Gift, Crown, AlertTriangle, UserX, Sparkles, Clock, Calendar, Heart, MapPin,
@@ -38,8 +39,8 @@ export const Route = createFileRoute("/app/$type/$business/customers/$id")({
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const sanitizePhoneInput = (v: string) => (v || "").replace(/\D/g, "").slice(0, 10);
 
-function CustomerProfile() {
-  const { id } = Route.useLoaderData();
+export default function CustomerProfile() {
+  const { id } = useParams<{ id?: string }>();
 
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
   const [noteText, setNoteText] = useState("");

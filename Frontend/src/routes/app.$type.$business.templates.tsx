@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { useState, useEffect, useCallback } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,7 +28,7 @@ import {
 
 export const Route = createFileRoute("/app/$type/$business/templates")({ component: TemplatesPage });
 
-export function TemplatesPage() {
+export default function TemplatesPage() {
   // 1. ALL HOOKS CALLED UNCONDITIONALLY AT TOP LEVEL
   const [templates, setTemplates] = useState<MessageTemplateModel[]>([]);
   const [automationRules, setAutomationRules] = useState<AutomationRuleModel[]>([]);

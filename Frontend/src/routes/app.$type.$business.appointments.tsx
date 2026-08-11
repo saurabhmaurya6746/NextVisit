@@ -3,7 +3,8 @@ import { listCustomersApi, createCustomerApi, updateCustomerApi } from "@/lib/cu
 import { listServicesCatalogApi, listPaginatedVisitsApi } from "@/lib/visit-services-api";
 import { listStaffApi } from "@/lib/staff-api";
 import { AppLink } from "@/lib/app-nav";
-import { createFileRoute, Link, useParams } from "@tanstack/react-router";
+import { Link, useParams } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { useMemo, useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Plus, Scissors, Search, User, ChevronRight, Check, AlertTriangle, Calendar, Clock, DollarSign, MessageSquare, CheckCircle2, Loader2, ChevronsLeft, ChevronLeft, ChevronsRight, ArrowUpDown } from "lucide-react";
@@ -101,7 +102,7 @@ function getDisplayStatus(a: Appointment) {
   return { label: a.status, color: "bg-muted text-muted-foreground" };
 }
 
-function AppointmentsPage() {
+export default function AppointmentsPage() {
   const qc = useQueryClient();
   const appts = useAppointments();
   const { data: backendCustomers = [] } = useQuery({

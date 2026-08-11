@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { Link, useParams } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { useEffect, useState } from "react";
 import {
   ArrowLeft,
@@ -47,8 +48,8 @@ export const Route = createFileRoute("/admin/clients/$id")({
   component: ClientDetail,
 });
 
-function ClientDetail() {
-  const { id } = Route.useParams();
+export default function ClientDetail() {
+  const { id } = useParams<{ id?: string }>();
   const [client, setClient] = useState<ClientDetailModel | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

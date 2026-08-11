@@ -1,4 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
+import { useParams } from "react-router-dom";
 import { useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -87,8 +88,8 @@ export interface FestivalCampaignItem {
   pending_count: number;
 }
 
-function FestivalsPage() {
-  const { type } = Route.useParams();
+export default function FestivalsPage() {
+  const { type } = useParams<{ type?: string }>();
   const queryClient = useQueryClient();
   const isSalon = type === "salon";
 

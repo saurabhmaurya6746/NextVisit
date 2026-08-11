@@ -1,4 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
+import { useParams } from "react-router-dom";
 import { useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,8 +38,8 @@ export const Route = createFileRoute("/app/$type/$business/reports")({ component
 
 const PIE_COLORS = ["#6366F1", "#10B981", "#F59E0B", "#EC4899", "#8B5CF6", "#3B82F6"];
 
-function ReportsBiDashboardPage() {
-  const { type } = Route.useParams();
+export default function ReportsBiDashboardPage() {
+  const { type } = useParams<{ type?: string }>();
   const isSalon = type === "salon";
   const session = getSession();
 

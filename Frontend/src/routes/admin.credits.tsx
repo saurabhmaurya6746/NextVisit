@@ -1,4 +1,5 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { useCallback, useEffect, useState } from "react";
 import {
   Brain,
@@ -63,7 +64,7 @@ export const Route = createFileRoute("/admin/credits")({
   component: CreditManagementPage,
 });
 
-function CreditManagementPage() {
+export default function CreditManagementPage() {
   const navigate = useNavigate();
 
   // Top Analytics State

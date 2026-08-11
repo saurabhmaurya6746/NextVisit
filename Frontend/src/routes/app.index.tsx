@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { Navigate } from "react-router-dom";
 import { readProfile } from "@/lib/business-profile";
 import { slugify } from "@/lib/app-nav";
 import { getSession } from "@/lib/auth";
@@ -9,19 +9,17 @@ function readType(): "restaurant" | "salon" {
   return v === "salon" ? "salon" : "restaurant";
 }
 
-export const Route = createFileRoute("/app/")({
-  beforeLoad: () => {
-    if (typeof window === "undefined") return;
-    const s = getSession();
-    if (!s || s.role !== "business") throw redirect({ to: "/login" });
-    const type = s.businessType || readType();
-    const profile = readProfile(type) as { name?: string };
-    const business = s.businessSlug || slugify(profile?.name || type);
-    throw redirect({
-      to: "/app/$type/$business/dashboard" as any,
-      params: { type, business } as any,
-      replace: true,
-    });
-  },
-  component: () => null,
-});
+export function AppIndexPage() {
+  const session = getSession();
+  if (!session || session.role !== "business") {
+    return <Navigate to="/login" replace />;
+  }
+
+  const type = session.businessType || readType();
+  const profile = readProfile(type) as { name?: string };
+  const business = session.businessSlug || slugify(profile?.name || type);
+
+  return <Navigate to={`/app/${type}/${business}/dashboard`} replace />;
+}
+
+export default AppIndexPage;

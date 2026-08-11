@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -80,7 +80,7 @@ function blankItem(categoryId: string) {
 // ---------------------------------------------------------------------------
 // Main Page
 // ---------------------------------------------------------------------------
-function MenuPage() {
+export default function MenuPage() {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [activeCatId, setActiveCatId] = useState<string>("all");

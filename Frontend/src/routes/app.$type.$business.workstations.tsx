@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -39,6 +39,7 @@ import {
   createSalonChairApi,
   updateSalonChairApi,
   updateSalonChairStatusApi,
+  releaseSalonChairApi,
   deleteSalonChairApi,
   createSalonServiceAreaApi,
   type SalonServiceArea,
@@ -46,6 +47,7 @@ import {
 } from "@/lib/salon-chairs-api";
 import { NewAppointmentDialog } from "@/routes/app.$type.$business.appointments";
 import { AppointmentDetailSheet } from "@/components/appointment-detail-sheet";
+import { WorkstationDetailsDrawer } from "@/components/salon/WorkstationDetailsDrawer";
 import { useAppointments, updateAppointment, type Appointment } from "@/lib/appointments-store";
 import { fmt } from "@/lib/currency";
 
@@ -115,7 +117,7 @@ export function getNextUniqueChairName(chairs: { chair_name?: string }[], prefix
   return `${prefix}${candidateNum}`;
 }
 
-function WorkstationsPage() {
+export default function WorkstationsPage() {
   const qc = useQueryClient();
 
   // Queries
@@ -143,6 +145,10 @@ function WorkstationsPage() {
 
   // Available Workstation Action Dialog State
   const [availableActionChair, setAvailableActionChair] = useState<SalonChair | null>(null);
+
+  // Occupied Workstation Slide-Over Drawer State
+  const [selectedWorkstation, setSelectedWorkstation] = useState<SalonChair | null>(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   // Modal States
   const [createOpen, setCreateOpen] = useState(false);
@@ -185,7 +191,8 @@ function WorkstationsPage() {
       if (active) {
         setActiveApptSheet(active);
       } else {
-        toast.info(`Workstation "${c.chair_name}" is Occupied`);
+        setSelectedWorkstation(c);
+        setIsDrawerOpen(true);
       }
     }
   }
@@ -827,6 +834,46 @@ function WorkstationsPage() {
         appt={activeApptSheet}
         open={!!activeApptSheet}
         onOpenChange={(o) => !o && setActiveApptSheet(null)}
+      />
+
+      {/* OCCUPIED WORKSTATION DETAILS SLIDE-OVER DRAWER */}
+      <WorkstationDetailsDrawer
+        open={isDrawerOpen}
+        onOpenChange={setIsDrawerOpen}
+        workstation={selectedWorkstation}
+        serviceAreaName={
+          serviceAreas.find((a) => a.id === selectedWorkstation?.service_area_id)?.name || "Service Section"
+        }
+        activeAppointment={
+          selectedWorkstation
+            ? appointments.find(
+                (a) => a.chairId === selectedWorkstation.id && a.status !== "cancelled" && a.paymentStatus !== "paid"
+              ) ||
+              appointments.find((a) => a.chairId === selectedWorkstation.id && a.status !== "cancelled")
+            : null
+        }
+        onCollectPayment={(appt) => {
+          setActiveApptSheet(appt);
+        }}
+        onEditAppointment={(appt) => {
+          setActiveApptSheet(appt);
+        }}
+        onCancelAppointment={(appt) => {
+          setActiveApptSheet(appt);
+        }}
+        onReleaseWorkstation={async (chair) => {
+          try {
+            await releaseSalonChairApi(chair.id);
+            toast.success(`Workstation "${chair.chair_name}" released to Available`);
+            qc.invalidateQueries({ queryKey: ["salon-chairs"] });
+            qc.invalidateQueries({ queryKey: ["salon-chairs-metrics"] });
+            qc.invalidateQueries({ queryKey: ["dashboard-analytics"] });
+            qc.invalidateQueries({ queryKey: ["dashboard"] });
+            setIsDrawerOpen(false);
+          } catch (err: any) {
+            toast.error(err?.message || "Failed releasing workstation");
+          }
+        }}
       />
     </PageTransition>
   );

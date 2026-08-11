@@ -14,7 +14,7 @@ import { EmptyState } from "@/components/empty-state";
 import { PageTransition } from "@/components/page-transition";
 import { logWhatsApp } from "@/lib/whatsapp-history";
 import { toast } from "sonner";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/auth";
 import {
@@ -33,7 +33,7 @@ interface Props {
   bucket: Bucket;
 }
 
-export function CelebrationDetailPage({ kind, bucket }: Props) {
+export default function CelebrationDetailPage({ kind, bucket }: Props) {
   const params = useParams({ strict: false });
   const type = params.type || "restaurant";
   const business = params.business || "my-business";

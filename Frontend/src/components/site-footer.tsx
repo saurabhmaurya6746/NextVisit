@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link } from "react-router-dom";
 import { BrandLogo } from "@/components/brand-logo";
 import { Twitter, Linkedin, Instagram, Youtube, Mail } from "lucide-react";
 

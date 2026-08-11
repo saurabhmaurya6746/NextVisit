@@ -1,4 +1,5 @@
-import { createFileRoute, useParams } from "@tanstack/react-router";
+import { useParams } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
@@ -117,8 +118,8 @@ export const Route = createFileRoute("/app/$type/$business/setup")({
   component: RestaurantSetupPage,
 });
 
-function RestaurantSetupPage() {
-  const { type } = Route.useParams();
+export default function RestaurantSetupPage() {
+  const { type } = useParams<{ type?: string }>();
   const isSalon = type === "salon";
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState("settings");

@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CheckCircle2, XCircle, LogIn, CreditCard, Printer, User, Phone, Mail, Calendar, Clock, DollarSign, Award, ShieldCheck, Heart, Sparkles, Scissors, UserCheck, Armchair, AlertCircle, RefreshCw, Trash2 } from "lucide-react";
+import { CheckCircle2, XCircle, LogIn, CreditCard, Banknote, Printer, User, Phone, Mail, Calendar, Clock, DollarSign, Award, ShieldCheck, Heart, Sparkles, Scissors, UserCheck, Armchair, AlertCircle, RefreshCw, Trash2 } from "lucide-react";
 import { fmt } from "@/lib/currency";
 import { apptCode, getAppointment, markAppointmentPaid, updateAppointment, type Appointment, type ApptPayment } from "@/lib/appointments-store";
 import { findCustomerByPhone, createCustomerFromOrder, bumpExtraCustomer } from "@/lib/orders-store";
@@ -481,9 +481,10 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
   }
 
   // Tax and Grand Total calculation (uses businessSettings)
-  const taxPct = (businessSettings as any)?.tax_percentage ?? (businessSettings as any)?.tax_rate ?? 0;
-  const taxAmount = (totalPrice * taxPct) / 100;
-  const grandTotal = totalPrice + taxAmount;
+  const taxPct = Number((businessSettings as any)?.tax_percentage ?? (businessSettings as any)?.tax_rate ?? 0);
+  const taxAmount = Math.round(((totalPrice * taxPct) / 100) * 100) / 100;
+  const grandTotal = Math.round((totalPrice + taxAmount) * 100) / 100;
+  const remainingBalance = Math.max(0, Math.round((grandTotal - advancePaid) * 100) / 100);
   const rawQrPath = businessSettings?.payment_qr_image || (businessSettings as any)?.payment_qr_url;
   const paymentQrUrl = rawQrPath
     ? (rawQrPath.startsWith("http://") || rawQrPath.startsWith("https://")
@@ -818,17 +819,23 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
           </div>
 
           {/* FINANCIAL BREAKDOWN SECTION */}
-          <div className="rounded-2xl border bg-card p-4 space-y-2 shadow-xs">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 border-b pb-2">
-              <DollarSign className="h-3.5 w-3.5 text-primary" /> Financial Totals & Payments
-            </p>
-            <div className="space-y-1.5 text-xs">
-              <div className="flex justify-between"><span className="text-muted-foreground">Total Service Duration:</span><span className="font-medium">{totalDuration} min</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Grand Total Amount:</span><span className="font-bold font-mono text-sm">{fmt(totalPrice)}</span></div>
-              <div className="flex justify-between text-emerald-600"><span>Advance Amount Paid:</span><span className="font-mono">-{fmt(advancePaid)}</span></div>
-              <div className="flex justify-between border-t pt-1.5 font-semibold"><span className="text-foreground">Remaining Balance:</span><span className="font-mono text-primary text-sm">{fmt(remainingAmount)}</span></div>
+      
+        <div className="rounded-2xl border bg-card p-4 space-y-2 shadow-xs">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 border-b pb-2">
+            <DollarSign className="h-3.5 w-3.5 text-primary" /> Financial Totals & Payments
+          </p>
+          <div className="space-y-1.5 text-xs">
+            <div className="flex justify-between"><span className="text-muted-foreground">Total Service Duration:</span><span className="font-medium">{totalDuration} min</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Services Subtotal:</span><span className="font-mono font-semibold">{fmt(totalPrice)}</span></div>
+            <div className="flex justify-between text-muted-foreground">
+              <span>GST / Service Tax ({taxPct}%):</span>
+              <span className="font-mono font-medium">{fmt(taxAmount)}</span>
             </div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Grand Total Amount:</span><span className="font-bold font-mono text-sm text-foreground">{fmt(grandTotal)}</span></div>
+            <div className="flex justify-between text-emerald-600"><span>Advance Amount Paid:</span><span className="font-mono">-{fmt(advancePaid)}</span></div>
+            <div className="flex justify-between border-t pt-1.5 font-semibold"><span className="text-foreground">Remaining Balance:</span><span className="font-mono text-primary text-sm">{fmt(remainingBalance)}</span></div>
           </div>
+        </div>
 
           {/* NOTES & PREFERENCES SECTION */}
           <div className="rounded-2xl border bg-card p-4 space-y-2 shadow-xs">
@@ -1045,15 +1052,13 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
                   <span className="font-medium">{totalDuration} min</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Subtotal:</span>
+                  <span className="text-muted-foreground">Services Subtotal:</span>
                   <span className="font-mono font-semibold">{fmt(totalPrice)}</span>
                 </div>
-                {taxPct > 0 && (
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Tax ({taxPct}% GST):</span>
-                    <span className="font-mono">{fmt(taxAmount)}</span>
-                  </div>
-                )}
+                <div className="flex justify-between text-muted-foreground">
+                  <span>GST / Service Tax ({taxPct}%):</span>
+                  <span className="font-mono">{fmt(taxAmount)}</span>
+                </div>
                 {advancePaid > 0 && (
                   <div className="flex justify-between text-emerald-600">
                     <span>Advance Amount Paid:</span>
@@ -1061,21 +1066,60 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
                   </div>
                 )}
                 <div className="flex justify-between border-t pt-2 font-bold text-sm">
-                  <span className="text-foreground">Grand Total:</span>
-                  <span className="font-mono text-primary">{fmt(grandTotal - advancePaid)}</span>
+                  <span className="text-foreground">Grand Total Amount:</span>
+                  <span className="font-mono text-primary">{fmt(grandTotal)}</span>
                 </div>
+                {advancePaid > 0 && (
+                  <div className="flex justify-between font-bold text-xs pt-1 border-t border-dashed">
+                    <span className="text-foreground">Remaining Balance:</span>
+                    <span className="font-mono text-primary">{fmt(remainingBalance)}</span>
+                  </div>
+                )}
               </div>
 
-              {/* PAYMENT METHOD SELECTION (CASH AND UPI ONLY FOR SALON) */}
-              <div className="space-y-1">
+              {/* INTERACTIVE VISUAL PAYMENT METHOD TOGGLE BUTTONS (3-COLUMN GRID) */}
+              <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">Payment Method *</Label>
-                <Select value={payment} onValueChange={(v) => setPayment(v as ApptPayment)}>
-                  <SelectTrigger className="rounded-xl text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="upi">UPI / QR Code</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPayment("upi")}
+                    className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition-all text-xs gap-1.5 cursor-pointer ${
+                      payment === "upi"
+                        ? "border-primary bg-primary/10 text-primary font-bold shadow-xs ring-1 ring-primary/30"
+                        : "border-border bg-card text-muted-foreground hover:bg-muted/30 hover:text-foreground font-medium"
+                    }`}
+                  >
+                    <QrCode className="h-5 w-5" />
+                    <span>UPI / QR</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPayment("cash")}
+                    className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition-all text-xs gap-1.5 cursor-pointer ${
+                      payment === "cash"
+                        ? "border-primary bg-primary/10 text-primary font-bold shadow-xs ring-1 ring-primary/30"
+                        : "border-border bg-card text-muted-foreground hover:bg-muted/30 hover:text-foreground font-medium"
+                    }`}
+                  >
+                    <Banknote className="h-5 w-5" />
+                    <span>Cash</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPayment("card")}
+                    className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition-all text-xs gap-1.5 cursor-pointer ${
+                      payment === "card"
+                        ? "border-primary bg-primary/10 text-primary font-bold shadow-xs ring-1 ring-primary/30"
+                        : "border-border bg-card text-muted-foreground hover:bg-muted/30 hover:text-foreground font-medium"
+                    }`}
+                  >
+                    <CreditCard className="h-5 w-5" />
+                    <span>Card</span>
+                  </button>
+                </div>
               </div>
 
               {/* DYNAMIC SALON PAYMENT QR CODE OR FALLBACK UPLOADED QR / WARNING */}

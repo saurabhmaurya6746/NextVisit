@@ -1,4 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
+import { useParams } from "react-router-dom";
 import { useEffect, useState, useCallback } from "react";
 import {
   DollarSign, ShoppingBag, QrCode, Banknote, CreditCard, Smartphone,
@@ -26,8 +27,8 @@ export const Route = createFileRoute("/app/$type/$business/revenue")({
   component: RevenuePage,
 });
 
-function RevenuePage() {
-  const { type } = Route.useParams();
+export default function RevenuePage() {
+  const { type } = useParams<{ type?: string }>();
 
   if (type === "salon") {
     return <SalonRevenueDashboard />;

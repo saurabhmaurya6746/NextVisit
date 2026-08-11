@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Card } from "@/components/ui/card";
@@ -49,7 +49,7 @@ const cases = [
   },
 ];
 
-function UseCasesPage() {
+export default function UseCasesPage() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-background">
       <div className="pointer-events-none absolute inset-0 gradient-mesh" />

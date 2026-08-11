@@ -1,5 +1,6 @@
 import { AppLink } from "@/lib/app-nav";
-import { createFileRoute } from "@tanstack/react-router";
+import { useParams } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -42,8 +43,8 @@ const PAY_TONE: Record<string, string> = {
   PAID: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
 };
 
-function OrderDetail() {
-  const { id } = Route.useLoaderData();
+export default function OrderDetail() {
+  const { id } = useParams<{ id?: string }>();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [invOpen, setInvOpen] = useState(false);
 

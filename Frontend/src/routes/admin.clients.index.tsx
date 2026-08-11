@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { Link } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { Plus, Search, MoreHorizontal, Loader2, Check, X, Eye, LogIn, PauseCircle, PlayCircle, Trash2, ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/page-header";
@@ -34,7 +35,7 @@ const statusStyle: Record<string, string> = {
   SUSPENDED: "bg-destructive/15 text-destructive border-destructive/30",
 };
 
-function ClientsPage() {
+export default function ClientsPage() {
   const [clients, setClients] = useState<ClientListItemModel[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);

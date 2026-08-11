@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { AppLink } from "@/lib/app-nav";
 import { motion } from "framer-motion";
 import { useState } from "react";
@@ -34,7 +34,7 @@ function defaultWelcomeMessage(name: string) {
   return `Hi ${first} 👋\nThank you for visiting us — it was lovely having you!\nHere's a little gift: coupon WELCOME10 for 10% off your next visit.\nWe hope to see you again soon ❤️`;
 }
 
-function WelcomePage() {
+export default function WelcomePage() {
   const session = getSession();
   const [tab, setTab] = useState<TimeframeBucket>("today");
   const [search, setSearch] = useState("");

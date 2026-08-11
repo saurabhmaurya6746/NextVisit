@@ -1,5 +1,5 @@
 import { AppLink } from "@/lib/app-nav";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { useEffect, useState } from "react";
 import {
   MessageCircle, Search, Calendar, Filter, ArrowUpDown, ChevronLeft,
@@ -43,7 +43,7 @@ function getBadgeMeta(typeStr: string) {
   return CAMPAIGN_TYPE_META[t] || { label: t, tone: "bg-slate-500/10 text-slate-600 border-slate-200" };
 }
 
-function WhatsAppHistoryPage() {
+export default function WhatsAppHistoryPage() {
   const session = getSession();
   const queryClient = useQueryClient();
 

@@ -1,12 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { useParams } from "react-router-dom";
 import { QrOrderView } from "@/components/qr-order-view";
 
-export const Route = createFileRoute("/qr/$table")({
-  head: () => ({ meta: [{ title: "Order from your table — NextVisit" }, { name: "robots", content: "noindex" }] }),
-  component: QrOrderPage,
-});
-
-function QrOrderPage() {
-  const { table } = Route.useParams();
+export default function QrOrderPage() {
+  const { table } = useParams<{ table?: string }>();
   return <QrOrderView table={table} />;
 }

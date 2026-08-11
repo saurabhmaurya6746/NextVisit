@@ -1,4 +1,4 @@
-import { useParams } from "@tanstack/react-router";
+import { useParams } from "react-router-dom";
 
 export interface AutomationDictionary {
   businessLabel: string;

@@ -1,5 +1,5 @@
 import { AppLink, useAppScope } from "@/lib/app-nav";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useLocation } from "react-router-dom";
 import { LayoutDashboard, Users, ShoppingBag, Cake, Heart, MessageCircle, Ticket, Trophy, Star, RefreshCw, MessageSquare, BarChart3, Calendar as CalIcon, UserCog, Settings, LogOut, Scissors, Utensils, UserPlus, PartyPopper, Crown, BookOpen, Sparkles, CreditCard, TrendingUp, History } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter } from "@/components/ui/sidebar";
 import { BrandLogo } from "@/components/brand-logo";
@@ -124,7 +124,8 @@ function Group({ label, items, isActive }: { label: string; items: Item[]; isAct
 }
 
 export function BusinessSidebar() {
-  const pathname = useRouterState({ select: (r) => r.location.pathname });
+  const location = useLocation();
+  const pathname = location.pathname;
   const scope = useAppScope();
   const session = useSession();
   const authBiz = useAuthenticatedBusiness();

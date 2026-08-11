@@ -1,5 +1,6 @@
 import { AppLink } from "@/lib/app-nav";
-import { createFileRoute, notFound } from "@tanstack/react-router";
+import { useParams } from "react-router-dom";
+import { createFileRoute, notFound } from "@/lib/route-compat";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useCallback } from "react";
 import {
@@ -98,9 +99,9 @@ function stageLabel(stage: string): string {
 
 // ── Main Component ───────────────────────────────────────────────────────────
 
-function RecoveryBucketPage() {
-  const { days } = Route.useLoaderData();
-  const { type } = Route.useParams();
+export default function RecoveryBucketPage() {
+  const { type, days: rawDays } = useParams<{ type?: string; days?: string }>();
+  const days = parseInt(rawDays || "30", 10) || 30;
   const isSalon = type === "salon";
   const session = getSession();
   const queryClient = useQueryClient();

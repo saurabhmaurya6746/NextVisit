@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute } from "@/lib/route-compat";
 import { useEffect, useState, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
@@ -27,7 +27,7 @@ import { listCustomersApi, type CustomerModel } from "@/lib/customers-api";
 
 export const Route = createFileRoute("/app/$type/$business/bookings")({ component: BookingsPage });
 
-function BookingsPage() {
+export default function BookingsPage() {
   const qc = useQueryClient();
   const [visits, setVisits] = useState<VisitModel[]>([]);
   const [customers, setCustomers] = useState<CustomerModel[]>([]);

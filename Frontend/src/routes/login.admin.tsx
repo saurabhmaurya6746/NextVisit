@@ -1,9 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
 import { LoginShell } from "@/components/login-shell";
 
-export const Route = createFileRoute("/login/admin")({
-  head: () => ({ meta: [{ title: "Admin sign in — NextVisit" }, { name: "description", content: "Sign in to the NextVisit Super Admin console." }] }),
-  component: () => (
+export default function LoginAdmin() {
+  return (
     <LoginShell
       role="Super Admin"
       target="/admin"
@@ -11,5 +9,5 @@ export const Route = createFileRoute("/login/admin")({
       quote="NextVisit gave us the leverage to onboard 200+ merchants without adding a single ops person."
       author="Iris Novak, Platform Lead"
     />
-  ),
-});
+  );
+}

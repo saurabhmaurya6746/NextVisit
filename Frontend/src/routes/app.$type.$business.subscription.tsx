@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { useState, useEffect, useCallback } from "react";
 import { Check, Sparkles, AlertCircle, Clock, ShieldCheck, XCircle, FileText, Loader2 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
@@ -27,7 +27,7 @@ import {
 
 export const Route = createFileRoute("/app/$type/$business/subscription")({ component: SubscriptionPage });
 
-function SubscriptionPage() {
+export default function SubscriptionPage() {
   const [myPlan, setMyPlan] = useState<MyPlanDetails | null>(null);
   const [availablePlans, setAvailablePlans] = useState<SubscriptionPlanItem[]>([]);
   const [upgradeRequests, setUpgradeRequests] = useState<SubscriptionUpgradeRequestItem[]>([]);

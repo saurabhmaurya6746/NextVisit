@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { useState, useEffect, useCallback } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -49,7 +49,7 @@ import { openWhatsApp } from "@/lib/celebration-utils";
 
 export const Route = createFileRoute("/app/$type/$business/whatsapp-campaigns")({ component: WhatsAppPage });
 
-export function WhatsAppPage() {
+export default function WhatsAppPage() {
   // 1. ALL HOOKS CALLED UNCONDITIONALLY AT TOP LEVEL
   const [campaignsList, setCampaignsList] = useState<CampaignModel[]>([]);
   const [pendingLogs, setPendingLogs] = useState<CampaignLogItem[]>([]);

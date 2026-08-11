@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { Link } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { motion } from "framer-motion";
 import { ArrowRight, Sparkles, MessageCircle, Cake, Trophy, Star, LineChart, Ticket, UserPlus, ShieldCheck, Utensils, QrCode, Rocket, ChevronDown, ShoppingBag as ShoppingBagIcon } from "lucide-react";
 import { useState } from "react";
@@ -12,7 +13,7 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-function Index() {
+export default function Index() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-background">
       <div className="pointer-events-none absolute inset-0 gradient-mesh" />

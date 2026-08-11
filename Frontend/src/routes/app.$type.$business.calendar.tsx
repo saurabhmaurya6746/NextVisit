@@ -1,10 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Cake, Heart, CalendarDays, Megaphone, UserCog } from "lucide-react";
 
-import { useParams } from "@tanstack/react-router";
+import { useParams } from "react-router-dom";
 
 const toneStyle: Record<string, string> = {
   warning: "bg-warning/20 text-warning-foreground",
@@ -16,7 +16,7 @@ const toneStyle: Record<string, string> = {
 
 export const Route = createFileRoute("/app/$type/$business/calendar")({ component: CalendarPage });
 
-function CalendarPage() {
+export default function CalendarPage() {
   const routerParams = useParams({ strict: false }) as Record<string, string>;
   const isSalon = routerParams?.type === "salon";
 

@@ -166,9 +166,17 @@ class VisitService:
             subtotal += total_price
             valid_service_items.append((service, item, unit_price, total_price))
 
-        # 4. Calculate total_amount
+        # 4. Calculate GST tax & total_amount
+        from sqlalchemy import select
+        from app.models.business_settings import BusinessSettings
+
+        settings_stmt = select(BusinessSettings).where(BusinessSettings.business_id == current_user.business_id)
+        biz_settings = self.db.scalar(settings_stmt)
+        tax_pct = float(biz_settings.tax_percentage) if (biz_settings and biz_settings.tax_percentage is not None) else 0.0
+
         discount = data.discount if data.discount else 0.0
-        total_amount = max(0.0, subtotal - discount)
+        tax_amount = round((subtotal * max(0.0, tax_pct)) / 100.0, 2)
+        total_amount = max(0.0, subtotal + tax_amount - discount)
 
         # 5. Create Visit object
         now_ts = datetime.now(timezone.utc)
@@ -342,8 +350,16 @@ class VisitService:
                 visit.services.append(vs)
                 subtotal += sprice or service_obj.price
 
+        from sqlalchemy import select
+        from app.models.business_settings import BusinessSettings
+
+        settings_stmt = select(BusinessSettings).where(BusinessSettings.business_id == current_user.business_id)
+        biz_settings = self.db.scalar(settings_stmt)
+        tax_pct = float(biz_settings.tax_percentage) if (biz_settings and biz_settings.tax_percentage is not None) else 0.0
+        tax_amount = round((subtotal * max(0.0, tax_pct)) / 100.0, 2)
+
         visit.subtotal = subtotal
-        visit.total_amount = max(0.0, subtotal - visit.discount)
+        visit.total_amount = max(0.0, subtotal + tax_amount - (visit.discount or 0.0))
         self.repo.update(visit)
         self.db.commit()
         self.db.refresh(visit)

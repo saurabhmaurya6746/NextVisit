@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,7 +28,7 @@ export const Route = createFileRoute("/app/$type/$business/coupons")({ component
 
 type StatusFilter = "all" | "active" | "upcoming" | "expired" | "inactive";
 
-function CouponsPage() {
+export default function CouponsPage() {
   const session = getSession();
   const queryClient = useQueryClient();
 

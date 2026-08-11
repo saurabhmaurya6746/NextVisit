@@ -1,5 +1,5 @@
 import { AppLink } from "@/lib/app-nav";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -71,7 +71,7 @@ function defaultReviewMessage(name: string, reviewUrl: string) {
   return `Hi ${firstName}! 👋\nThank you for visiting us recently ❤️ We hope you had a fantastic experience!\nIf you have 1 minute, please support us with a Google review:\n⭐⭐⭐⭐⭐\n${reviewUrl}\nThank you!`;
 }
 
-function ReviewsPage() {
+export default function ReviewsPage() {
   const session = getSession();
   const queryClient = useQueryClient();
 

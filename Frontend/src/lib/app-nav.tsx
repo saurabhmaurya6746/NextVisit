@@ -1,8 +1,8 @@
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useParams } from "react-router-dom";
 import { forwardRef } from "react";
 import { readProfile } from "@/lib/business-profile";
 import { getSession } from "@/lib/auth";
-import { useBusinessType, resolveBusinessType, type BusinessType } from "@/lib/business-type";
+import { resolveBusinessType, type BusinessType } from "@/lib/business-type";
 
 export function slugify(input: string): string {
   return (input || "business")
@@ -14,11 +14,10 @@ export function slugify(input: string): string {
 
 /**
  * Read the current business scope from URL params, falling back to the stored
- * business type + profile name. This lets components that live inside the
- * /app/$type/$business/* subtree build correct links.
+ * business type + profile name.
  */
 export function useAppScope(): { type: BusinessType; business: string } {
-  const params = useParams({ strict: false }) as { type?: string; business?: string };
+  const params = useParams<{ type?: string; business?: string }>();
   const session = getSession();
   const type = resolveBusinessType(null, session, params.type);
   const profile = readProfile(type) as { name?: string };
@@ -27,33 +26,42 @@ export function useAppScope(): { type: BusinessType; business: string } {
 }
 
 type AppLinkOwnProps = {
-  /** Path relative to /app/$type/$business/ (e.g. "customers" or "customers/$id"). Empty string points at the layout root. */
-  path: string;
+  path?: string;
+  to?: string;
   params?: Record<string, string>;
   [key: string]: any;
 };
 
+export function resolveAppPath(path: string, scope: { type: string; business: string }, extraParams?: Record<string, string>): string {
+  let relativePath = path ? "/" + path.replace(/^\//, "") : "";
+  let fullPath = `/app/${scope.type}/${scope.business}${relativePath}`;
+  if (extraParams) {
+    Object.entries(extraParams).forEach(([key, val]) => {
+      fullPath = fullPath.replace(`:$${key}`, val).replace(`:${key}`, val).replace(`$${key}`, val);
+    });
+  }
+  return fullPath;
+}
+
 /**
- * Wrapper around TanStack `<Link>` that auto-injects the current business
- * scope ($type + $business) into `to` and `params`. Any extra dynamic
- * segments (e.g. `$id`) should be supplied via `params`.
+ * Wrapper around React Router `<Link>` that auto-injects the current business
+ * scope ($type + $business) into the target URL.
  */
 export const AppLink = forwardRef<HTMLAnchorElement, AppLinkOwnProps>(
-  function AppLink({ path, params, ...rest }, ref) {
+  function AppLink({ path, params, to: directTo, ...rest }, ref) {
     const scope = useAppScope();
-    const to = "/app/$type/$business" + (path ? "/" + path.replace(/^\//, "") : "");
-    return <Link ref={ref as any} to={to as any} params={{ ...scope, ...(params || {}) } as any} {...(rest as any)} />;
+    const targetUrl = directTo || resolveAppPath(path || "", scope, params);
+    return <Link ref={ref} to={targetUrl} {...rest} />;
   }
 );
 
-/** Build a `{to, params}` object usable with `useNavigate()`. */
+/** Build a path string usable with `useNavigate()`. */
 export function useAppNav() {
   const scope = useAppScope();
   return {
     scope,
     to(path: string, extra?: Record<string, string>) {
-      const to = "/app/$type/$business" + (path ? "/" + path.replace(/^\//, "") : "");
-      return { to: to as any, params: { ...scope, ...(extra || {}) } as any };
+      return resolveAppPath(path, scope, extra);
     },
   };
 }

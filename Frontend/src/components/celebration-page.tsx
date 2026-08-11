@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Cake, Gift, CalendarDays, CalendarRange, ArrowRight } from "lucide-react";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -57,7 +57,7 @@ function ClickableStat({
   );
 }
 
-export function CelebrationPage({ kind }: { kind: Kind }) {
+export default function CelebrationPage({ kind }: { kind: Kind }) {
   const params = useParams({ strict: false });
   const type = params.type || "restaurant";
   const business = params.business || "my-business";

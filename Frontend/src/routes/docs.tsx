@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { useMemo, useState } from "react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
@@ -28,7 +28,7 @@ const sections = [
   { id: "faqs", label: "FAQs", icon: HelpCircle, body: "Answers to the most common questions about billing, trials, approvals, and integrations." },
 ];
 
-function DocsPage() {
+export default function DocsPage() {
   const [q, setQ] = useState("");
   const [active, setActive] = useState(sections[0].id);
   const filtered = useMemo(() => sections.filter((s) => (s.label + " " + s.body).toLowerCase().includes(q.toLowerCase())), [q]);

@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, Sparkles, Search, Layers, Pencil, AlertCircle } from "lucide-react";
@@ -33,7 +33,7 @@ import { fmt } from "@/lib/currency";
 
 export const Route = createFileRoute("/app/$type/$business/services")({ component: ServicesPage });
 
-function ServicesPage() {
+export default function ServicesPage() {
   const qc = useQueryClient();
 
   const [q, setQ] = useState("");

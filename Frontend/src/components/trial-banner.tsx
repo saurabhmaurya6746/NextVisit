@@ -1,5 +1,5 @@
 import { AppLink } from "@/lib/app-nav";
-import { Link } from "@tanstack/react-router";
+import { Link } from "react-router-dom";
 import { Flame, Lock } from "lucide-react";
 import { useCurrentClient, TRIAL_DAYS_TOTAL } from "@/lib/clients-store";
 

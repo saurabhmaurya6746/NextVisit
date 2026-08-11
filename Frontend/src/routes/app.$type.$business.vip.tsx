@@ -1,5 +1,6 @@
 import { AppLink } from "@/lib/app-nav";
-import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router";
+import { useParams, useNavigate } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { motion } from "framer-motion";
 import { useState } from "react";
 import {
@@ -44,7 +45,7 @@ function getSegmentGradient(segment: string) {
   return SEGMENT_CONFIG[segment]?.color ?? "from-primary to-primary/70";
 }
 
-function VipPage() {
+export default function VipPage() {
   const session = getSession();
   const navigate = useNavigate();
   const params = useParams({ strict: false }) as { type?: string; business?: string };

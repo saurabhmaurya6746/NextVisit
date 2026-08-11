@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { Link } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -68,7 +69,7 @@ const pieColors = [
   "oklch(0.75 0.17 65)",
 ];
 
-function AdminDashboard() {
+export default function AdminDashboard() {
   const [activityDialogOpen, setActivityDialogOpen] = useState(false);
   const [activityPage, setActivityPage] = useState(1);
   const [activityTypeFilter, setActivityTypeFilter] = useState("ALL");

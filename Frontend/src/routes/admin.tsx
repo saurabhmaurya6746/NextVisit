@@ -1,4 +1,5 @@
-import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import { Outlet } from "react-router-dom";
+import { redirect, createFileRoute } from "@/lib/route-compat";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AdminSidebar } from "@/components/admin-sidebar";
 import { Topbar } from "@/components/topbar";
@@ -20,7 +21,7 @@ export const Route = createFileRoute("/admin")({
   component: AdminLayout,
 });
 
-function AdminLayout() {
+export function AdminLayout() {
   const [loading, setLoading] = useState(!adminLoaderShown);
   return (
     <>

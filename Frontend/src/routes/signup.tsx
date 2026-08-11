@@ -1,4 +1,5 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { useState, useEffect, type FormEvent } from "react";
 import { CheckCircle2, Clock, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,7 @@ export const Route = createFileRoute("/signup")({
   component: SignupPage,
 });
 
-function SignupPage() {
+export default function SignupPage() {
   const navigate = useNavigate();
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
