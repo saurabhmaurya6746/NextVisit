@@ -10,9 +10,7 @@ import { AppLoader } from "@/components/app-loader";
 import { useAuthenticatedBusiness } from "@/lib/business-profile";
 import { TrialBanner } from "@/components/trial-banner";
 import { getSession, useSession, hasModulePermission } from "@/lib/auth";
-import { useWizardState, WIZARD_OPEN_EVENT, setPaused } from "@/lib/wizard-store";
-import { Button } from "@/components/ui/button";
-import { Sparkles, X } from "lucide-react";
+import { useWizardState, WIZARD_OPEN_EVENT } from "@/lib/wizard-store";
 
 let appLoaderShown = false;
 
@@ -122,29 +120,6 @@ function AppLayout() {
               initials={initials}
             />
             <TrialBanner />
-            {type !== "salon" && !onboarded && wizardState.paused && (
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-primary/5 px-4 py-2 text-sm sm:px-6">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-primary" />
-                  <span>Finish setting up your business — pick up where you left off.</span>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    className="rounded-full gradient-brand text-primary-foreground"
-                    onClick={() => {
-                      setPaused(false);
-                      setWizard(true);
-                    }}
-                  >
-                    Resume setup
-                  </Button>
-                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setPaused(true)}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
             <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6 lg:p-8">
               {isPermitted ? <Outlet /> : <ForbiddenView moduleName={firstSegment || "this module"} />}
             </main>

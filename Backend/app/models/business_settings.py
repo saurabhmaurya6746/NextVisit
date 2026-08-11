@@ -54,6 +54,7 @@ class BusinessSettings(BaseModel):
     price_includes_gst: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     service_charge: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     round_off_bill: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    next_order_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     # 6. Notification Settings
     notify_orders: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

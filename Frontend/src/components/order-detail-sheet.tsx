@@ -22,7 +22,18 @@ import {
   FileText,
   Eye,
   Download,
+  XCircle,
 } from "lucide-react";
+
+export function formatOrderNumber(orderNumber: string | undefined | null): string {
+  if (!orderNumber) return "ORD-000000";
+  const match = orderNumber.match(/^ORD-(\d+)$/i);
+  if (match && match[1]) {
+    const num = parseInt(match[1], 10);
+    return `ORD-${num.toString().padStart(6, "0")}`;
+  }
+  return orderNumber;
+}
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -36,6 +47,7 @@ import {
   autoDetectCustomerApi,
   settleOrderApi,
   addOrderItemApi,
+  updateOrderApi,
   updateOrderItemApi,
   deleteOrderItemApi,
   type CustomerAutoDetectResult,
@@ -74,6 +86,8 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
   const [detecting, setDetecting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "UPI" | "CARD">("UPI");
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancellingOrder, setCancellingOrder] = useState(false);
 
   // Add Extra Dishes Modal States
   const [addItemsOpen, setAddItemsOpen] = useState(false);
@@ -125,9 +139,13 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
 
   const tableName = (() => {
     if (!order) return "";
-    for (const area of diningAreas) {
-      for (const t of area.tables) {
-        if (t.id === order.table_id) return t.table_name;
+    if (Array.isArray(diningAreas)) {
+      for (const area of diningAreas) {
+        if (Array.isArray(area?.tables)) {
+          for (const t of area.tables) {
+            if (t?.id === order.table_id) return t.table_name || "Table";
+          }
+        }
       }
     }
     return `Table`;
@@ -358,12 +376,19 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <SheetTitle className="font-display text-lg">
-                        {order.order_number}
+                        {formatOrderNumber(order.order_number)}
                       </SheetTitle>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        {tableName} · {order.order_source === "QR" ? "QR self-order" : "Staff order"} ·{" "}
-                        {new Date(order.created_at).toLocaleDateString("en-GB")} ·{" "}
-                        {new Date(order.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        {tableName} · {order.order_source === "QR" ? "QR self-order" : "Staff order"}
+                        {order.created_at ? (() => {
+                          try {
+                            const d = new Date(order.created_at);
+                            if (isNaN(d.getTime())) return "";
+                            return ` · ${d.toLocaleDateString("en-GB")} · ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+                          } catch {
+                            return "";
+                          }
+                        })() : ""}
                       </p>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         <Badge className={`rounded-full ${STATUS_TONE[order.status] || "bg-muted"}`}>
@@ -394,7 +419,7 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                     </div>
 
                     <div className="space-y-2">
-                      {order.items.map((i) => (
+                      {(order.items || []).map((i) => (
                         <div
                           key={i.id}
                           className="flex items-center justify-between gap-2 rounded-xl border p-3 text-sm"
@@ -432,7 +457,9 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                               <span className="text-xs text-muted-foreground">× {i.quantity}</span>
                             )}
 
-                            <span className="font-semibold tabular-nums text-right min-w-[50px]">{fmt(i.subtotal)}</span>
+                            <span className="font-semibold tabular-nums text-right min-w-[50px]">
+                              {fmt(i.unit_price * i.quantity - (i.discount || 0))}
+                            </span>
 
                             {order.status !== "SERVED" && order.status !== "CANCELLED" && (
                               <Button
@@ -589,9 +616,9 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                 </div>
               </div>
 
-              {/* COLLECT PAYMENT FOOTER ACTION */}
+              {/* FOOTER ACTIONS: COLLECT PAYMENT & CANCEL ORDER */}
               {order.status !== "SERVED" && order.status !== "CANCELLED" && (
-                <div className="border-t p-5 bg-card sticky bottom-0">
+                <div className="border-t p-4 bg-card sticky bottom-0 space-y-2">
                   <Button
                     onClick={() => {
                       setPhoneInput("");
@@ -603,12 +630,77 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                   >
                     <Banknote className="mr-2 h-5 w-5" /> Collect Payment ({fmt(order.total_amount)})
                   </Button>
+
+                  <Button
+                    variant="outline"
+                    onClick={() => setCancelDialogOpen(true)}
+                    className="w-full rounded-full text-xs font-semibold h-9 border-destructive/40 text-destructive hover:bg-destructive/10"
+                  >
+                    <XCircle className="mr-1.5 h-4 w-4" /> Cancel Order
+                  </Button>
                 </div>
               )}
             </div>
           )}
         </SheetContent>
       </Sheet>
+
+      {/* CANCEL ORDER CONFIRMATION DIALOG */}
+      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <DialogContent className="sm:max-w-md rounded-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="font-display text-base flex items-center gap-2 text-destructive">
+              <XCircle className="h-5 w-5" /> Cancel Order?
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="py-2 text-xs text-muted-foreground space-y-2">
+            <p>
+              Are you sure you want to cancel order <strong className="text-foreground">{formatOrderNumber(order?.order_number)}</strong> ({tableName})?
+            </p>
+            <p>This action will mark the order status as <strong>CANCELLED</strong> and release the table. Order history and items will be preserved.</p>
+          </div>
+
+          <DialogFooter className="border-t pt-4 gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              className="rounded-full text-xs"
+              onClick={() => setCancelDialogOpen(false)}
+              disabled={cancellingOrder}
+            >
+              Keep Order
+            </Button>
+            <Button
+              variant="destructive"
+              className="rounded-full text-xs font-semibold px-5"
+              disabled={cancellingOrder}
+              onClick={async () => {
+                if (!order) return;
+                setCancellingOrder(true);
+                try {
+                  await updateOrderApi(order.id, { status: "CANCELLED" as any });
+                  qc.invalidateQueries({ queryKey: ["orders", orderId] });
+                  qc.invalidateQueries({ queryKey: ["tables", "map"] });
+                  toast.success(`Order ${formatOrderNumber(order.order_number)} cancelled successfully.`);
+                  setCancelDialogOpen(false);
+                } catch (err: any) {
+                  toast.error(err?.message || "Failed to cancel order.");
+                } finally {
+                  setCancellingOrder(false);
+                }
+              }}
+            >
+              {cancellingOrder ? (
+                <>
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Cancelling…
+                </>
+              ) : (
+                "Cancel Order"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* COLLECT PAYMENT DIALOG */}
       <Dialog
@@ -1058,7 +1150,7 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                   {paymentMethod === "UPI" && (() => {
                     const upiId = (bizSettings?.payment_upi_id || "").trim();
                     const payeeName = (bizSettings?.payment_payee_name || (bizSettings as any)?.payment_payee_name || "").trim();
-                    const payableTotal = grandTotal || billTotal || 0;
+                    const payableTotal = Number(order?.total_amount ?? 0);
                     const formattedPayable = payableTotal.toFixed(2);
 
                     if (upiId && payeeName) {

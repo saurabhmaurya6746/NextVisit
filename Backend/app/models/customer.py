@@ -84,6 +84,16 @@ class Customer(BaseModel):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    campaign_logs = relationship(
+        "CampaignLog",
+        back_populates="customer",
+        cascade="all, delete-orphan",
+    )
+    coupon_redemptions = relationship(
+        "CouponRedemption",
+        back_populates="customer",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def loyalty_points(self) -> int:

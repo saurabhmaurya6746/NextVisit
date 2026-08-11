@@ -194,5 +194,5 @@ class CouponRedemption(BaseModel):
 
     # Relationships
     coupon = relationship("Coupon", back_populates="redemptions")
-    customer = relationship("Customer")
+    customer = relationship("Customer", back_populates="coupon_redemptions")
     order = relationship("Order")

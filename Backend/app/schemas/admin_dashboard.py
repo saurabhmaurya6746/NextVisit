@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AdminDashboardKpis(BaseModel):
@@ -21,6 +21,7 @@ class AdminDashboardKpis(BaseModel):
 class RevenueGrowthPoint(BaseModel):
     month: str
     revenue: float
+    clients: int = 0
 
 
 class ClientGrowthPoint(BaseModel):
@@ -28,9 +29,18 @@ class ClientGrowthPoint(BaseModel):
     count: int
 
 
+class CampaignDistributionResponse(BaseModel):
+    active: int
+    redeemed: int
+    expired: int
+
+
 class AdminDashboardAnalytics(BaseModel):
     revenue_growth: list[RevenueGrowthPoint]
     client_growth: list[ClientGrowthPoint]
+    campaign: CampaignDistributionResponse = Field(
+        default_factory=lambda: CampaignDistributionResponse(active=0, redeemed=0, expired=0)
+    )
     coupon_usage: list[dict] = []
 
 
@@ -39,7 +49,22 @@ class RecentActivityItem(BaseModel):
     type: str
     title: str
     description: str
-    timestamp: datetime
+    created_at: datetime
+    business_name: str | None = None
+    user_name: str | None = None
+    activity_type: str
+
+    # Compatibility alias for timestamp
+    @property
+    def timestamp(self) -> datetime:
+        return self.created_at
+
+
+class PaginatedActivityResponse(BaseModel):
+    items: list[RecentActivityItem]
+    total: int
+    page: int
+    size: int
 
 
 class AdminDashboardSummary(BaseModel):
@@ -53,7 +78,28 @@ class AdminDashboardSummary(BaseModel):
 
 
 class AdminDashboardResponse(BaseModel):
-    kpis: AdminDashboardKpis
-    analytics: AdminDashboardAnalytics
-    summary: AdminDashboardSummary
+    statistics: AdminDashboardKpis
+    charts: AdminDashboardAnalytics
     recent_activity: list[RecentActivityItem]
+    pending_approvals: int
+    summary: AdminDashboardSummary
+
+    # Compatibility getters
+    @property
+    def kpis(self) -> AdminDashboardKpis:
+        return self.statistics
+
+    @property
+    def analytics(self) -> AdminDashboardAnalytics:
+        return self.charts
+
+
+class PlatformHealthSummary(BaseModel):
+    total_clients: int
+    active_trials: int
+    expired_clients: int
+    active_campaigns: int
+    total_customers: int
+    total_revenue: float
+
+

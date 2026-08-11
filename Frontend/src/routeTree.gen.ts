@@ -40,7 +40,6 @@ import { Route as AppTypeBusinessFestivalCampaignsRouteImport } from './routes/a
 import { Route as AppTypeBusinessLoyaltyRouteImport } from './routes/app.$type.$business.loyalty'
 import { Route as AppTypeBusinessMarketingRouteImport } from './routes/app.$type.$business.marketing'
 import { Route as AppTypeBusinessMenuRouteImport } from './routes/app.$type.$business.menu'
-import { Route as AppTypeBusinessOrdersRouteImport } from './routes/app.$type.$business.orders'
 import { Route as AppTypeBusinessReportsRouteImport } from './routes/app.$type.$business.reports'
 import { Route as AppTypeBusinessRevenueRouteImport } from './routes/app.$type.$business.revenue'
 import { Route as AppTypeBusinessReviewBoosterRouteImport } from './routes/app.$type.$business.review-booster'
@@ -69,6 +68,7 @@ import { Route as AppTypeBusinessBirthdayCampaignsWeekRouteImport } from './rout
 import { Route as AppTypeBusinessCustomerRecoveryDaysRouteImport } from './routes/app.$type.$business.customer-recovery.$days'
 import { Route as AppTypeBusinessCustomersIndexRouteImport } from './routes/app.$type.$business.customers.index'
 import { Route as AppTypeBusinessCustomersIdRouteImport } from './routes/app.$type.$business.customers.$id'
+import { Route as AppTypeBusinessOrdersIndexRouteImport } from './routes/app.$type.$business.orders.index'
 import { Route as AppTypeBusinessOrdersIdRouteImport } from './routes/app.$type.$business.orders.$id'
 
 const IndexRoute = IndexRouteImport.update({
@@ -231,11 +231,6 @@ const AppTypeBusinessMenuRoute = AppTypeBusinessMenuRouteImport.update({
   path: '/menu',
   getParentRoute: () => AppTypeBusinessRoute,
 } as any)
-const AppTypeBusinessOrdersRoute = AppTypeBusinessOrdersRouteImport.update({
-  id: '/orders',
-  path: '/orders',
-  getParentRoute: () => AppTypeBusinessRoute,
-} as any)
 const AppTypeBusinessReportsRoute = AppTypeBusinessReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
@@ -395,10 +390,16 @@ const AppTypeBusinessCustomersIdRoute =
     path: '/customers/$id',
     getParentRoute: () => AppTypeBusinessRoute,
   } as any)
+const AppTypeBusinessOrdersIndexRoute =
+  AppTypeBusinessOrdersIndexRouteImport.update({
+    id: '/orders/',
+    path: '/orders/',
+    getParentRoute: () => AppTypeBusinessRoute,
+  } as any)
 const AppTypeBusinessOrdersIdRoute = AppTypeBusinessOrdersIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AppTypeBusinessOrdersRoute,
+  id: '/orders/$id',
+  path: '/orders/$id',
+  getParentRoute: () => AppTypeBusinessRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -433,7 +434,6 @@ export interface FileRoutesByFullPath {
   '/app/$type/$business/loyalty': typeof AppTypeBusinessLoyaltyRoute
   '/app/$type/$business/marketing': typeof AppTypeBusinessMarketingRoute
   '/app/$type/$business/menu': typeof AppTypeBusinessMenuRoute
-  '/app/$type/$business/orders': typeof AppTypeBusinessOrdersRouteWithChildren
   '/app/$type/$business/reports': typeof AppTypeBusinessReportsRoute
   '/app/$type/$business/revenue': typeof AppTypeBusinessRevenueRoute
   '/app/$type/$business/review-booster': typeof AppTypeBusinessReviewBoosterRoute
@@ -463,6 +463,7 @@ export interface FileRoutesByFullPath {
   '/app/$type/$business/anniversary-campaigns/': typeof AppTypeBusinessAnniversaryCampaignsIndexRoute
   '/app/$type/$business/birthday-campaigns/': typeof AppTypeBusinessBirthdayCampaignsIndexRoute
   '/app/$type/$business/customers/': typeof AppTypeBusinessCustomersIndexRoute
+  '/app/$type/$business/orders/': typeof AppTypeBusinessOrdersIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -495,7 +496,6 @@ export interface FileRoutesByTo {
   '/app/$type/$business/loyalty': typeof AppTypeBusinessLoyaltyRoute
   '/app/$type/$business/marketing': typeof AppTypeBusinessMarketingRoute
   '/app/$type/$business/menu': typeof AppTypeBusinessMenuRoute
-  '/app/$type/$business/orders': typeof AppTypeBusinessOrdersRouteWithChildren
   '/app/$type/$business/reports': typeof AppTypeBusinessReportsRoute
   '/app/$type/$business/revenue': typeof AppTypeBusinessRevenueRoute
   '/app/$type/$business/review-booster': typeof AppTypeBusinessReviewBoosterRoute
@@ -525,6 +525,7 @@ export interface FileRoutesByTo {
   '/app/$type/$business/anniversary-campaigns': typeof AppTypeBusinessAnniversaryCampaignsIndexRoute
   '/app/$type/$business/birthday-campaigns': typeof AppTypeBusinessBirthdayCampaignsIndexRoute
   '/app/$type/$business/customers': typeof AppTypeBusinessCustomersIndexRoute
+  '/app/$type/$business/orders': typeof AppTypeBusinessOrdersIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -559,7 +560,6 @@ export interface FileRoutesById {
   '/app/$type/$business/loyalty': typeof AppTypeBusinessLoyaltyRoute
   '/app/$type/$business/marketing': typeof AppTypeBusinessMarketingRoute
   '/app/$type/$business/menu': typeof AppTypeBusinessMenuRoute
-  '/app/$type/$business/orders': typeof AppTypeBusinessOrdersRouteWithChildren
   '/app/$type/$business/reports': typeof AppTypeBusinessReportsRoute
   '/app/$type/$business/revenue': typeof AppTypeBusinessRevenueRoute
   '/app/$type/$business/review-booster': typeof AppTypeBusinessReviewBoosterRoute
@@ -589,6 +589,7 @@ export interface FileRoutesById {
   '/app/$type/$business/anniversary-campaigns/': typeof AppTypeBusinessAnniversaryCampaignsIndexRoute
   '/app/$type/$business/birthday-campaigns/': typeof AppTypeBusinessBirthdayCampaignsIndexRoute
   '/app/$type/$business/customers/': typeof AppTypeBusinessCustomersIndexRoute
+  '/app/$type/$business/orders/': typeof AppTypeBusinessOrdersIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -624,7 +625,6 @@ export interface FileRouteTypes {
     | '/app/$type/$business/loyalty'
     | '/app/$type/$business/marketing'
     | '/app/$type/$business/menu'
-    | '/app/$type/$business/orders'
     | '/app/$type/$business/reports'
     | '/app/$type/$business/revenue'
     | '/app/$type/$business/review-booster'
@@ -654,6 +654,7 @@ export interface FileRouteTypes {
     | '/app/$type/$business/anniversary-campaigns/'
     | '/app/$type/$business/birthday-campaigns/'
     | '/app/$type/$business/customers/'
+    | '/app/$type/$business/orders/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -686,7 +687,6 @@ export interface FileRouteTypes {
     | '/app/$type/$business/loyalty'
     | '/app/$type/$business/marketing'
     | '/app/$type/$business/menu'
-    | '/app/$type/$business/orders'
     | '/app/$type/$business/reports'
     | '/app/$type/$business/revenue'
     | '/app/$type/$business/review-booster'
@@ -716,6 +716,7 @@ export interface FileRouteTypes {
     | '/app/$type/$business/anniversary-campaigns'
     | '/app/$type/$business/birthday-campaigns'
     | '/app/$type/$business/customers'
+    | '/app/$type/$business/orders'
   id:
     | '__root__'
     | '/'
@@ -749,7 +750,6 @@ export interface FileRouteTypes {
     | '/app/$type/$business/loyalty'
     | '/app/$type/$business/marketing'
     | '/app/$type/$business/menu'
-    | '/app/$type/$business/orders'
     | '/app/$type/$business/reports'
     | '/app/$type/$business/revenue'
     | '/app/$type/$business/review-booster'
@@ -779,6 +779,7 @@ export interface FileRouteTypes {
     | '/app/$type/$business/anniversary-campaigns/'
     | '/app/$type/$business/birthday-campaigns/'
     | '/app/$type/$business/customers/'
+    | '/app/$type/$business/orders/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1016,13 +1017,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTypeBusinessMenuRouteImport
       parentRoute: typeof AppTypeBusinessRoute
     }
-    '/app/$type/$business/orders': {
-      id: '/app/$type/$business/orders'
-      path: '/orders'
-      fullPath: '/app/$type/$business/orders'
-      preLoaderRoute: typeof AppTypeBusinessOrdersRouteImport
-      parentRoute: typeof AppTypeBusinessRoute
-    }
     '/app/$type/$business/reports': {
       id: '/app/$type/$business/reports'
       path: '/reports'
@@ -1219,12 +1213,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTypeBusinessCustomersIdRouteImport
       parentRoute: typeof AppTypeBusinessRoute
     }
+    '/app/$type/$business/orders/': {
+      id: '/app/$type/$business/orders/'
+      path: '/orders'
+      fullPath: '/app/$type/$business/orders/'
+      preLoaderRoute: typeof AppTypeBusinessOrdersIndexRouteImport
+      parentRoute: typeof AppTypeBusinessRoute
+    }
     '/app/$type/$business/orders/$id': {
       id: '/app/$type/$business/orders/$id'
-      path: '/$id'
+      path: '/orders/$id'
       fullPath: '/app/$type/$business/orders/$id'
       preLoaderRoute: typeof AppTypeBusinessOrdersIdRouteImport
-      parentRoute: typeof AppTypeBusinessOrdersRoute
+      parentRoute: typeof AppTypeBusinessRoute
     }
   }
 }
@@ -1268,19 +1269,6 @@ const AppTypeBusinessCustomerRecoveryRouteWithChildren =
     AppTypeBusinessCustomerRecoveryRouteChildren,
   )
 
-interface AppTypeBusinessOrdersRouteChildren {
-  AppTypeBusinessOrdersIdRoute: typeof AppTypeBusinessOrdersIdRoute
-}
-
-const AppTypeBusinessOrdersRouteChildren: AppTypeBusinessOrdersRouteChildren = {
-  AppTypeBusinessOrdersIdRoute: AppTypeBusinessOrdersIdRoute,
-}
-
-const AppTypeBusinessOrdersRouteWithChildren =
-  AppTypeBusinessOrdersRoute._addFileChildren(
-    AppTypeBusinessOrdersRouteChildren,
-  )
-
 interface AppTypeBusinessRouteChildren {
   AppTypeBusinessAppointmentsRoute: typeof AppTypeBusinessAppointmentsRoute
   AppTypeBusinessBookingsRoute: typeof AppTypeBusinessBookingsRoute
@@ -1292,7 +1280,6 @@ interface AppTypeBusinessRouteChildren {
   AppTypeBusinessLoyaltyRoute: typeof AppTypeBusinessLoyaltyRoute
   AppTypeBusinessMarketingRoute: typeof AppTypeBusinessMarketingRoute
   AppTypeBusinessMenuRoute: typeof AppTypeBusinessMenuRoute
-  AppTypeBusinessOrdersRoute: typeof AppTypeBusinessOrdersRouteWithChildren
   AppTypeBusinessReportsRoute: typeof AppTypeBusinessReportsRoute
   AppTypeBusinessRevenueRoute: typeof AppTypeBusinessRevenueRoute
   AppTypeBusinessReviewBoosterRoute: typeof AppTypeBusinessReviewBoosterRoute
@@ -1317,9 +1304,11 @@ interface AppTypeBusinessRouteChildren {
   AppTypeBusinessBirthdayCampaignsTomorrowRoute: typeof AppTypeBusinessBirthdayCampaignsTomorrowRoute
   AppTypeBusinessBirthdayCampaignsWeekRoute: typeof AppTypeBusinessBirthdayCampaignsWeekRoute
   AppTypeBusinessCustomersIdRoute: typeof AppTypeBusinessCustomersIdRoute
+  AppTypeBusinessOrdersIdRoute: typeof AppTypeBusinessOrdersIdRoute
   AppTypeBusinessAnniversaryCampaignsIndexRoute: typeof AppTypeBusinessAnniversaryCampaignsIndexRoute
   AppTypeBusinessBirthdayCampaignsIndexRoute: typeof AppTypeBusinessBirthdayCampaignsIndexRoute
   AppTypeBusinessCustomersIndexRoute: typeof AppTypeBusinessCustomersIndexRoute
+  AppTypeBusinessOrdersIndexRoute: typeof AppTypeBusinessOrdersIndexRoute
 }
 
 const AppTypeBusinessRouteChildren: AppTypeBusinessRouteChildren = {
@@ -1334,7 +1323,6 @@ const AppTypeBusinessRouteChildren: AppTypeBusinessRouteChildren = {
   AppTypeBusinessLoyaltyRoute: AppTypeBusinessLoyaltyRoute,
   AppTypeBusinessMarketingRoute: AppTypeBusinessMarketingRoute,
   AppTypeBusinessMenuRoute: AppTypeBusinessMenuRoute,
-  AppTypeBusinessOrdersRoute: AppTypeBusinessOrdersRouteWithChildren,
   AppTypeBusinessReportsRoute: AppTypeBusinessReportsRoute,
   AppTypeBusinessRevenueRoute: AppTypeBusinessRevenueRoute,
   AppTypeBusinessReviewBoosterRoute: AppTypeBusinessReviewBoosterRoute,
@@ -1367,11 +1355,13 @@ const AppTypeBusinessRouteChildren: AppTypeBusinessRouteChildren = {
   AppTypeBusinessBirthdayCampaignsWeekRoute:
     AppTypeBusinessBirthdayCampaignsWeekRoute,
   AppTypeBusinessCustomersIdRoute: AppTypeBusinessCustomersIdRoute,
+  AppTypeBusinessOrdersIdRoute: AppTypeBusinessOrdersIdRoute,
   AppTypeBusinessAnniversaryCampaignsIndexRoute:
     AppTypeBusinessAnniversaryCampaignsIndexRoute,
   AppTypeBusinessBirthdayCampaignsIndexRoute:
     AppTypeBusinessBirthdayCampaignsIndexRoute,
   AppTypeBusinessCustomersIndexRoute: AppTypeBusinessCustomersIndexRoute,
+  AppTypeBusinessOrdersIndexRoute: AppTypeBusinessOrdersIndexRoute,
 }
 
 const AppTypeBusinessRouteWithChildren = AppTypeBusinessRoute._addFileChildren(

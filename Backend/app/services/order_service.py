@@ -88,20 +88,25 @@ class OrderService:
     def _recalculate_order(self, order: Order) -> Order:
         """Automatically recalculate order subtotal, tax_amount, and total_amount."""
         from datetime import datetime, timezone
+        from app.models.business_settings import BusinessSettings
+
         total_subtotal = 0.0
-        total_tax = 0.0
 
         for item in order.items:
             item_base = (item.unit_price * item.quantity) - item.discount
             item_subtotal = max(0.0, round(item_base, 2))
-            item_tax = max(0.0, round(item_subtotal * (item.tax_rate / 100.0), 2))
 
-            item.subtotal = item_subtotal + item_tax
+            item.subtotal = item_subtotal
             total_subtotal += item_subtotal
-            total_tax += item_tax
 
         order.subtotal = round(total_subtotal, 2)
-        order.tax_amount = round(total_tax, 2)
+
+        # Fetch BusinessSettings for configured GST percentage
+        stmt = select(BusinessSettings).where(BusinessSettings.business_id == order.business_id)
+        biz_settings = self.db.scalar(stmt)
+        tax_rate = biz_settings.tax_percentage if (biz_settings and biz_settings.enable_gst) else 0.0
+
+        order.tax_amount = max(0.0, round(order.subtotal * (tax_rate / 100.0), 2))
         order.total_amount = max(0.0, round(order.subtotal + order.tax_amount - order.discount_amount, 2))
         order.last_activity_at = datetime.now(timezone.utc)
 
@@ -153,9 +158,44 @@ class OrderService:
                     detail=f"Customer '{customer_id}' not found for business.",
                 )
 
-        # Generate sequential order number for target_business_id
-        count = self.order_repo.count_orders_today(target_business_id)
-        order_number = f"ORD-{count + 1001}"
+        # Generate atomic per-business 6-digit sequential order number with row locking
+        import re
+        from app.models.business_settings import BusinessSettings
+
+        b_stmt = select(BusinessSettings).where(BusinessSettings.business_id == target_business_id).with_for_update()
+        biz_settings = self.db.scalar(b_stmt)
+
+        if biz_settings:
+            seq = getattr(biz_settings, "next_order_number", 1) or 1
+            if seq == 1:
+                # Scan existing orders for this business to find highest historical numeric sequence
+                orders_stmt = select(Order.order_number).where(Order.business_id == target_business_id)
+                existing_numbers = self.db.scalars(orders_stmt).all()
+                max_existing = 0
+                for num in existing_numbers:
+                    match = re.search(r'\d+', num or "")
+                    if match:
+                        try:
+                            max_existing = max(max_existing, int(match.group(0)))
+                        except ValueError:
+                            pass
+                if max_existing >= seq:
+                    seq = max_existing + 1
+
+            order_number = f"ORD-{seq:06d}"
+            biz_settings.next_order_number = seq + 1
+        else:
+            orders_stmt = select(Order.order_number).where(Order.business_id == target_business_id)
+            existing_numbers = self.db.scalars(orders_stmt).all()
+            max_existing = 0
+            for num in existing_numbers:
+                match = re.search(r'\d+', num or "")
+                if match:
+                    try:
+                        max_existing = max(max_existing, int(match.group(0)))
+                    except ValueError:
+                        pass
+            order_number = f"ORD-{(max_existing + 1):06d}"
 
         # Deduplicate and merge items
         merged_items_map = {}
@@ -186,7 +226,6 @@ class OrderService:
         for item_dict in merged_items_map.values():
             item_base = (item_dict["unit_price"] * item_dict["quantity"]) - item_dict["discount"]
             item_subtotal = max(0.0, round(item_base, 2))
-            item_tax = max(0.0, round(item_subtotal * (item_dict["tax_rate"] / 100.0), 2))
 
             order_items.append(
                 OrderItem(
@@ -197,7 +236,7 @@ class OrderService:
                     quantity=item_dict["quantity"],
                     tax_rate=item_dict["tax_rate"],
                     discount=item_dict["discount"],
-                    subtotal=item_subtotal + item_tax,
+                    subtotal=item_subtotal,
                     notes=item_dict["notes"],
                 )
             )
@@ -273,7 +312,6 @@ class OrderService:
             for item_dict in merged_items_map.values():
                 item_base = (item_dict["unit_price"] * item_dict["quantity"]) - item_dict["discount"]
                 item_subtotal = max(0.0, round(item_base, 2))
-                item_tax = max(0.0, round(item_subtotal * (item_dict["tax_rate"] / 100.0), 2))
 
                 new_items.append(
                     OrderItem(
@@ -284,7 +322,7 @@ class OrderService:
                         quantity=item_dict["quantity"],
                         tax_rate=item_dict["tax_rate"],
                         discount=item_dict["discount"],
-                        subtotal=item_subtotal + item_tax,
+                        subtotal=item_subtotal,
                         notes=item_dict["notes"],
                     )
                 )
@@ -333,8 +371,7 @@ class OrderService:
             existing_item.quantity += data.quantity
             item_base = (existing_item.unit_price * existing_item.quantity) - existing_item.discount
             item_subtotal = max(0.0, round(item_base, 2))
-            item_tax = max(0.0, round(item_subtotal * (existing_item.tax_rate / 100.0), 2))
-            existing_item.subtotal = item_subtotal + item_tax
+            existing_item.subtotal = item_subtotal
             if data.notes and data.notes.strip():
                 existing_item.notes = (
                     (existing_item.notes + "; " if existing_item.notes else "") + data.notes.strip()
@@ -343,7 +380,6 @@ class OrderService:
         else:
             item_base = (data.unit_price * data.quantity) - data.discount
             item_subtotal = max(0.0, round(item_base, 2))
-            item_tax = max(0.0, round(item_subtotal * (data.tax_rate / 100.0), 2))
 
             new_item = OrderItem(
                 order_id=order.id,
@@ -354,7 +390,7 @@ class OrderService:
                 quantity=data.quantity,
                 tax_rate=data.tax_rate,
                 discount=data.discount,
-                subtotal=item_subtotal + item_tax,
+                subtotal=item_subtotal,
                 notes=data.notes,
             )
             self.order_repo.add_item(new_item)

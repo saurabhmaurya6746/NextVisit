@@ -196,5 +196,11 @@ class CustomerRepository(BaseRepository):
         return customer
 
     def delete(self, customer: Customer) -> None:
+        from app.models.campaign import CampaignLog
+        from app.models.coupon import CouponRedemption
+        from sqlalchemy import delete
+
+        self.db.execute(delete(CampaignLog).where(CampaignLog.customer_id == customer.id))
+        self.db.execute(delete(CouponRedemption).where(CouponRedemption.customer_id == customer.id))
         self.db.delete(customer)
         self.db.flush()

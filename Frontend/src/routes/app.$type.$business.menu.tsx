@@ -70,8 +70,7 @@ function blankItem(categoryId: string) {
     category_id: categoryId,
     name: "",
     description: "",
-    price: 0,
-    gst_percentage: 0,
+    price: "",
     is_veg: true,
     is_available: true,
     display_order: 0,
@@ -324,11 +323,6 @@ function MenuPage() {
                         </div>
                         <p className="mt-0.5 text-xs text-muted-foreground">
                           {fmt(item.price)}
-                          {item.gst_percentage > 0 && (
-                            <span className="ml-1 text-muted-foreground/60">
-                              +{item.gst_percentage}% GST
-                            </span>
-                          )}
                         </p>
                         {item.description && (
                           <p className="mt-0.5 text-xs text-muted-foreground/70 line-clamp-1">
@@ -598,8 +592,7 @@ function ItemDialog({ open, mode, initial, defaultCategoryId, categories, onClos
           category_id: initial.category_id,
           name: initial.name,
           description: initial.description ?? "",
-          price: initial.price,
-          gst_percentage: initial.gst_percentage,
+          price: initial.price !== undefined && initial.price !== null ? String(initial.price) : "",
           is_veg: initial.is_veg,
           is_available: initial.is_available,
           display_order: initial.display_order,
@@ -630,14 +623,19 @@ function ItemDialog({ open, mode, initial, defaultCategoryId, categories, onClos
       toast.error("Please select a category");
       return;
     }
-    if (form.price < 0) {
+    const parsedPrice = Number(form.price);
+    if (form.price === "" || isNaN(parsedPrice) || parsedPrice < 0) {
       toast.error("Price must be 0 or more");
       return;
     }
     onSave({
-      ...form,
+      category_id: form.category_id,
       name: form.name.trim(),
       description: form.description?.trim() || undefined,
+      price: parsedPrice,
+      is_veg: form.is_veg,
+      is_available: form.is_available,
+      display_order: form.display_order,
     });
   }
 
@@ -676,28 +674,16 @@ function ItemDialog({ open, mode, initial, defaultCategoryId, categories, onClos
               </SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label className="text-xs">Price (₹) *</Label>
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                value={form.price}
-                onChange={(e) => setForm({ ...form, price: Number(e.target.value) || 0 })}
-              />
-            </div>
-            <div>
-              <Label className="text-xs">GST %</Label>
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                step="0.5"
-                value={form.gst_percentage}
-                onChange={(e) => setForm({ ...form, gst_percentage: Number(e.target.value) || 0 })}
-              />
-            </div>
+          <div>
+            <Label className="text-xs">Price (₹) *</Label>
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              placeholder="0"
+              value={form.price}
+              onChange={(e) => setForm({ ...form, price: e.target.value })}
+            />
           </div>
           <div>
             <Label className="text-xs">Description (optional)</Label>

@@ -173,7 +173,7 @@ class CampaignLog(BaseModel):
         back_populates="logs",
     )
 
-    customer = relationship("Customer")
+    customer = relationship("Customer", back_populates="campaign_logs")
     visit = relationship("Visit")
     reviewer = relationship("User", foreign_keys=[reviewed_by])
     sender = relationship("User", foreign_keys=[sent_by_user_id])

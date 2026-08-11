@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Minus, ShoppingBag, Check, ArrowLeft, User, Search, UserPlus, Loader2 } from "lucide-react";
+import { Plus, Minus, ShoppingBag, Check, ArrowLeft, User, Search, UserPlus, Loader2, ChevronUp, ChevronDown } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,7 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
   const [selectedTableName, setSelectedTableName] = useState<string>(presetTable || "");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCatId, setActiveCatId] = useState<string>("");
+  const [mobileCartExpanded, setMobileCartExpanded] = useState(false);
 
   // Customer Details State (Step 2)
   const [custMode, setCustMode] = useState<"existing" | "new" | "guest">("existing");
@@ -103,6 +104,7 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
   const subtotal = cart.reduce((s, i) => s + i.unit_price * i.quantity, 0);
   const taxTotal = cart.reduce((s, i) => s + (i.unit_price * i.quantity * (i.tax_rate / 100)), 0);
   const total = subtotal + taxTotal;
+  const totalItemsCount = cart.reduce((s, i) => s + i.quantity, 0);
 
   function reset() {
     setStep(presetTable ? 1 : 0);
@@ -110,6 +112,7 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
     setSelectedTableName(presetTable || "");
     setCart([]);
     setActiveCatId("");
+    setMobileCartExpanded(false);
     setCustMode("existing");
     setSearchPhone("");
     setFoundCustomer(null);
@@ -214,13 +217,13 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
       const time = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
       pushNotification({
         type: "staff_order",
-        title: "\ud83d\udecd\ufe0f New Staff Order",
+        title: "🛍️ New Staff Order",
         body: [
           `Table: ${selectedTableName || "Unknown"}`,
           `Order: ${res.order_number}`,
-          `Amount: \u20b9${res.total_amount.toFixed(2)}`,
+          `Amount: ₹${res.total_amount.toFixed(2)}`,
           `Time: ${time}`,
-        ].join(" \u00b7 "),
+        ].join(" · "),
         orderId: res.id,
         table: selectedTableName || "",
       });
@@ -292,39 +295,40 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
-      <DialogContent className="max-w-4xl rounded-2xl">
-        <DialogHeader>
-          <DialogTitle className="font-display flex items-center gap-2">
-            <ShoppingBag className="h-5 w-5 text-primary" /> New staff order
+      <DialogContent className="max-w-4xl w-[95vw] sm:w-full h-[90dvh] max-h-[90dvh] sm:h-auto sm:max-h-[85vh] rounded-2xl flex flex-col p-3 sm:p-6 overflow-hidden gap-0">
+        <DialogHeader className="shrink-0 pb-2 border-b border-border/40">
+          <DialogTitle className="font-display flex items-center gap-2 text-base sm:text-lg">
+            <ShoppingBag className="h-5 w-5 text-primary shrink-0" />
+            <span>New staff order</span>
             {selectedTableName && (
-              <span className="ml-2 rounded-full bg-primary/10 px-3 py-0.5 text-sm font-medium text-primary">
+              <span className="ml-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
                 {selectedTableName}
               </span>
             )}
           </DialogTitle>
-          <p className="pt-1 text-xs text-muted-foreground">
+          <p className="pt-0.5 text-xs text-muted-foreground">
             {step === 0 ? "Step 1 of 2 · Select a table" : `Step 2 of 2 · Add items & place order for ${selectedTableName}`}
           </p>
         </DialogHeader>
 
-        <div className="min-h-[360px]">
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col pt-2 h-full">
           <AnimatePresence mode="wait">
             {/* STEP 0: SELECT TABLE */}
             {step === 0 && (
-              <motion.div key="s0" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                <p className="mb-3 text-sm text-muted-foreground">
+              <motion.div key="s0" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex-1 min-h-0 overflow-y-auto">
+                <p className="mb-3 text-xs sm:text-sm text-muted-foreground">
                   Tap a table to start a staff temporary order. Customer details are collected at payment.
                 </p>
                 {allTables.length === 0 ? (
                   <p className="py-8 text-center text-sm text-muted-foreground">No tables configured. Please add tables in Table Setup.</p>
                 ) : (
-                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6 pb-4">
                     {allTables.map((t) => (
                       <button
                         key={t.id}
                         onClick={() => pickTable(t.id, t.table_name)}
                         className={cn(
-                          "rounded-xl border px-3 py-4 text-sm font-medium transition-all text-left",
+                          "rounded-xl border px-3 py-3.5 text-sm font-medium transition-all text-left min-h-[44px]",
                           selectedTableId === t.id
                             ? "gradient-brand text-primary-foreground shadow-elegant"
                             : t.status === "OCCUPIED"
@@ -332,8 +336,8 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
                             : "hover:-translate-y-0.5 hover:border-primary"
                         )}
                       >
-                        <div className="font-semibold">{t.table_name}</div>
-                        <div className="text-[10px] opacity-80 mt-1">
+                        <div className="font-semibold text-xs sm:text-sm">{t.table_name}</div>
+                        <div className="text-[10px] opacity-80 mt-0.5">
                           {t.status === "OCCUPIED" ? "Occupied" : `Cap: ${t.capacity}`}
                         </div>
                       </button>
@@ -350,19 +354,19 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className="grid gap-3 md:grid-cols-[140px_1fr_260px]"
+                className="flex-1 min-h-0 h-full flex flex-col md:grid md:grid-cols-[140px_1fr_260px] gap-2 md:gap-3 overflow-hidden"
               >
-                {/* Category Sidebar */}
-                <div className="space-y-1 overflow-y-auto max-h-[420px]">
+                {/* CATEGORIES: MOBILE HORIZONTAL SCROLL CHIPS */}
+                <div className="flex md:hidden items-center gap-1.5 overflow-x-auto pb-2 shrink-0 scrollbar-none snap-x">
                   {menuCategories.map((c) => (
                     <button
                       key={c.id}
                       onClick={() => setActiveCatId(c.id)}
                       className={cn(
-                        "w-full rounded-xl px-3 py-2 text-left text-sm transition-all",
+                        "rounded-full px-3.5 py-1.5 text-xs font-medium whitespace-nowrap transition-all shrink-0 min-h-[36px] flex items-center gap-1.5 snap-start",
                         c.id === currentCatId
-                          ? "gradient-brand text-primary-foreground shadow-elegant"
-                          : "hover:bg-muted"
+                          ? "gradient-brand text-primary-foreground shadow-sm"
+                          : "bg-muted/70 text-muted-foreground hover:bg-muted"
                       )}
                     >
                       {c.name}
@@ -370,37 +374,102 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
                   ))}
                 </div>
 
-                {/* Items Grid */}
-                <div className="grid max-h-[420px] grid-cols-2 gap-2 overflow-y-auto pr-1">
+                {/* CATEGORIES: DESKTOP VERTICAL SIDEBAR */}
+                <div className="hidden md:flex md:flex-col space-y-1 overflow-y-auto max-h-[420px] pr-1 shrink-0">
+                  {menuCategories.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => setActiveCatId(c.id)}
+                      className={cn(
+                        "w-full rounded-xl px-3 py-2 text-left text-sm transition-all min-h-[40px] flex items-center justify-between",
+                        c.id === currentCatId
+                          ? "gradient-brand text-primary-foreground shadow-elegant"
+                          : "hover:bg-muted"
+                      )}
+                    >
+                      <span className="truncate">{c.name}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* MENU ITEMS GRID (PRIMARY VERTICAL SCROLL REGION) */}
+                <div className="flex-1 min-h-0 h-full overflow-y-auto pr-1 text-left scroll-smooth">
                   {currentCatItems.length === 0 ? (
-                    <p className="col-span-2 py-12 text-center text-xs text-muted-foreground">
-                      No available items in this category.
-                    </p>
+                    <div className="py-12 text-center text-xs text-muted-foreground flex flex-col items-center justify-center">
+                      <p>No available items in this category.</p>
+                    </div>
                   ) : (
-                    currentCatItems.map((m) => (
-                      <button
-                        key={m.id}
-                        onClick={() => addToCart(m)}
-                        className="group rounded-xl border p-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-glow"
-                      >
-                        <p className="font-medium text-sm">{m.name}</p>
-                        <div className="mt-2 flex items-center justify-between">
-                          <span className="text-sm font-semibold">{fmt(m.price)}</span>
-                          <Plus className="h-4 w-4 text-primary opacity-0 transition-opacity group-hover:opacity-100" />
-                        </div>
-                      </button>
-                    ))
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-2 pb-4">
+                      {currentCatItems.map((m) => {
+                        const inCartItem = cart.find((i) => i.menu_item_id === m.id);
+                        return (
+                          <div
+                            key={m.id}
+                            className={cn(
+                              "group rounded-xl border p-3 text-left transition-all flex flex-col justify-between bg-card",
+                              inCartItem ? "border-primary/50 bg-primary/5" : "hover:border-primary/40"
+                            )}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5">
+                                  <p className="font-medium text-xs sm:text-sm text-foreground line-clamp-1">{m.name}</p>
+                                </div>
+                                {m.description && (
+                                  <p className="text-[11px] text-muted-foreground line-clamp-1">{m.description}</p>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="mt-3 flex items-center justify-between pt-1 border-t border-border/40">
+                              <span className="text-xs sm:text-sm font-semibold">{fmt(m.price)}</span>
+
+                              {inCartItem ? (
+                                <div className="flex items-center gap-1 bg-background rounded-lg border px-1 py-0.5">
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                    onClick={() => bumpQty(m.id, -1)}
+                                  >
+                                    <Minus className="h-3 w-3" />
+                                  </Button>
+                                  <span className="w-5 text-center text-xs font-semibold">{inCartItem.quantity}</span>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                    onClick={() => bumpQty(m.id, +1)}
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => addToCart(m)}
+                                  className="h-7 text-xs rounded-lg px-2.5 hover:bg-primary hover:text-primary-foreground font-medium"
+                                >
+                                  <Plus className="mr-1 h-3.5 w-3.5" /> Add
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
 
-                {/* Cart Drawer */}
-                <div className="rounded-xl border p-3 flex flex-col justify-between">
+                {/* DESKTOP CART DRAWER (HIDDEN ON MOBILE) */}
+                <div className="hidden md:flex rounded-xl border p-3 flex-col justify-between max-h-[420px] shrink-0">
                   <div>
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Cart · {selectedTableName}
                     </p>
                     {cart.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">Tap items on the left to add to order.</p>
+                      <p className="text-xs text-muted-foreground">Tap items to add to order.</p>
                     ) : (
                       <div className="space-y-2 max-h-[200px] overflow-y-auto">
                         {cart.map((i) => (
@@ -443,9 +512,9 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
 
                   <div className="mt-3 border-t pt-2 space-y-2">
                     <div>
-                      <Label className="text-[11px] text-muted-foreground">Kitchen Notes (optional)</Label>
+                      <Label className="text-[11px] text-muted-foreground">Kitchen Notes</Label>
                       <Textarea
-                        placeholder="e.g. Extra spicy, no onions…"
+                        placeholder="e.g. Extra spicy..."
                         rows={1}
                         value={orderNotes}
                         onChange={(e) => setOrderNotes(e.target.value)}
@@ -479,7 +548,85 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <>
-                          <Check className="mr-1.5 h-4 w-4" /> Place Temporary Order
+                          <Check className="mr-1.5 h-4 w-4" /> Place Order
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* MOBILE STICKY CART FOOTER (ACCESSIBLE AT ALL TIMES) */}
+                <div className="shrink-0 md:hidden border-t pt-2 bg-card space-y-2">
+                  {mobileCartExpanded && cart.length > 0 && (
+                    <div className="space-y-2 max-h-[160px] overflow-y-auto p-2 bg-muted/30 rounded-xl border mb-2">
+                      <div className="flex items-center justify-between border-b pb-1">
+                        <span className="text-xs font-semibold">Cart Items ({totalItemsCount})</span>
+                        <span className="text-xs text-muted-foreground">{selectedTableName}</span>
+                      </div>
+                      {cart.map((i) => (
+                        <div key={i.menu_item_id} className="flex items-center justify-between text-xs py-1">
+                          <span className="font-medium truncate max-w-[140px]">{i.item_name}</span>
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1">
+                              <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => bumpQty(i.menu_item_id, -1)}>
+                                <Minus className="h-3 w-3" />
+                              </Button>
+                              <span className="w-4 text-center font-semibold">{i.quantity}</span>
+                              <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => bumpQty(i.menu_item_id, +1)}>
+                                <Plus className="h-3 w-3" />
+                              </Button>
+                            </div>
+                            <span className="font-semibold text-foreground w-12 text-right">{fmt(i.unit_price * i.quantity)}</span>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="pt-1">
+                        <Input
+                          placeholder="Kitchen notes"
+                          value={orderNotes}
+                          onChange={(e) => setOrderNotes(e.target.value)}
+                          className="text-xs h-7 rounded-lg"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMobileCartExpanded(!mobileCartExpanded)}
+                      disabled={cart.length === 0}
+                      className="flex items-center gap-2 text-left flex-1 px-1 disabled:opacity-50"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold">
+                          <span>Cart · {selectedTableName}</span>
+                          {totalItemsCount > 0 && (
+                            <span className="rounded-full bg-primary/20 text-primary px-1.5 py-0.2 text-[10px]">
+                              {totalItemsCount}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Total: <strong className="text-foreground">{fmt(total)}</strong>
+                        </p>
+                      </div>
+                      {cart.length > 0 && (
+                        mobileCartExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground ml-auto" /> : <ChevronUp className="h-4 w-4 text-muted-foreground ml-auto" />
+                      )}
+                    </button>
+
+                    <Button
+                      size="sm"
+                      className="rounded-full gradient-brand text-primary-foreground px-4 h-10 font-semibold shadow-md shrink-0 text-xs"
+                      disabled={cart.length === 0 || placeOrderMut.isPending}
+                      onClick={handlePlaceOrder}
+                    >
+                      {placeOrderMut.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Check className="mr-1 h-4 w-4" /> Place Order ({fmt(total)})
                         </>
                       )}
                     </Button>

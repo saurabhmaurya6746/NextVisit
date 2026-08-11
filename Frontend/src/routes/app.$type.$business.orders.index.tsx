@@ -24,7 +24,7 @@ import { useProfile } from "@/lib/business-profile";
 import { toast } from "sonner";
 import { fmt } from "@/lib/currency";
 
-export const Route = createFileRoute("/app/$type/$business/orders")({
+export const Route = createFileRoute("/app/$type/$business/orders/")({
   component: OrdersPage,
   validateSearch: (s: Record<string, unknown>) => ({
     payment: s.payment === "unpaid" || s.payment === "paid" ? (s.payment as "unpaid" | "paid") : undefined,
@@ -114,9 +114,15 @@ function OrdersPage() {
 
   const tableMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const area of diningAreas) {
-      for (const t of area.tables) {
-        map.set(t.id, t.table_name);
+    if (Array.isArray(diningAreas)) {
+      for (const area of diningAreas) {
+        if (Array.isArray(area?.tables)) {
+          for (const t of area.tables) {
+            if (t?.id && t?.table_name) {
+              map.set(t.id, t.table_name);
+            }
+          }
+        }
       }
     }
     return map;
@@ -132,7 +138,7 @@ function OrdersPage() {
   const endItem = Math.min(page * pageSize, totalItems);
 
   const allTablesList = useMemo(() => {
-    return diningAreas.flatMap((a) => a.tables.map((t) => t.table_name));
+    return diningAreas.flatMap((a) => (a.tables || []).map((t) => t.table_name));
   }, [diningAreas]);
 
   const bizSlug =
@@ -311,7 +317,16 @@ function OrdersPage() {
                               className="cursor-pointer hover:bg-muted/40 transition-colors"
                               onClick={() => setOpenId(o.id)}
                             >
-                              <TableCell className="font-mono text-xs font-semibold text-foreground">{o.order_number}</TableCell>
+                              <TableCell className="font-mono text-xs font-semibold text-foreground">
+                                <AppLink
+                                  path="orders/$id"
+                                  params={{ id: o.id }}
+                                  className="hover:text-primary hover:underline text-foreground"
+                                  onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                                >
+                                  {o.order_number}
+                                </AppLink>
+                              </TableCell>
                               <TableCell className="font-medium text-foreground">{tableName}</TableCell>
                               <TableCell
                                 className="font-medium"
@@ -354,14 +369,15 @@ function OrdersPage() {
                                 })}
                               </TableCell>
                               <TableCell onClick={(e) => e.stopPropagation()}>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="min-h-[36px] rounded-full px-3 text-xs"
-                                  onClick={() => setOpenId(o.id)}
-                                >
-                                  View
-                                </Button>
+                                <AppLink path="orders/$id" params={{ id: o.id }}>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="min-h-[36px] rounded-full px-3 text-xs"
+                                  >
+                                    View Order
+                                  </Button>
+                                </AppLink>
                               </TableCell>
                             </TableRow>
                           );

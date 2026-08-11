@@ -1,14 +1,37 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { QrCode, Copy, ExternalLink, Loader2, AlertCircle } from "lucide-react";
+import {
+  QrCode,
+  Copy,
+  ExternalLink,
+  AlertCircle,
+  Download,
+  Printer,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { PageTransition } from "@/components/page-transition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from "@/components/ui/tooltip";
 import { useProfile } from "@/lib/business-profile";
-import { getTablesMapApi, type TableMapItem } from "@/lib/orders-api";
+import { getTablesMapApi } from "@/lib/orders-api";
 import { NewOrderDialog } from "@/components/new-order-dialog";
 import { OrderDetailSheet } from "@/components/order-detail-sheet";
 import { SkeletonTablesGrid } from "@/components/skeletons";
@@ -25,11 +48,20 @@ const STATUS_COLORS: Record<string, string> = {
   COMPLETED: "bg-neutral-900/90 border-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 dark:border-neutral-100",
 };
 
+interface QrModalTable {
+  tableName: string;
+  url: string;
+  path: string;
+}
+
 function TablesPage() {
   const profile = useProfile("restaurant");
   const [presetTableId, setPresetTableId] = useState<string | null>(null);
   const [presetTableName, setPresetTableName] = useState<string | null>(null);
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
+  const [selectedQrTable, setSelectedQrTable] = useState<QrModalTable | null>(null);
+  const [qrStatus, setQrStatus] = useState<"loading" | "success" | "error">("loading");
+  const [qrKey, setQrKey] = useState<number>(0);
 
   // ---------------------------------------------------------------------------
   // Live Table Map via React Query
@@ -51,7 +83,108 @@ function TablesPage() {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "") || "business";
 
+  const restaurantName = profile.name || "Restaurant";
+
   const allTables = diningAreas.flatMap((area) => area.tables);
+
+  const handleDownloadQr = async () => {
+    if (!selectedQrTable || qrStatus !== "success") return;
+    try {
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&margin=8&data=${encodeURIComponent(selectedQrTable.url)}`;
+      const response = await fetch(qrUrl);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      const safeTable = selectedQrTable.tableName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const safeBiz = bizSlug.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      link.download = `${safeTable}-${safeBiz}-qr.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+      toast.success("QR Code downloaded");
+    } catch {
+      toast.error("Failed to download QR code");
+    }
+  };
+
+  const handlePrintQr = () => {
+    if (!selectedQrTable || qrStatus !== "success") return;
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      toast.error("Please allow popups to print the QR Code");
+      return;
+    }
+    const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&margin=8&data=${encodeURIComponent(selectedQrTable.url)}`;
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Print QR - ${selectedQrTable.tableName}</title>
+          <style>
+            @page { size: auto; margin: 0; }
+            body {
+              font-family: system-ui, -apple-system, sans-serif;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              min-height: 100vh;
+              margin: 0;
+              padding: 24px;
+              background: #ffffff;
+              text-align: center;
+              color: #111827;
+            }
+            .print-card {
+              border: 2px solid #e5e7eb;
+              border-radius: 24px;
+              padding: 40px 32px;
+              max-width: 380px;
+              width: 100%;
+              margin: auto;
+              box-sizing: border-box;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            }
+            h1 { font-size: 26px; font-weight: 700; margin: 0 0 8px 0; color: #0f172a; }
+            h2 { font-size: 20px; font-weight: 600; margin: 0 0 24px 0; color: #2563eb; }
+            .qr-wrapper {
+              margin: 0 auto 24px auto;
+              padding: 16px;
+              border: 1px solid #f1f5f9;
+              border-radius: 16px;
+              display: inline-block;
+              background: #ffffff;
+            }
+            img { width: 260px; height: 260px; display: block; border-radius: 8px; }
+            p { font-size: 14px; font-weight: 500; color: #64748b; margin: 0; line-height: 1.5; }
+            @media print {
+              body { padding: 0; }
+              .print-card { border: none; box-shadow: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="print-card">
+            <h1>${restaurantName}</h1>
+            <h2>${selectedQrTable.tableName}</h2>
+            <div class="qr-wrapper">
+              <img src="${qrImgUrl}" alt="QR Code" />
+            </div>
+            <p>Scan to view the menu<br/>and place your order</p>
+          </div>
+          <script>
+            window.onload = function() {
+              window.print();
+              window.close();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
 
   return (
     <PageTransition>
@@ -90,7 +223,7 @@ function TablesPage() {
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                 {area.tables.map((t) => {
-                  const isOccupied = t.status === "OCCUPIED" && !!t.current_order_id;
+                  const isOccupied = (t.status === "OCCUPIED" || t.status === "RELEASING_SOON") || !!t.current_order_id;
                   const colorClass = STATUS_COLORS[t.status] || STATUS_COLORS.EMPTY;
 
                   const inner = (
@@ -114,7 +247,7 @@ function TablesPage() {
                               {t.item_count} items · {fmt(t.pending_amount)}
                             </p>
                             <p className="opacity-70 mt-0.5">
-                              Order #{t.current_order_id?.slice(-6)}
+                              Order #{t.current_order_id ? t.current_order_id.slice(-6) : "Active"}
                             </p>
                             {t.order_source && (
                               <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-background/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider">
@@ -135,8 +268,12 @@ function TablesPage() {
                       type="button"
                       className="text-left"
                       onClick={() => {
-                        if (isOccupied && t.current_order_id) {
-                          setOpenOrderId(t.current_order_id);
+                        if (isOccupied) {
+                          if (t.current_order_id) {
+                            setOpenOrderId(t.current_order_id);
+                          } else {
+                            toast.info("No active order found for this table.");
+                          }
                         } else {
                           setPresetTableId(t.id);
                           setPresetTableName(t.table_name);
@@ -161,41 +298,168 @@ function TablesPage() {
           <span className="text-xs text-muted-foreground">Print a QR of each URL and place it on the table.</span>
         </div>
         <Card className="rounded-2xl p-3">
-          <div className="grid gap-2 sm:grid-cols-2">
-            {allTables.map((t) => {
-              // Use the table UUID directly in the QR URL — guarantees exact backend lookup
-              const path = `/qr/${bizSlug}/${t.id}`;
-              const url = typeof window !== "undefined" ? `${window.location.origin}${path}` : path;
-              return (
-                <div key={t.id} className="flex items-center justify-between gap-2 rounded-xl border p-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">{t.table_name}</p>
-                    <p className="truncate text-[11px] text-muted-foreground">{url}</p>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="rounded-full"
-                      onClick={() => {
-                        navigator.clipboard.writeText(url);
-                        toast.success("Link copied");
-                      }}
-                    >
-                      <Copy className="mr-1 h-3.5 w-3.5" /> Copy Link
-                    </Button>
-                    <a href={path} target="_blank" rel="noreferrer">
-                      <Button size="icon" variant="ghost">
-                        <ExternalLink className="h-4 w-4" />
+          <TooltipProvider>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {allTables.map((t) => {
+                // Use the table UUID directly in the QR URL — guarantees exact backend lookup
+                const path = `/qr/${bizSlug}/${t.id}`;
+                const url = typeof window !== "undefined" ? `${window.location.origin}${path}` : path;
+                return (
+                  <div key={t.id} className="flex items-center justify-between gap-2 rounded-xl border p-2.5 bg-card">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{t.table_name}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="default"
+                            className="rounded-full text-xs font-medium"
+                            onClick={() => {
+                              setQrStatus("loading");
+                              setSelectedQrTable({
+                                tableName: t.table_name,
+                                url,
+                                path,
+                              });
+                            }}
+                          >
+                            <QrCode className="mr-1.5 h-3.5 w-3.5" /> QR
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          <p>Show QR Code</p>
+                        </TooltipContent>
+                      </Tooltip>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="rounded-full text-xs font-medium"
+                        onClick={() => {
+                          navigator.clipboard.writeText(url);
+                          toast.success("Link copied");
+                        }}
+                      >
+                        <Copy className="mr-1.5 h-3.5 w-3.5" /> Copy Link
                       </Button>
-                    </a>
+
+                      <a href={path} target="_blank" rel="noreferrer">
+                        <Button size="sm" variant="ghost" className="rounded-full text-xs font-medium">
+                          <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Open
+                        </Button>
+                      </a>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          </TooltipProvider>
         </Card>
       </section>
+
+      {/* Dynamic Client-Side QR Modal */}
+      <Dialog
+        open={!!selectedQrTable}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedQrTable(null);
+            setQrStatus("loading");
+          }
+        }}
+      >
+        <DialogContent className="max-w-sm rounded-2xl p-6 text-center">
+          <DialogHeader className="text-center sm:text-center space-y-1">
+            <DialogTitle className="font-display text-xl font-bold tracking-tight text-foreground">
+              {restaurantName}
+            </DialogTitle>
+            <p className="text-base font-semibold text-primary">{selectedQrTable?.tableName}</p>
+          </DialogHeader>
+
+          <div className="my-3 flex flex-col items-center justify-center space-y-3">
+            <div className="rounded-2xl border bg-white p-4 shadow-sm min-h-[256px] min-w-[256px] flex items-center justify-center">
+              {selectedQrTable && (
+                <>
+                  {/* Real Image Loader Element */}
+                  <img
+                    key={`${selectedQrTable.url}-${qrKey}`}
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=512x512&margin=8&data=${encodeURIComponent(
+                      selectedQrTable.url
+                    )}`}
+                    alt={`${selectedQrTable.tableName} QR Code`}
+                    onLoad={() => setQrStatus("success")}
+                    onError={() => setQrStatus("error")}
+                    className={cn(
+                      "h-56 w-56 object-contain transition-opacity duration-200",
+                      qrStatus === "success" ? "block" : "hidden"
+                    )}
+                  />
+
+                  {/* Loading State */}
+                  {qrStatus === "loading" && (
+                    <div className="flex flex-col items-center justify-center space-y-2 text-center h-56 w-56">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      <p className="text-xs text-muted-foreground font-medium">Generating QR Code...</p>
+                    </div>
+                  )}
+
+                  {/* Error State */}
+                  {qrStatus === "error" && (
+                    <div className="flex flex-col items-center justify-center space-y-2 text-center h-56 w-56 p-2 text-destructive">
+                      <AlertCircle className="h-8 w-8" />
+                      <p className="text-xs font-medium">Unable to generate QR code. Please try again.</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="rounded-full text-xs mt-1"
+                        onClick={() => {
+                          setQrStatus("loading");
+                          setQrKey((k) => k + 1);
+                        }}
+                      >
+                        <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Try Again
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <p className="text-xs text-muted-foreground max-w-[240px] leading-relaxed">
+              Scan to view the menu and place your order
+            </p>
+          </div>
+
+          <DialogFooter className="flex flex-col sm:flex-col gap-2 mt-1">
+            <div className="grid grid-cols-2 gap-2 w-full">
+              <Button
+                variant="outline"
+                className="rounded-full text-xs font-medium"
+                onClick={handleDownloadQr}
+                disabled={qrStatus !== "success"}
+              >
+                <Download className="mr-1.5 h-3.5 w-3.5" /> Download QR
+              </Button>
+
+              <Button
+                variant="outline"
+                className="rounded-full text-xs font-medium"
+                onClick={handlePrintQr}
+                disabled={qrStatus !== "success"}
+              >
+                <Printer className="mr-1.5 h-3.5 w-3.5" /> Print QR
+              </Button>
+            </div>
+
+            <DialogClose asChild>
+              <Button variant="ghost" className="w-full rounded-full text-xs text-muted-foreground">
+                Close
+              </Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialogs */}
       <NewOrderDialog

@@ -2,7 +2,7 @@ from datetime import datetime
 import enum
 import uuid
 
-from sqlalchemy import DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String
+from sqlalchemy import DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,6 +24,9 @@ class OrderStatus(str, enum.Enum):
 
 class Order(BaseModel):
     __tablename__ = "orders"
+    __table_args__ = (
+        UniqueConstraint("business_id", "order_number", name="uq_business_order_number"),
+    )
 
     business_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

@@ -1581,8 +1581,7 @@ function MenuStep() {
   // Item Form State
   const [itemCatId, setItemCatId] = useState("");
   const [itemName, setItemName] = useState("");
-  const [itemPrice, setItemPrice] = useState<number>(100);
-  const [itemGst, setItemGst] = useState<number>(5.0);
+  const [itemPrice, setItemPrice] = useState<string>("");
   const [itemDescription, setItemDescription] = useState("");
   const [itemIsVeg, setItemIsVeg] = useState(true);
   const [itemIsAvailable, setItemIsAvailable] = useState(true);
@@ -1713,8 +1712,7 @@ function MenuStep() {
     setEditingItem(null);
     setItemCatId(selectedCatId !== "all" ? selectedCatId : menuCategories[0]?.id || "");
     setItemName("");
-    setItemPrice(100);
-    setItemGst(5.0);
+    setItemPrice("");
     setItemDescription("");
     setItemIsVeg(true);
     setItemIsAvailable(true);
@@ -1725,8 +1723,7 @@ function MenuStep() {
     setEditingItem(item);
     setItemCatId(item.category_id);
     setItemName(item.name);
-    setItemPrice(item.price);
-    setItemGst(item.gst_percentage);
+    setItemPrice(item.price !== undefined && item.price !== null ? String(item.price) : "");
     setItemDescription(item.description || "");
     setItemIsVeg(item.is_veg);
     setItemIsAvailable(item.is_available);
@@ -1760,6 +1757,11 @@ function MenuStep() {
       toast.error("Please enter a valid item name.");
       return;
     }
+    const parsedPrice = Number(itemPrice);
+    if (itemPrice === "" || isNaN(parsedPrice) || parsedPrice < 0) {
+      toast.error("Please enter a valid price.");
+      return;
+    }
     if (isDuplicateItemName()) {
       const catObj = menuCategories.find((c) => c.id === itemCatId);
       toast.error(`Item "${trimmed}" already exists in ${catObj?.name || "this category"}.`);
@@ -1773,8 +1775,7 @@ function MenuStep() {
           category_id: itemCatId,
           name: trimmed,
           description: itemDescription.trim() || undefined,
-          price: Number(itemPrice),
-          gst_percentage: Number(itemGst),
+          price: parsedPrice,
           is_veg: itemIsVeg,
           is_available: itemIsAvailable,
         },
@@ -1784,8 +1785,7 @@ function MenuStep() {
         category_id: itemCatId,
         name: trimmed,
         description: itemDescription.trim() || undefined,
-        price: Number(itemPrice),
-        gst_percentage: Number(itemGst),
+        price: parsedPrice,
         is_veg: itemIsVeg,
         is_available: itemIsAvailable,
         display_order: menuItems.filter((i) => i.category_id === itemCatId).length + 1,
@@ -2056,11 +2056,6 @@ function MenuStep() {
                           <Badge variant="secondary" className="rounded-full text-[10px] px-2">
                             {catObj?.name || "Unassigned"}
                           </Badge>
-                          {item.gst_percentage > 0 && (
-                            <span className="text-[10px] text-muted-foreground">
-                              GST {item.gst_percentage}%
-                            </span>
-                          )}
                         </div>
                       </div>
 
@@ -2202,31 +2197,17 @@ function MenuStep() {
               )}
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <Label className="text-xs font-semibold">Price (₹) *</Label>
-                <Input
-                  type="number"
-                  step="0.5"
-                  min="0"
-                  className="mt-1.5"
-                  value={itemPrice}
-                  onChange={(e) => setItemPrice(Math.max(0, Number(e.target.value) || 0))}
-                />
-              </div>
-
-              <div>
-                <Label className="text-xs font-semibold">GST Rate (%)</Label>
-                <Input
-                  type="number"
-                  step="0.5"
-                  min="0"
-                  max="100"
-                  className="mt-1.5"
-                  value={itemGst}
-                  onChange={(e) => setItemGst(Math.max(0, Number(e.target.value) || 0))}
-                />
-              </div>
+            <div>
+              <Label className="text-xs font-semibold">Price (₹) *</Label>
+              <Input
+                type="number"
+                step="0.5"
+                min="0"
+                placeholder="0"
+                className="mt-1.5 text-xs rounded-xl"
+                value={itemPrice}
+                onChange={(e) => setItemPrice(e.target.value)}
+              />
             </div>
 
             <div>

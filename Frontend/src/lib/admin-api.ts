@@ -20,6 +20,7 @@ export interface AdminDashboardKpis {
 export interface RevenueGrowthPoint {
   month: string;
   revenue: number;
+  clients?: number;
 }
 
 export interface ClientGrowthPoint {
@@ -27,10 +28,17 @@ export interface ClientGrowthPoint {
   count: number;
 }
 
+export interface CampaignDistributionResponse {
+  active: number;
+  redeemed: number;
+  expired: number;
+}
+
 export interface AdminDashboardAnalytics {
   revenue_growth: RevenueGrowthPoint[];
   client_growth: ClientGrowthPoint[];
-  coupon_usage: any[];
+  campaign?: CampaignDistributionResponse;
+  coupon_usage?: any[];
 }
 
 export interface RecentActivityItem {
@@ -38,7 +46,18 @@ export interface RecentActivityItem {
   type: string;
   title: string;
   description: string;
-  timestamp: string;
+  created_at: string;
+  timestamp?: string;
+  business_name?: string | null;
+  user_name?: string | null;
+  activity_type: string;
+}
+
+export interface PaginatedActivityResponse {
+  items: RecentActivityItem[];
+  total: number;
+  page: number;
+  size: number;
 }
 
 export interface AdminDashboardSummary {
@@ -52,10 +71,13 @@ export interface AdminDashboardSummary {
 }
 
 export interface AdminDashboardResponse {
+  statistics?: AdminDashboardKpis;
+  charts?: AdminDashboardAnalytics;
   kpis: AdminDashboardKpis;
   analytics: AdminDashboardAnalytics;
   summary: AdminDashboardSummary;
   recent_activity: RecentActivityItem[];
+  pending_approvals?: number;
 }
 
 export async function getAdminDashboardApi(): Promise<AdminDashboardResponse> {
@@ -64,7 +86,84 @@ export async function getAdminDashboardApi(): Promise<AdminDashboardResponse> {
     const errData = await res.json().catch(() => ({}));
     throw new Error(errData.detail || "Failed to fetch admin dashboard");
   }
+  const data = await res.json();
+  // Ensure backward compatible fields exist
+  return {
+    ...data,
+    kpis: data.statistics || data.kpis,
+    analytics: data.charts || data.analytics,
+  };
+}
+
+export async function getRevenueChartApi(): Promise<RevenueGrowthPoint[]> {
+  const res = await apiFetch("/api/v1/admin/dashboard/revenue-chart");
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to fetch revenue chart");
+  }
   return await res.json();
+}
+
+export async function getClientGrowthApi(): Promise<ClientGrowthPoint[]> {
+  const res = await apiFetch("/api/v1/admin/dashboard/client-growth");
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to fetch client growth chart");
+  }
+  return await res.json();
+}
+
+export async function getCampaignChartApi(): Promise<CampaignDistributionResponse> {
+  const res = await apiFetch("/api/v1/admin/dashboard/campaign-chart");
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to fetch campaign chart");
+  }
+  return await res.json();
+}
+
+export async function getActivityLogsApi(
+  page: number = 1,
+  size: number = 10,
+  activityType?: string,
+  search?: string,
+  dateRange?: string,
+  startDate?: string,
+  endDate?: string
+): Promise<PaginatedActivityResponse> {
+  const params = new URLSearchParams();
+  params.append("page", page.toString());
+  params.append("size", size.toString());
+  if (activityType && activityType !== "ALL") params.append("activity_type", activityType);
+  if (search) params.append("search", search);
+  if (dateRange && dateRange !== "all") params.append("date_range", dateRange);
+  if (startDate) params.append("start_date", startDate);
+  if (endDate) params.append("end_date", endDate);
+
+  const res = await apiFetch(`/api/v1/admin/dashboard/activity?${params.toString()}`);
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to fetch activity logs");
+  }
+  return await res.json();
+}
+
+export async function getPlatformHealthSummaryApi(): Promise<PlatformHealthSummary> {
+  const res = await apiFetch("/api/v1/admin/dashboard/health-summary");
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to fetch platform health summary");
+  }
+  return await res.json();
+}
+
+export interface PlatformHealthSummary {
+  total_clients: number;
+  active_trials: number;
+  expired_clients: number;
+  active_campaigns: number;
+  total_customers: number;
+  total_revenue: number;
 }
 
 // 2. Admin Approvals APIs
