@@ -11,6 +11,7 @@ psycopg2-binary
 pydantic[email]
 pydantic-settings
 python-dotenv
+email-validator
 
 # Auth
 bcrypt
@@ -19,5 +20,10 @@ python-jose[cryptography]
 # Form / File uploads
 python-multipart
 
-# Reports / Charts
+# Reports / Charts / PDF / Excel
 matplotlib
+reportlab
+openpyxl
+
+# AI / Integrations
+google-generativeai
