@@ -41,7 +41,7 @@ import {
 } from "@/lib/admin-api";
 import { setToken, setSession } from "@/lib/auth";
 import { slugify } from "@/lib/app-nav";
-import { setBusinessType } from "@/lib/business-type";
+import { setBusinessType, resolveBusinessType } from "@/lib/business-type";
 import { pushNotification } from "@/lib/notifications-store";
 
 export const Route = createFileRoute("/admin/clients/$id")({
@@ -132,22 +132,28 @@ export default function ClientDetail() {
   };
 
   const impersonate = async () => {
+    if (!client) return;
     try {
       const res = await impersonateAdminClientApi(client.id);
       setToken(res.access_token);
-      const slug = slugify(client.name);
-      setBusinessType("restaurant");
+      const businessType = resolveBusinessType(
+        { business_type: client.business_type, name: client.name },
+        null,
+        null
+      );
+      const slug = slugify(client.name || businessType);
+      setBusinessType(businessType);
       setSession({
         role: "business",
-        email: client.email,
+        email: client.email || `impersonate@${slug}.com`,
         clientId: res.business_id,
-        businessName: res.business_name,
-        businessType: "restaurant",
+        businessName: res.business_name || client.name,
+        businessType: businessType,
         businessSlug: slug,
         token: res.access_token,
       });
       toast.success(`Logged in as ${client.owner_name}`);
-      window.location.href = `/app/restaurant/${slug}/dashboard`;
+      window.location.href = `/app/${businessType}/${slug}/dashboard`;
     } catch (err: any) {
       toast.error(err.message || "Failed to impersonate merchant");
     }

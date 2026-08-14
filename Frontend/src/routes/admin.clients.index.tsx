@@ -24,7 +24,7 @@ import {
 } from "@/lib/admin-api";
 import { setToken, setSession } from "@/lib/auth";
 import { slugify } from "@/lib/app-nav";
-import { setBusinessType } from "@/lib/business-type";
+import { setBusinessType, resolveBusinessType } from "@/lib/business-type";
 
 export const Route = createFileRoute("/admin/clients/")({ component: ClientsPage });
 
@@ -144,23 +144,28 @@ export default function ClientsPage() {
     }
   };
 
-  const impersonate = async (id: string, name: string) => {
+  const impersonate = async (client: ClientListItemModel) => {
     try {
-      const res = await impersonateAdminClientApi(id);
+      const res = await impersonateAdminClientApi(client.id);
       setToken(res.access_token);
-      const slug = slugify(name);
-      setBusinessType("restaurant");
+      const businessType = resolveBusinessType(
+        { business_type: client.business_type, name: client.name },
+        null,
+        null
+      );
+      const slug = slugify(client.name || businessType);
+      setBusinessType(businessType);
       setSession({
         role: "business",
-        email: `impersonate@${slug}.com`,
+        email: client.email || `impersonate@${slug}.com`,
         clientId: res.business_id,
-        businessName: res.business_name,
-        businessType: "restaurant",
+        businessName: res.business_name || client.name,
+        businessType: businessType,
         businessSlug: slug,
         token: res.access_token,
       });
-      toast.success(`Logging in as ${name} (Impersonation mode)`);
-      window.location.href = `/app/restaurant/${slug}/dashboard`;
+      toast.success(`Logging in as ${client.name} (Impersonation mode)`);
+      window.location.href = `/app/${businessType}/${slug}/dashboard`;
     } catch (err: any) {
       toast.error(err.message || "Failed to impersonate client");
     }
@@ -252,7 +257,7 @@ export default function ClientsPage() {
                             {/* Status Specific Actions */}
                             {c.status === "ACTIVE" && (
                               <>
-                                <DropdownMenuItem onClick={() => impersonate(c.id, c.name)}>
+                                <DropdownMenuItem onClick={() => impersonate(c)}>
                                   <LogIn className="mr-2 h-4 w-4" /> Login as Client
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleUpdateStatus(c.id, "SUSPENDED", c.name)}>
