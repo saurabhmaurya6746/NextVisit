@@ -464,7 +464,7 @@ export default function SubscriptionsPage() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1.5">
-                              <Button size="sm" variant="ghost" className="rounded-full text-xs h-7 px-2" onClick={() => navigate({ to: "/admin/clients/$id", params: { id: biz.business_id } })} title="View Business"><Eye className="h-3.5 w-3.5" /></Button>
+                              <Button size="sm" variant="ghost" className="rounded-full text-xs h-7 px-2" onClick={() => navigate(`/admin/clients/${biz.business_id}`)} title="View Business"><Eye className="h-3.5 w-3.5" /></Button>
                               <Button size="sm" variant="outline" className="rounded-full text-xs gap-1 h-7" onClick={() => { setResetTarget(biz); setResetConfirmOpen(true); }} title="Reset monthly usage"><RotateCcw className="h-3 w-3" /> Reset</Button>
                               <Button size="sm" variant="outline" className="rounded-full text-xs gap-1 h-7 text-violet-600 border-violet-500/30 hover:bg-violet-500/10" onClick={() => { setAddCreditsTarget(biz); setAddCreditsAmount("100"); setAddCreditsReason("Manual Purchase"); setAddCreditsNotes(""); setAddCreditsOpen(true); }}><PlusCircle className="h-3 w-3" /> Credits</Button>
                               <Button size="sm" variant="ghost" className="rounded-full text-xs h-7 px-2 text-muted-foreground" onClick={() => handleViewAuditLogs(biz)} title="View Audit Log"><History className="h-3.5 w-3.5" /></Button>

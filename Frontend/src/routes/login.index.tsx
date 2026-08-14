@@ -47,14 +47,9 @@ export default function UnifiedLogin() {
       // 2. Otherwise/Fallback: Business Owner or Staff login
       console.log("[LOGIN/INDEX] Calling loginApi with:", { cleanEmail, password });
       const session = await loginApi(cleanEmail, password);
-      const type: "restaurant" | "salon" = cleanEmail.toLowerCase().includes("salon") ? "salon" : "restaurant";
-      const slug = slugify(session.businessName || type);
+      const type: "restaurant" | "salon" = session.businessType || "restaurant";
+      const slug = session.businessSlug || slugify(session.businessName || type);
       setBusinessType(type);
-      setSession({
-        ...session,
-        businessType: type,
-        businessSlug: slug,
-      });
       toast.success(`Welcome back — signing you into NextVisit`);
       window.location.href = `/app/${type}/${slug}/dashboard`;
     } catch (err: any) {

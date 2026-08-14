@@ -1,5 +1,20 @@
 import { apiFetch } from "./auth";
 
+export function formatApiErrorMessage(errData: any, fallback: string): string {
+  if (!errData) return fallback;
+  if (typeof errData.detail === "string" && errData.detail) return errData.detail;
+  if (Array.isArray(errData.detail) && errData.detail.length > 0) {
+    return errData.detail
+      .map((item: any) => (typeof item === "string" ? item : item?.msg || JSON.stringify(item)))
+      .join("; ");
+  }
+  if (typeof errData.detail === "object" && errData.detail !== null) {
+    return JSON.stringify(errData.detail);
+  }
+  if (typeof errData.message === "string" && errData.message) return errData.message;
+  return fallback;
+}
+
 // 1. Admin Dashboard API
 export interface AdminDashboardKpis {
   total_clients: number;
@@ -329,7 +344,7 @@ export async function listAdminClientsApi(
   const res = await apiFetch(`/api/v1/admin/clients?${params.toString()}`);
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to fetch clients list");
+    throw new Error(formatApiErrorMessage(errData, "Failed to fetch clients list"));
   }
   return await res.json();
 }
@@ -338,7 +353,7 @@ export async function getAdminClientDetailApi(businessId: string): Promise<Clien
   const res = await apiFetch(`/api/v1/admin/clients/${businessId}`);
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to fetch client detail");
+    throw new Error(formatApiErrorMessage(errData, "Failed to fetch client detail"));
   }
   return await res.json();
 }
@@ -353,7 +368,7 @@ export async function updateAdminClientStatusApi(
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to update client status");
+    throw new Error(formatApiErrorMessage(errData, "Failed to update client status"));
   }
   return await res.json();
 }
@@ -364,7 +379,7 @@ export async function deleteAdminClientApi(businessId: string): Promise<{ messag
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to delete client");
+    throw new Error(formatApiErrorMessage(errData, "Failed to delete client"));
   }
   return await res.json();
 }
@@ -375,7 +390,7 @@ export async function impersonateAdminClientApi(businessId: string): Promise<{ a
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to impersonate merchant");
+    throw new Error(formatApiErrorMessage(errData, "Failed to impersonate merchant"));
   }
   return await res.json();
 }

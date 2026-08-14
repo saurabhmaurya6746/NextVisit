@@ -15,7 +15,10 @@ import { fmt } from "@/lib/currency";
 import { awardPointsForOrder, useLoyaltySettings } from "@/lib/loyalty-store";
 import { openWhatsApp } from "@/lib/celebration-utils";
 import { logWhatsApp } from "@/lib/whatsapp-history";
-import { Sparkles, MessageCircle } from "lucide-react";
+import { Sparkles, MessageCircle, Download } from "lucide-react";
+import { jsPDF } from "jspdf";
+import html2canvas from "html2canvas";
+import { downloadInvoicePdfApi } from "@/lib/visit-services-api";
 import { redeemCouponApi, CouponValidateResponse } from "@/lib/coupons-api";
 import { useQuery } from "@tanstack/react-query";
 import { getBusinessSettingsApi } from "@/lib/business-settings-api";
@@ -47,6 +50,140 @@ export function CompletePaymentDialog({ order, open, onOpenChange, onCompleted }
   const [appliedCoupon, setAppliedCoupon] = useState<CouponValidateResponse | null>(null);
   const [success, setSuccess] = useState<{ customerId?: string; customerName: string; customerPhone: string; earned: number; balance: number } | null>(null);
 
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false);
+
+  const handleDownloadInvoice = async () => {
+    if (!order) return;
+    setDownloadingInvoice(true);
+    const orderNum = orderCode(order);
+    const invNo = `INV-${orderNum.replace("ORD-", "")}`;
+    const restaurantName = profile?.name || "Jail Restaurant";
+    const address = bizSettings?.address || [bizSettings?.city, bizSettings?.state].filter(Boolean).join(", ") || profile?.address || "Main Branch";
+    const phoneNum = bizSettings?.phone || bizSettings?.whatsapp_number || profile?.phone || "";
+    const gstNumber = bizSettings?.gst_number || "33AAAAA0000A1Z5";
+    const tableNo = order.table || "Table";
+    const customerName = success?.customerName || order.customerName || "Guest Customer";
+    const dateStr = new Date(order.createdAt || Date.now()).toLocaleString();
+    const paymentMode = payment || "cash";
+
+    try {
+      const itemsHtml = (order.items || []).map((i: any) => `
+        <div style="margin-bottom: 6px;">
+          <div style="font-weight: 700; font-size: 12px; color: #000;">${i.name}</div>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: #222; font-family: monospace; margin-top: 1px;">
+            <span>${i.qty} x ₹${i.price}</span>
+            <span style="font-weight: 700;">₹${i.qty * i.price}</span>
+          </div>
+        </div>
+      `).join("");
+
+      const container = document.createElement("div");
+      container.style.position = "fixed";
+      container.style.left = "-9999px";
+      container.style.top = "-9999px";
+      container.style.width = "300px";
+      container.style.background = "#ffffff";
+      container.style.color = "#000000";
+      container.style.fontFamily = "'Courier New', Courier, monospace";
+      container.style.padding = "16px 14px";
+      container.style.boxSizing = "border-box";
+      container.style.lineHeight = "1.35";
+
+      container.innerHTML = `
+        <div style="text-align: center; margin-bottom: 8px;">
+          <div style="font-size: 16px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">${restaurantName}</div>
+          ${address ? `<div style="font-size: 10px; color: #333; margin-top: 2px;">${address}</div>` : ""}
+          ${phoneNum ? `<div style="font-size: 10px; color: #333;">Ph: ${phoneNum}</div>` : ""}
+          ${gstNumber ? `<div style="font-size: 10px; color: #333;">GSTIN: ${gstNumber}</div>` : ""}
+          <div style="display: inline-block; margin-top: 6px; padding: 2px 8px; background: #000; color: #fff; font-size: 9px; font-weight: 800; border-radius: 4px; text-transform: uppercase;">TAX INVOICE</div>
+        </div>
+
+        <div style="border-top: 1px dashed #000; margin: 8px 0;"></div>
+
+        <div style="font-size: 10px; font-family: monospace;">
+          <div>Inv No : <strong>${invNo}</strong></div>
+          <div>Order No: ${orderNum}</div>
+          <div>Date    : ${dateStr}</div>
+          <div>Table   : ${tableNo} | Cust: ${customerName}</div>
+        </div>
+
+        <div style="border-top: 1px dashed #000; margin: 8px 0;"></div>
+
+        <div>
+          ${itemsHtml}
+        </div>
+
+        <div style="border-top: 1px dashed #000; margin: 8px 0;"></div>
+
+        <div style="font-size: 11px; font-family: monospace;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+            <span>Subtotal:</span>
+            <span>₹${subtotalVal}</span>
+          </div>
+          ${taxAmount > 0 ? `
+          <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+            <span>GST (${gstRate}%):</span>
+            <span>₹${taxAmount}</span>
+          </div>
+          ` : ""}
+          ${couponDiscount > 0 ? `
+          <div style="display: flex; justify-content: space-between; margin-bottom: 3px; color: #b91c1c;">
+            <span>Discount:</span>
+            <span>-₹${couponDiscount}</span>
+          </div>
+          ` : ""}
+          <div style="border-top: 1px solid #000; margin: 6px 0;"></div>
+          <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 900;">
+            <span>GRAND TOTAL:</span>
+            <span>₹${finalTotal}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 10px; margin-top: 4px;">
+            <span>Status:</span>
+            <strong>PAID (${paymentMode.toUpperCase()})</strong>
+          </div>
+        </div>
+
+        <div style="border-top: 1px dashed #000; margin: 10px 0 8px 0;"></div>
+
+        <div style="text-align: center; font-size: 10px;">
+          <div style="font-weight: 700;">Thank you for dining with us!</div>
+          <div style="font-size: 8px; color: #555; margin-top: 2px;">Powered by NextVisit POS</div>
+        </div>
+      `;
+
+      document.body.appendChild(container);
+
+      try {
+        const canvas = await html2canvas(container, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: "#ffffff",
+          logging: false,
+        });
+
+        const imgData = canvas.toDataURL("image/png");
+        const mmWidth = 80;
+        const mmHeight = Math.max(120, (canvas.height * mmWidth) / canvas.width);
+
+        const pdf = new jsPDF({
+          orientation: "portrait",
+          unit: "mm",
+          format: [mmWidth, mmHeight],
+        });
+
+        pdf.addImage(imgData, "PNG", 0, 0, mmWidth, mmHeight);
+        pdf.save(`Invoice_${invNo}.pdf`);
+        toast.success("Invoice downloaded successfully!");
+      } finally {
+        if (document.body.contains(container)) {
+          document.body.removeChild(container);
+        }
+      }
+    } finally {
+      setDownloadingInvoice(false);
+    }
+  };
+
   const cleanPhone = phone.replace(/\D/g, "");
   const isExact10 = cleanPhone.length === 10;
   const found = isExact10 ? findCustomerByPhone(phone) : null;
@@ -57,6 +194,8 @@ export function CompletePaymentDialog({ order, open, onOpenChange, onCompleted }
   const netVal = Math.max(0, subtotalVal - couponDiscount);
   const gstRate = profile.gstEnabled ? (profile.gstPercent || 18) : 0;
   const isInclusive = (profile as any)?.priceIncludesGst ?? false;
+  const taxAmount = isInclusive ? Math.round(netVal - (netVal / (1 + gstRate / 100))) : Math.round((netVal * gstRate) / 100);
+  const finalTotal = isInclusive ? netVal : netVal + taxAmount;
 
   let taxableVal = netVal;
   let gstVal = 0;
@@ -157,6 +296,15 @@ export function CompletePaymentDialog({ order, open, onOpenChange, onCompleted }
               </div>
             </div>
             <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+              <Button
+                variant="outline"
+                className="rounded-full text-xs gap-1.5"
+                onClick={handleDownloadInvoice}
+                disabled={downloadingInvoice}
+              >
+                <Download className={`h-3.5 w-3.5 text-primary ${downloadingInvoice ? "animate-spin" : ""}`} />
+                {downloadingInvoice ? "Downloading…" : "Download Invoice"}
+              </Button>
               <Button className="rounded-full gradient-brand text-primary-foreground" onClick={sendWa} disabled={!success.customerPhone}>
                 <MessageCircle className="mr-1.5 h-4 w-4" /> Send WhatsApp
               </Button>
@@ -179,7 +327,15 @@ export function CompletePaymentDialog({ order, open, onOpenChange, onCompleted }
                 <p className="mt-1 text-xs text-muted-foreground">Phone is required. We'll look up existing customer, or create a new one.</p>
                 <div className="mt-3 relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input placeholder="Enter phone number…" value={phone} onChange={(e) => setPhone(e.target.value)} className="pl-9" />
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={10}
+                    placeholder="Enter 10-digit phone number…"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                    className="pl-9 font-mono"
+                  />
                 </div>
                 {isExact10 && found && (
                   <div className="mt-2 flex items-center justify-between rounded-lg bg-primary/5 p-3 text-sm">
@@ -217,17 +373,29 @@ export function CompletePaymentDialog({ order, open, onOpenChange, onCompleted }
               </div>
               <div className="flex items-center justify-end gap-2">
                 <Button variant="ghost" onClick={close}>Cancel</Button>
-                <Button className="rounded-full gradient-brand text-primary-foreground" disabled={!phone.trim()} onClick={() => setStep(1)}>Next · payment</Button>
+                <Button
+                  className="rounded-full gradient-brand text-primary-foreground"
+                  disabled={!phone.trim()}
+                  onClick={() => {
+                    const cleanDigits = phone.replace(/\D/g, "");
+                    if (cleanDigits.length !== 10) {
+                      toast.error("Please enter a valid 10-digit phone number.");
+                      return;
+                    }
+                    setStep(1);
+                  }}
+                >
+                  Next · payment
+                </Button>
               </div>
             </motion.div>
           )}
 
           {step === 1 && (
             <motion.div key="c1" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="grid gap-4 md:grid-cols-[1fr_1fr] items-start">
-              <div className="grid gap-2">
+              <div className="grid gap-2 grid-cols-2">
+                <Chip label="UPI / QR" icon={Smartphone} active={payment === "upi"} onClick={() => setPayment("upi")} />
                 <Chip label="Cash" icon={Banknote} active={payment === "cash"} onClick={() => setPayment("cash")} />
-                <Chip label="UPI" icon={Smartphone} active={payment === "upi"} onClick={() => setPayment("upi")} />
-                <Chip label="Card" icon={CreditCard} active={payment === "card"} onClick={() => setPayment("card")} />
 
                 {/* PAYMENT COUPON SECTION */}
                 <PaymentCouponSection

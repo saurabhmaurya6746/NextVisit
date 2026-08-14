@@ -170,7 +170,11 @@ export function recalculateVisitTotals(
 /**
  * Triggers browser download for official backend-generated Salon Invoice PDF
  */
-export async function downloadInvoicePdfApi(id: string, code?: string): Promise<void> {
+export async function downloadInvoicePdfApi(id: string, code?: string, businessType: "salon" | "restaurant" = "salon"): Promise<void> {
+  if (businessType !== "salon") {
+    throw new Error("Restaurant invoice PDF uses client-side 80mm POS receipt generator");
+  }
+
   const filename = `${code || "Invoice_" + id.slice(0, 8)}.pdf`;
 
   let res = await apiFetch(`/api/v1/salon/invoices/${encodeURIComponent(id)}/pdf`);

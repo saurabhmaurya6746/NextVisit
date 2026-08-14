@@ -864,7 +864,7 @@ export default function CreditManagementPage() {
                                   size="sm"
                                   variant="ghost"
                                   className="h-8 text-xs rounded-full"
-                                  onClick={() => navigate({ to: `/admin/clients/$id`, params: { id: b.business_id } })}
+                                  onClick={() => navigate(`/admin/clients/${b.business_id}`)}
                                   title="View Business"
                                 >
                                   View

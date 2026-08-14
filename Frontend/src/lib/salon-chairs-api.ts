@@ -37,9 +37,15 @@ export interface SalonDashboardChairMetrics {
 // ---------------------------------------------------------------------------
 
 export async function listSalonServiceAreasApi(): Promise<SalonServiceArea[]> {
-  const res = await apiFetch("/api/v1/salon/service-areas");
-  if (!res.ok) return [];
-  return res.json();
+  try {
+    const res = await apiFetch("/api/v1/salon/service-areas");
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.warn("[SALON SERVICE AREAS API] Failed to fetch service areas:", err);
+    return [];
+  }
 }
 
 export async function createSalonServiceAreaApi(payload: {
@@ -92,16 +98,27 @@ export async function deleteSalonServiceAreaApi(id: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function listSalonChairsApi(serviceAreaId?: string): Promise<SalonChair[]> {
-  const query = serviceAreaId ? `?service_area_id=${serviceAreaId}` : "";
-  const res = await apiFetch(`/api/v1/salon/chairs${query}`);
-  if (!res.ok) return [];
-  return res.json();
+  try {
+    const query = serviceAreaId ? `?service_area_id=${serviceAreaId}` : "";
+    const res = await apiFetch(`/api/v1/salon/chairs${query}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.warn("[SALON CHAIRS API] Failed to fetch chairs:", err);
+    return [];
+  }
 }
 
 export async function getSalonChairMetricsApi(): Promise<SalonDashboardChairMetrics> {
-  const res = await apiFetch("/api/v1/salon/chairs/metrics");
-  if (!res.ok) return { available: 0, occupied: 0, reserved: 0, cleaning: 0, total: 0 };
-  return res.json();
+  try {
+    const res = await apiFetch("/api/v1/salon/chairs/metrics");
+    if (!res.ok) return { available: 0, occupied: 0, reserved: 0, cleaning: 0, total: 0 };
+    return res.json();
+  } catch (err) {
+    console.warn("[SALON CHAIR METRICS] Failed to fetch chair metrics:", err);
+    return { available: 0, occupied: 0, reserved: 0, cleaning: 0, total: 0 };
+  }
 }
 
 export async function createSalonChairApi(payload: {
@@ -176,6 +193,27 @@ export async function releaseSalonChairApi(id: string): Promise<SalonChair> {
     throw new Error(err.detail || "Failed to release chair");
   }
   return res.json();
+}
+
+export function getNextUniqueChairName(chairs: { chair_name?: string }[], prefix = "Chair"): string {
+  const existingNames = new Set((chairs || []).map((c) => (c?.chair_name || "").toLowerCase().trim()));
+  let maxDigit = 0;
+  for (const c of chairs || []) {
+    const match = (c?.chair_name || "").match(/(\d+)/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxDigit) maxDigit = num;
+    }
+  }
+  let candidateNum = Math.max((chairs || []).length + 1, maxDigit + 1);
+  while (
+    existingNames.has(`${prefix.toLowerCase()}${candidateNum}`) ||
+    existingNames.has(`${prefix.toLowerCase()} ${candidateNum}`) ||
+    existingNames.has(`${prefix.toLowerCase()}-${candidateNum}`)
+  ) {
+    candidateNum++;
+  }
+  return `${prefix}${candidateNum}`;
 }
 
 export async function deleteSalonChairApi(id: string): Promise<void> {

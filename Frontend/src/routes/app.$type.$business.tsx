@@ -13,6 +13,8 @@ import { TrialBanner } from "@/components/trial-banner";
 import { getSession, useSession, hasModulePermission } from "@/lib/auth";
 import { useWizardState, WIZARD_OPEN_EVENT } from "@/lib/wizard-store";
 
+import { SubscriptionUpgradeModal } from "@/components/subscription-upgrade-modal";
+
 let appLoaderShown = false;
 
 const pathToModuleMap: Record<string, string> = {
@@ -20,6 +22,7 @@ const pathToModuleMap: Record<string, string> = {
   "dashboard": "dashboard",
   "setup": "setup",
   "tables": "tables",
+  "workstations": "tables",
   "orders": "orders",
   "appointments": "orders",
   "menu": "menu",
@@ -75,6 +78,30 @@ export function AppLayout() {
   const [loading, setLoading] = useState(!appLoaderShown);
   const wizardState = useWizardState();
 
+  const [aiUpgradeModalOpen, setAiUpgradeModalOpen] = useState(false);
+  const [aiModalTitle, setAiModalTitle] = useState("Upgrade Subscription or Buy AI Credits");
+  const [aiModalDesc, setAiModalDesc] = useState("Unlock higher staff account limits, active devices, or top-up extra non-expiring AI Credits.");
+
+  useEffect(() => {
+    const handleOpenAiModal = (e: any) => {
+      const detail = e.detail || {};
+      if (detail.reason === "PLAN_NOT_ELIGIBLE") {
+        setAiModalTitle("AI Not Included in Current Plan");
+        setAiModalDesc(detail.message || "AI features aren't included in your current subscription plan. Upgrade your subscription below to unlock Gemini AI features.");
+      } else if (detail.reason === "NO_CREDITS") {
+        setAiModalTitle("AI Credit Limit Reached");
+        setAiModalDesc(detail.message || "You've reached your available AI credits. Upgrade your plan or purchase additional AI credits to continue.");
+      } else {
+        setAiModalTitle("Upgrade Subscription or Buy AI Credits");
+        setAiModalDesc("Unlock higher staff account limits, active devices, or top-up extra non-expiring AI Credits.");
+      }
+      setAiUpgradeModalOpen(true);
+    };
+
+    window.addEventListener("growthos:open-ai-upgrade-modal", handleOpenAiModal);
+    return () => window.removeEventListener("growthos:open-ai-upgrade-modal", handleOpenAiModal);
+  }, []);
+
   useEffect(() => {
     if (!onboarded && !wizardState.paused) setWizard(true);
   }, [onboarded, wizardState.paused]);
@@ -127,6 +154,12 @@ export function AppLayout() {
           </SidebarInset>
         </div>
         <OnboardingWizard open={wizard} onOpenChange={setWizard} initialType={type} />
+        <SubscriptionUpgradeModal
+          open={aiUpgradeModalOpen}
+          onOpenChange={setAiUpgradeModalOpen}
+          title={aiModalTitle}
+          description={aiModalDesc}
+        />
       </SidebarProvider>
     </>
   );

@@ -42,32 +42,47 @@ export default function BusinessDashboardRoute() {
   const displayBizName = authBiz.name || session?.businessName || (type === "salon" ? "Salon" : "Restaurant");
 
   // Scalable Business Type Switcher for Dashboard
-  switch (type) {
-    case "salon":
-      return (
-        <SalonDashboard
-          dashData={dashData}
-          fetchLoading={fetchLoading}
-          isError={isError}
-          error={error}
-          refetch={refetch}
-          displayName={displayName}
-          displayBizName={displayBizName}
-        />
-      );
-
-    case "restaurant":
-    default:
-      return (
-        <RestaurantDashboard
-          dashData={dashData}
-          fetchLoading={fetchLoading}
-          isError={isError}
-          error={error}
-          refetch={refetch}
-          displayName={displayName}
-          displayBizName={displayBizName}
-        />
-      );
+  if (type === "salon") {
+    return (
+      <SalonDashboard
+        dashData={dashData}
+        fetchLoading={fetchLoading}
+        isError={isError}
+        error={error}
+        refetch={refetch}
+        displayName={displayName}
+        displayBizName={displayBizName}
+      />
+    );
   }
+
+  if (type === "restaurant") {
+    return (
+      <RestaurantDashboard
+        dashData={dashData}
+        fetchLoading={fetchLoading}
+        isError={isError}
+        error={error}
+        refetch={refetch}
+        displayName={displayName}
+        displayBizName={displayBizName}
+      />
+    );
+  }
+
+  if (authBiz.isLoading) {
+    return <div className="py-16 text-center text-xs text-muted-foreground">Loading business dashboard...</div>;
+  }
+
+  return (
+    <RestaurantDashboard
+      dashData={dashData}
+      fetchLoading={fetchLoading}
+      isError={isError}
+      error={error}
+      refetch={refetch}
+      displayName={displayName}
+      displayBizName={displayBizName}
+    />
+  );
 }

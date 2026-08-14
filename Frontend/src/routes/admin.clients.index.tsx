@@ -219,7 +219,7 @@ export default function ClientsPage() {
                   clients.map((c) => (
                     <TableRow key={c.id} className="group">
                       <TableCell>
-                        <Link to="/admin/clients/$id" params={{ id: c.id }} className="font-medium text-foreground hover:text-primary">
+                        <Link to={`/admin/clients/${c.id}`} className="font-medium text-foreground hover:text-primary">
                           {c.name}
                         </Link>
                         <div className="text-xs text-muted-foreground">{c.country}</div>

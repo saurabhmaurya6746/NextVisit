@@ -35,6 +35,7 @@ class VisitCreate(BaseModel):
 class VisitComplete(BaseModel):
     payment_method: PaymentMethod | None = None
     notes: str | None = Field(default=None, max_length=1000)
+    discount: float | None = Field(default=0.0, ge=0)
 
 
 class VisitServiceResponse(BaseModel):

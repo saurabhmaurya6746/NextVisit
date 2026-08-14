@@ -45,14 +45,9 @@ export function LoginShell({ role, target, tagline, quote, author }: { role: "Bu
       console.log("[LOGIN] Invoking loginApi() for business user...");
       const session = await loginApi(cleanEmail, password);
       console.log("[LOGIN] loginApi() returned session successfully:", session);
-      const type: "restaurant" | "salon" = cleanEmail.toLowerCase().includes("salon") ? "salon" : "restaurant";
+      const type: "restaurant" | "salon" = session.businessType || "restaurant";
       setBusinessType(type);
-      const slug = slugify(session.businessName || type);
-      setSession({
-        ...session,
-        businessType: type,
-        businessSlug: slug,
-      });
+      const slug = session.businessSlug || slugify(session.businessName || type);
       toast.success(`Welcome back — signing you into NextVisit`);
       window.location.href = `/app/${type}/${slug}/dashboard`;
     } catch (err: any) {

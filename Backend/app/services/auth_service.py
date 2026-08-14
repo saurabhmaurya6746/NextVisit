@@ -88,6 +88,8 @@ class AuthService:
                 u.email = f"deleted_{uuid_lib.uuid4().hex[:8]}_{u.email}"
 
             # 3. Create Business
+            from app.models.subscription_plan import SubscriptionPlan
+            starter_plan = self.db.scalar(select(SubscriptionPlan).where(SubscriptionPlan.name == "STARTER"))
             business = Business(
                 business_type_id=data.business.business_type_id,
                 name=data.business.business_name,
@@ -98,6 +100,7 @@ class AuthService:
                 currency=data.business.currency,
                 timezone=data.business.timezone,
                 address=data.business.address,
+                subscription_plan_id=starter_plan.id if starter_plan else None,
             )
             business = self.business_repo.create(business)
 

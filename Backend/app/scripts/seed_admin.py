@@ -15,7 +15,7 @@ def seed_super_admin():
             admin = Admin(
                 name="Super Admin",
                 email=email,
-                hashed_password=hash_password("Admin@123456"),
+                hashed_password=hash_password("Admin@12345"),
                 role="SUPER_ADMIN",
                 is_active=True,
             )

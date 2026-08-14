@@ -388,7 +388,7 @@ export function AdminDashboardView() {
                     </p>
                   </div>
                   <Button size="sm" variant="ghost" asChild>
-                    <Link to="/admin/clients/$id" params={{ id: c.id }}>
+                    <Link to={`/admin/clients/${c.id}`}>
                       Details
                     </Link>
                   </Button>

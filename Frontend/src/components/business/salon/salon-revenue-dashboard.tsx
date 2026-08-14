@@ -17,12 +17,14 @@ import {
   Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, LineChart, Line
 } from "recharts";
 import { fmt } from "@/lib/currency";
+import { useAppointments } from "@/lib/appointments-store";
 import {
   getSalonRevenueAnalyticsApi,
   type SalonRevenueAnalyticsData
 } from "@/lib/salon-revenue-api";
 
 export function SalonRevenueDashboard() {
+  const appts = useAppointments();
   const [data, setData] = useState<SalonRevenueAnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<string>("this_month");
@@ -43,6 +45,118 @@ export function SalonRevenueDashboard() {
     fetchRevenue();
   }, [fetchRevenue]);
 
+  // Local fallback calculations from appointments store
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().slice(0, 10);
+
+  const currentDayOfWeek = now.getDay();
+  const distToMon = (currentDayOfWeek + 6) % 7;
+  const monDate = new Date(now);
+  monDate.setDate(now.getDate() - distToMon);
+  monDate.setHours(0, 0, 0, 0);
+
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+
+  const paidAppts = appts.filter((a) => {
+    if (a.status === "cancelled") return false;
+    return a.paymentStatus === "paid" || a.status === "completed" || !!a.paidAt;
+  });
+
+  const localTodayAppts = paidAppts.filter((a) => (a.start ? a.start.slice(0, 10) : "") === todayStr);
+  const localTodayRevenue = localTodayAppts.reduce((sum, a) => sum + (a.price || 0), 0);
+
+  const localYesterdayAppts = paidAppts.filter((a) => (a.start ? a.start.slice(0, 10) : "") === yesterdayStr);
+  const localYesterdayRevenue = localYesterdayAppts.reduce((sum, a) => sum + (a.price || 0), 0);
+
+  const localWeekAppts = paidAppts.filter((a) => a.start && new Date(a.start) >= monDate);
+  const localWeekRevenue = localWeekAppts.reduce((sum, a) => sum + (a.price || 0), 0);
+
+  const localMonthAppts = paidAppts.filter((a) => a.start && new Date(a.start) >= monthStart);
+  const localMonthRevenue = localMonthAppts.reduce((sum, a) => sum + (a.price || 0), 0);
+
+  const localYearAppts = paidAppts.filter((a) => a.start && new Date(a.start) >= yearStart);
+  const localYearRevenue = localYearAppts.reduce((sum, a) => sum + (a.price || 0), 0);
+
+  const localTotalRevenue = paidAppts.reduce((sum, a) => sum + (a.price || 0), 0);
+  const localPaidCount = paidAppts.length;
+  const localAvgServiceValue = localPaidCount > 0 ? Math.round(localTotalRevenue / localPaidCount) : 0;
+
+  // Chart Fallbacks
+  const daysOfWeek = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const localDailyTrend = daysOfWeek.map((dayLabel, idx) => {
+    const d = new Date(monDate);
+    d.setDate(monDate.getDate() + idx);
+    const dStr = d.toISOString().slice(0, 10);
+    const daySales = paidAppts
+      .filter((a) => (a.start ? a.start.slice(0, 10) : "") === dStr)
+      .reduce((sum, a) => sum + (a.price || 0), 0);
+    return { label: dayLabel, sales: daySales };
+  });
+
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const currentYr = now.getFullYear();
+  const localYearlyTrend = monthNames.map((mLabel, mIdx) => {
+    const mSales = paidAppts
+      .filter((a) => {
+        if (!a.start) return false;
+        const d = new Date(a.start);
+        return d.getFullYear() === currentYr && d.getMonth() === mIdx;
+      })
+      .reduce((sum, a) => sum + (a.price || 0), 0);
+    return { label: mLabel, sales: mSales };
+  });
+
+  const payMethodMap: Record<string, number> = { Cash: 0, UPI: 0, Card: 0 };
+  paidAppts.forEach((a) => {
+    const pm = (a.paymentMethod || "CASH").toUpperCase();
+    const amt = a.price || 0;
+    if (pm.includes("CARD")) payMethodMap["Card"] += amt;
+    else if (pm.includes("UPI") || pm.includes("ONLINE")) payMethodMap["UPI"] += amt;
+    else payMethodMap["Cash"] += amt;
+  });
+  const localPaymentBreakdown = [
+    { method: "Cash", amount: payMethodMap["Cash"] },
+    { method: "UPI", amount: payMethodMap["UPI"] },
+    { method: "Card", amount: payMethodMap["Card"] },
+  ];
+
+  const staffMap: Record<string, { bookings: number; revenue: number }> = {};
+  paidAppts.forEach((a) => {
+    const st = a.staff?.trim() || "Unassigned Staff";
+    if (!staffMap[st]) staffMap[st] = { bookings: 0, revenue: 0 };
+    staffMap[st].bookings += 1;
+    staffMap[st].revenue += (a.price || 0);
+  });
+  const localStaffBreakdown = Object.entries(staffMap).map(([staff_name, d]) => ({
+    staff_name,
+    bookings: d.bookings,
+    revenue: d.revenue,
+  }));
+
+  const serviceMap: Record<string, { booking_count: number; revenue: number }> = {};
+  paidAppts.forEach((a) => {
+    const list = a.services && a.services.length > 0 ? a.services : [{ name: a.service, price: a.price }];
+    list.forEach((s) => {
+      const sName = s.name || "General Service";
+      if (!serviceMap[sName]) serviceMap[sName] = { booking_count: 0, revenue: 0 };
+      serviceMap[sName].booking_count += 1;
+      serviceMap[sName].revenue += (s.price || ((a.price || 0) / list.length));
+    });
+  });
+  const localTopServices = Object.entries(serviceMap)
+    .map(([service_name, d]) => ({
+      service_name,
+      booking_count: d.booking_count,
+      revenue: d.revenue,
+    }))
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 5);
+
   if (loading && !data) {
     return (
       <PageTransition>
@@ -57,9 +171,24 @@ export function SalonRevenueDashboard() {
     );
   }
 
-  const top = data?.top_cards;
-  const charts = data?.charts;
-  const analytics = data?.analytics;
+  const dbTop = data?.top_cards;
+  const dbCharts = data?.charts;
+  const dbAnalytics = data?.analytics;
+
+  const todayRevenue = (dbTop?.today_revenue ?? 0) > 0 ? dbTop!.today_revenue : Math.max(dbTop?.today_revenue ?? 0, localTodayRevenue);
+  const yesterdayRevenue = (dbTop?.yesterday_revenue ?? 0) > 0 ? dbTop!.yesterday_revenue : Math.max(dbTop?.yesterday_revenue ?? 0, localYesterdayRevenue);
+  const thisWeekRevenue = (dbTop?.this_week_revenue ?? 0) > 0 ? dbTop!.this_week_revenue : Math.max(dbTop?.this_week_revenue ?? 0, localWeekRevenue);
+  const thisMonthRevenue = (dbTop?.this_month_revenue ?? 0) > 0 ? dbTop!.this_month_revenue : Math.max(dbTop?.this_month_revenue ?? 0, localMonthRevenue);
+  const thisYearRevenue = (dbTop?.this_year_revenue ?? 0) > 0 ? dbTop!.this_year_revenue : Math.max(dbTop?.this_year_revenue ?? 0, localYearRevenue);
+  const totalRevenue = (dbTop?.total_revenue ?? 0) > 0 ? dbTop!.total_revenue : Math.max(dbTop?.total_revenue ?? 0, localTotalRevenue);
+  const paidAppointments = (dbTop?.paid_appointments ?? 0) > 0 ? dbTop!.paid_appointments : Math.max(dbTop?.paid_appointments ?? 0, localPaidCount);
+  const averageServiceValue = (dbTop?.average_service_value ?? 0) > 0 ? dbTop!.average_service_value : (paidAppointments > 0 ? Math.round(totalRevenue / paidAppointments) : localAvgServiceValue);
+
+  const dailyTrend = (dbCharts?.daily_trend && dbCharts.daily_trend.some((d: any) => d.sales > 0)) ? dbCharts.daily_trend : localDailyTrend;
+  const yearlyTrend = (dbCharts?.yearly_trend && dbCharts.yearly_trend.some((d: any) => d.sales > 0)) ? dbCharts.yearly_trend : localYearlyTrend;
+  const paymentBreakdown = (dbCharts?.revenue_by_payment_method && dbCharts.revenue_by_payment_method.some((p: any) => p.amount > 0)) ? dbCharts.revenue_by_payment_method : localPaymentBreakdown;
+  const staffBreakdown = (dbCharts?.revenue_by_staff && dbCharts.revenue_by_staff.length > 0) ? dbCharts.revenue_by_staff : localStaffBreakdown;
+  const topServices = (dbAnalytics?.top_services && dbAnalytics.top_services.length > 0) ? dbAnalytics.top_services : localTopServices;
 
   const formatPct = (val: number | undefined) => {
     if (val === undefined || val === 0) return null;
@@ -103,15 +232,15 @@ export function SalonRevenueDashboard() {
       <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
         <StatCard
           label="Today's Revenue"
-          value={fmt(top?.today_revenue ?? 0)}
-          delta={top?.today_vs_yesterday_pct ? `${top.today_vs_yesterday_pct}% vs yesterday` : "Real-time today"}
-          trend={top?.today_vs_yesterday_pct && top.today_vs_yesterday_pct < 0 ? "down" : "up"}
+          value={fmt(todayRevenue)}
+          delta={dbTop?.today_vs_yesterday_pct ? `${dbTop.today_vs_yesterday_pct}% vs yesterday` : "Real-time today"}
+          trend={dbTop?.today_vs_yesterday_pct && dbTop.today_vs_yesterday_pct < 0 ? "down" : "up"}
           icon={DollarSign}
           accent="primary"
         />
         <StatCard
           label="Yesterday Revenue"
-          value={fmt(top?.yesterday_revenue ?? 0)}
+          value={fmt(yesterdayRevenue)}
           delta="Previous day settled"
           trend="neutral"
           icon={Clock}
@@ -119,31 +248,31 @@ export function SalonRevenueDashboard() {
         />
         <StatCard
           label="This Week Revenue"
-          value={fmt(top?.this_week_revenue ?? 0)}
-          delta={top?.week_vs_last_week_pct ? `${top.week_vs_last_week_pct}% vs last week` : "Current week total"}
-          trend={top?.week_vs_last_week_pct && top.week_vs_last_week_pct < 0 ? "down" : "up"}
+          value={fmt(thisWeekRevenue)}
+          delta={dbTop?.week_vs_last_week_pct ? `${dbTop.week_vs_last_week_pct}% vs last week` : "Current week total"}
+          trend={dbTop?.week_vs_last_week_pct && dbTop.week_vs_last_week_pct < 0 ? "down" : "up"}
           icon={TrendingUp}
           accent="info"
         />
         <StatCard
           label="This Month Revenue"
-          value={fmt(top?.this_month_revenue ?? 0)}
-          delta={top?.month_vs_last_month_pct ? `${top.month_vs_last_month_pct}% vs last month` : "Current month total"}
-          trend={top?.month_vs_last_month_pct && top.month_vs_last_month_pct < 0 ? "down" : "up"}
+          value={fmt(thisMonthRevenue)}
+          delta={dbTop?.month_vs_last_month_pct ? `${dbTop.month_vs_last_month_pct}% vs last month` : "Current month total"}
+          trend={dbTop?.month_vs_last_month_pct && dbTop.month_vs_last_month_pct < 0 ? "down" : "up"}
           icon={Calendar}
           accent="primary"
         />
         <StatCard
           label="This Year Revenue"
-          value={fmt(top?.this_year_revenue ?? 0)}
-          delta={top?.year_vs_last_year_pct ? `${top.year_vs_last_year_pct}% vs last year` : "Annual total"}
-          trend={top?.year_vs_last_year_pct && top.year_vs_last_year_pct < 0 ? "down" : "up"}
+          value={fmt(thisYearRevenue)}
+          delta={dbTop?.year_vs_last_year_pct ? `${dbTop.year_vs_last_year_pct}% vs last year` : "Annual total"}
+          trend={dbTop?.year_vs_last_year_pct && dbTop.year_vs_last_year_pct < 0 ? "down" : "up"}
           icon={Award}
           accent="warning"
         />
         <StatCard
           label="Total Lifetime Revenue"
-          value={fmt(top?.total_revenue ?? 0)}
+          value={fmt(totalRevenue)}
           delta="All-time business total"
           trend="neutral"
           icon={Receipt}
@@ -151,7 +280,7 @@ export function SalonRevenueDashboard() {
         />
         <StatCard
           label="Paid Appointments"
-          value={top?.paid_appointments ?? 0}
+          value={paidAppointments}
           delta="Completed paid services"
           trend="up"
           icon={CheckCircle2}
@@ -159,7 +288,7 @@ export function SalonRevenueDashboard() {
         />
         <StatCard
           label="Average Service Value"
-          value={fmt(top?.average_service_value ?? 0)}
+          value={fmt(averageServiceValue)}
           delta="Revenue per completed visit"
           trend="neutral"
           icon={Scissors}
@@ -180,7 +309,7 @@ export function SalonRevenueDashboard() {
           <CardContent className="pt-4">
             <div className="h-[260px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={charts?.daily_trend || []}>
+                <BarChart data={dailyTrend}>
                   <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
                   <XAxis dataKey="label" fontSize={11} tickLine={false} />
                   <YAxis fontSize={11} tickLine={false} tickFormatter={(v) => `₹${v}`} />
@@ -206,7 +335,7 @@ export function SalonRevenueDashboard() {
           <CardContent className="pt-4">
             <div className="h-[260px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={charts?.yearly_trend || []}>
+                <LineChart data={yearlyTrend}>
                   <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
                   <XAxis dataKey="label" fontSize={11} tickLine={false} />
                   <YAxis fontSize={11} tickLine={false} tickFormatter={(v) => `₹${v}`} />
@@ -234,9 +363,9 @@ export function SalonRevenueDashboard() {
             <CardDescription className="text-xs">Revenue split by payment type</CardDescription>
           </CardHeader>
           <CardContent className="pt-2 space-y-3">
-            {(charts?.revenue_by_payment_method || []).map((pm) => {
-              const totalRev = top?.total_revenue || 1;
-              const pct = Math.round((pm.amount / totalRev) * 100);
+            {(paymentBreakdown || []).map((pm: any) => {
+              const tot = totalRevenue || 1;
+              const pct = Math.round((pm.amount / tot) * 100);
               return (
                 <div key={pm.method} className="space-y-1">
                   <div className="flex items-center justify-between text-xs font-medium">
@@ -267,7 +396,7 @@ export function SalonRevenueDashboard() {
             <CardDescription className="text-xs">Hair, Skin, Spa, Nails, Bridal & Makeup</CardDescription>
           </CardHeader>
           <CardContent className="pt-2 space-y-3">
-            {(charts?.revenue_by_service_category || []).map((cat) => (
+            {(dbCharts?.revenue_by_service_category || []).map((cat: any) => (
               <div key={cat.category} className="flex items-center justify-between rounded-xl border p-2.5">
                 <div>
                   <p className="text-xs font-semibold text-foreground">{cat.category}</p>
@@ -291,7 +420,7 @@ export function SalonRevenueDashboard() {
             <CardDescription className="text-xs">Stylist & Therapist sales contribution</CardDescription>
           </CardHeader>
           <CardContent className="pt-2 space-y-3">
-            {(charts?.revenue_by_staff || []).map((st) => (
+            {(staffBreakdown || []).map((st: any) => (
               <div key={st.staff_name} className="flex items-center justify-between rounded-xl border p-2.5">
                 <div className="flex items-center gap-2">
                   <div className="h-7 w-7 rounded-full gradient-brand flex items-center justify-center text-primary-foreground text-xs font-bold">
@@ -324,7 +453,7 @@ export function SalonRevenueDashboard() {
           </CardHeader>
           <CardContent className="pt-2">
             <div className="space-y-2.5">
-              {(analytics?.top_services || []).map((srv, idx) => (
+              {(topServices || []).map((srv: any, idx: number) => (
                 <div key={srv.service_name} className="flex items-center justify-between rounded-xl border p-3">
                   <div className="flex items-center gap-3">
                     <span className="flex h-6 w-6 items-center justify-center rounded-full bg-secondary text-xs font-bold text-muted-foreground">
@@ -357,22 +486,22 @@ export function SalonRevenueDashboard() {
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl border bg-card p-3">
                 <p className="text-[11px] font-medium text-muted-foreground">Net Revenue</p>
-                <p className="text-lg font-extrabold text-foreground">{fmt(analytics?.net_revenue ?? 0)}</p>
+                <p className="text-lg font-extrabold text-foreground">{fmt(dbAnalytics?.net_revenue ?? totalRevenue)}</p>
                 <p className="text-[10px] text-muted-foreground">After discounts applied</p>
               </div>
               <div className="rounded-xl border bg-card p-3">
                 <p className="text-[11px] font-medium text-muted-foreground">GST Collected (18%)</p>
-                <p className="text-lg font-extrabold text-indigo-600 dark:text-indigo-400">{fmt(analytics?.gst_collected ?? 0)}</p>
+                <p className="text-lg font-extrabold text-indigo-600 dark:text-indigo-400">{fmt(dbAnalytics?.gst_collected ?? Math.round(totalRevenue * 0.18))}</p>
                 <p className="text-[10px] text-muted-foreground">Standard Salon GST</p>
               </div>
               <div className="rounded-xl border bg-card p-3">
                 <p className="text-[11px] font-medium text-muted-foreground">Discounts Given</p>
-                <p className="text-lg font-extrabold text-amber-600 dark:text-amber-400">{fmt(analytics?.discount_given ?? 0)}</p>
+                <p className="text-lg font-extrabold text-amber-600 dark:text-amber-400">{fmt(dbAnalytics?.discount_given ?? 0)}</p>
                 <p className="text-[10px] text-muted-foreground">Coupons & promotions</p>
               </div>
               <div className="rounded-xl border bg-card p-3">
                 <p className="text-[11px] font-medium text-muted-foreground">Outstanding Payments</p>
-                <p className="text-lg font-extrabold text-rose-600 dark:text-rose-400">{fmt(analytics?.outstanding_payments ?? 0)}</p>
+                <p className="text-lg font-extrabold text-rose-600 dark:text-rose-400">{fmt(dbAnalytics?.outstanding_payments ?? 0)}</p>
                 <p className="text-[10px] text-muted-foreground">Unsettled active visits</p>
               </div>
             </div>
@@ -380,10 +509,10 @@ export function SalonRevenueDashboard() {
             <div className="rounded-xl border bg-muted/40 p-3 flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold text-foreground">Repeat Client Revenue Share</p>
-                <p className="text-[11px] text-muted-foreground">{analytics?.repeat_client_rate ?? 0}% of clients have return visits</p>
+                <p className="text-[11px] text-muted-foreground">{dbAnalytics?.repeat_client_rate ?? 0}% of clients have return visits</p>
               </div>
               <Badge variant="default" className="gradient-brand text-primary-foreground font-bold">
-                {analytics?.repeat_client_rate ?? 0}% Repeat
+                {dbAnalytics?.repeat_client_rate ?? 0}% Repeat
               </Badge>
             </div>
           </CardContent>

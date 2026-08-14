@@ -36,27 +36,38 @@ class SubscriptionLimitService:
             if plan:
                 return plan
 
-        # Fallback to default active plan in DB (e.g. lowest price or free plan)
+        # Fallback to default active plan in DB (STARTER plan)
         default_plan = self.db.scalar(
             select(SubscriptionPlan)
-            .where(SubscriptionPlan.is_active == True)
-            .order_by(SubscriptionPlan.monthly_price.asc())
+            .where(SubscriptionPlan.name == "STARTER", SubscriptionPlan.is_active == True)
         )
         if not default_plan:
+            default_plan = self.db.scalar(
+                select(SubscriptionPlan)
+                .where(SubscriptionPlan.is_active == True)
+                .order_by(SubscriptionPlan.monthly_price.asc())
+            )
+
+        if not default_plan:
             default_plan = SubscriptionPlan(
-                name="Free Plan",
-                monthly_price=0.0,
-                trial_days=0,
-                max_staff=2,
-                max_customers=50,
-                max_campaigns_per_month=5,
+                name="STARTER",
+                monthly_price=29.0,
+                trial_days=14,
+                max_staff=5,
+                max_active_devices=5,
+                max_customers=500,
+                max_campaigns_per_month=20,
                 monthly_ai_credits=0,
-                features={"ai_generator": False},
+                features={"ai_generator": True, "analytics": True},
                 is_active=True,
             )
             self.db.add(default_plan)
             self.db.commit()
             self.db.refresh(default_plan)
+
+        if business and not business.subscription_plan_id and default_plan and default_plan.id:
+            business.subscription_plan_id = default_plan.id
+            self.db.commit()
 
         return default_plan
 
@@ -186,26 +197,72 @@ class SubscriptionLimitService:
             "reset_date": reset_date,
         }
 
-    def check_ai_limit(self, business_id: UUID) -> None:
+    def get_ai_entitlement(self, business_id: UUID) -> dict:
         plan = self.get_business_plan(business_id)
-        # Check if AI is enabled on plan
-        ai_enabled = True
-        if plan.features and isinstance(plan.features, dict) and "ai_enabled" in plan.features:
-            ai_enabled = bool(plan.features.get("ai_enabled"))
-        if not ai_enabled or (getattr(plan, "monthly_ai_credits", 0) == 0 and not (plan.features or {}).get("monthly_ai_credits")):
-            # If monthly credits is 0 and no purchased credits are present, check total remaining
-            usage = self.get_ai_credit_usage(business_id)
-            if usage["purchased_remaining_credits"] <= 0 and not ai_enabled:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="AI features are disabled for your current subscription plan. Upgrade your plan to unlock AI.",
-                )
-
         usage = self.get_ai_credit_usage(business_id)
-        if usage["limit_reached"]:
+
+        monthly_plan_credits = getattr(plan, "monthly_ai_credits", 0) or 0
+        if not monthly_plan_credits and plan.features:
+            monthly_plan_credits = int(plan.features.get("monthly_ai_credits", 0))
+
+        ai_included = monthly_plan_credits > 0
+        if plan.features and isinstance(plan.features, dict):
+            if "ai_enabled" in plan.features:
+                ai_included = bool(plan.features.get("ai_enabled"))
+            elif "ai_generator" in plan.features:
+                ai_included = bool(plan.features.get("ai_generator")) and monthly_plan_credits > 0
+
+        # STARTER plan explicitly has 0 AI credits and no AI feature entitlement
+        if plan.name == "STARTER" and monthly_plan_credits <= 0:
+            ai_included = False
+
+        credits_remaining = usage["total_remaining_credits"]
+        credits_available = credits_remaining > 0
+
+        if not ai_included:
+            can_use_ai = False
+            reason = "PLAN_NOT_ELIGIBLE"
+        elif not credits_available:
+            can_use_ai = False
+            reason = "NO_CREDITS"
+        else:
+            can_use_ai = True
+            reason = "AVAILABLE"
+
+        return {
+            "can_use_ai": can_use_ai,
+            "ai_included_in_plan": ai_included,
+            "credits_available": credits_available,
+            "current_plan": plan.name,
+            "credits_remaining": credits_remaining,
+            "monthly_plan_credits": monthly_plan_credits,
+            "purchased_remaining_credits": usage["purchased_remaining_credits"],
+            "reason": reason,
+        }
+
+    def check_ai_limit(self, business_id: UUID) -> None:
+        entitlement = self.get_ai_entitlement(business_id)
+
+        if entitlement["reason"] == "PLAN_NOT_ELIGIBLE":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="You have used all available AI Credits. Upgrade your subscription or purchase additional AI Credits.",
+                detail={
+                    "code": "AI_PLAN_NOT_ELIGIBLE",
+                    "detail": "AI features are not included in your current subscription plan. Upgrade your subscription to unlock Gemini AI features.",
+                    "reason": "PLAN_NOT_ELIGIBLE",
+                    "plan_name": entitlement["current_plan"],
+                },
+            )
+
+        if entitlement["reason"] == "NO_CREDITS":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "AI_CREDITS_EXHAUSTED",
+                    "detail": "You have used all available AI credits. Upgrade your plan or purchase additional AI credits to continue.",
+                    "reason": "NO_CREDITS",
+                    "plan_name": entitlement["current_plan"],
+                },
             )
 
     def consume_ai_credit(self, business_id: UUID) -> None:

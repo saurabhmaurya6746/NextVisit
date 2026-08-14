@@ -13,6 +13,7 @@ from .campaign import (
     CampaignType,
     TargetSegment,
 )
+from .calendar_event import CalendarEvent
 from .customer import Customer
 from .festival import Festival, FestivalCampaign
 from .coupon import Coupon, CouponRedemption, CouponStatus, CouponType

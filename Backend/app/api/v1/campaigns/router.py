@@ -135,6 +135,11 @@ def generate_ai_message(
     sub_limit_svc = SubscriptionLimitService(db)
     sub_limit_svc.check_ai_limit(current_user.business_id)
 
+    from app.models.business import Business
+    biz = db.query(Business).filter(Business.id == current_user.business_id).first()
+    biz_name = data.business_name or (biz.name if biz else "Our Business")
+    biz_type = data.business_type or (biz.type if biz else "Business")
+
     tones = [
         "witty & playful",
         "energetic & exciting",
@@ -142,18 +147,34 @@ def generate_ai_message(
         "catchy & promotional",
         "urgent & exclusive",
     ]
-    random_tone = random.choice(tones)
+    tone_style = data.tone or random.choice(tones)
 
     prompt = (
-        f"Generate a short, unique, funny, and highly engaging WhatsApp marketing message for a business.\n"
+        f"You are an expert marketing copywriter for a {biz_type} named '{biz_name}'.\n"
+        f"Generate a customer-facing WhatsApp campaign message tailored for a {biz_type}.\n\n"
+        f"Business Name: {biz_name}\n"
+        f"Business Type: {biz_type}\n"
+        f"Campaign Name: {data.campaign_name or 'Special Promo'}\n"
         f"Campaign Type: {data.campaign_type}\n"
-        f"Offer Title: {data.title or 'Special Offer'}\n"
-        f"Discount Value: {data.discount or 'Special Discount'}\n"
-        f"Tone Style: {random_tone}\n\n"
-        f"Requirements:\n"
-        f"1. Must explicitly include placeholders: {{customer_name}} and {{discount}}.\n"
-        f"2. Keep it under 250 characters.\n"
-        f"3. Make it catchy for WhatsApp. Give a completely different creative variation than standard templates. Return ONLY the message text without quotes or markdown formatting."
+        f"Target Segment: {data.target_segment or 'ALL_CUSTOMERS'}\n"
+        f"Offer Title / Subject: {data.title or 'Special Offer'}\n"
+        f"Discount / Offer Value: {data.discount or 'Special Discount'}\n"
+    )
+
+    if data.message_content and data.message_content.strip():
+        prompt += f"Existing Message Template: {data.message_content.strip()}\n"
+
+    if data.language:
+        prompt += f"Language: {data.language}\n"
+    prompt += f"Tone Style: {tone_style}\n"
+    if data.length:
+        prompt += f"Length: {data.length}\n"
+
+    prompt += (
+        f"\nSTRICT REQUIREMENTS:\n"
+        f"1. You MUST strictly preserve placeholders like {{customer_name}} and {{discount}}. Do NOT rename, remove, or convert them into {{customer_name}} or single curly braces.\n"
+        f"2. Adapt the vocabulary, tone, and emoji for a {biz_type} (e.g., food/dining terms for a restaurant, beauty/pampering terms for a salon).\n"
+        f"3. Return ONLY the final message text without any surrounding quotes, markdown formatting, or introductory preambles."
     )
 
     api_key = settings.GEMINI_API_KEY.strip() if settings.GEMINI_API_KEY else ""
@@ -162,7 +183,7 @@ def generate_ai_message(
     payload = json.dumps({
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
-            "temperature": 0.9,
+            "temperature": 0.85,
             "topP": 0.95,
         }
     }).encode("utf-8")
@@ -176,7 +197,7 @@ def generate_ai_message(
 
     generated_text = None
     try:
-        with urllib.request.urlopen(req, timeout=10) as response:
+        with urllib.request.urlopen(req, timeout=12) as response:
             res_body = json.loads(response.read().decode("utf-8"))
             text = (
                 res_body.get("candidates", [{}])[0]
@@ -190,11 +211,11 @@ def generate_ai_message(
         logger.warning(f"[GEMINI AI BACKEND] Call failed: {e}")
 
     if not generated_text:
-        # Fallback message
+        # Fallback message preserving exact placeholders {{customer_name}} and {{discount}}
         fallbacks = [
-            f"Hey {{customer_name}}! 🎉 {data.title or 'Special Treat'}! Get {{discount}} off on your next visit. Book your slot today! ✨",
-            f"Psst {{customer_name}}! 🎁 We missed you! Enjoy {{discount}} on your next order. Valid for a limited time! 🔥",
-            f"Exclusive offer for {{customer_name}} 🌟 {data.title or 'Claim your deal'}: Get {{discount}} off now! See you soon!",
+            f"Hey {{customer_name}}! 🎉 {data.title or 'Special Treat'}! Get {{discount}} off on your next visit to {biz_name}. Book today! ✨",
+            f"Psst {{customer_name}}! 🎁 {biz_name} has a special offer for you! Enjoy {{discount}} on your next order. Valid for a limited time! 🔥",
+            f"Exclusive offer for {{customer_name}} at {biz_name} 🌟 {data.title or 'Claim your deal'}: Get {{discount}} off now! See you soon! ❤️",
         ]
         generated_text = random.choice(fallbacks)
 

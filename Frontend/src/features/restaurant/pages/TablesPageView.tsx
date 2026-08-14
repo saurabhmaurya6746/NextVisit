@@ -29,7 +29,9 @@ import {
   TooltipContent,
   TooltipProvider,
 } from "@/components/ui/tooltip";
-import { useProfile } from "@/lib/business-profile";
+import { useProfile, useAuthenticatedBusiness } from "@/lib/business-profile";
+import { useAppScope, slugify } from "@/lib/app-nav";
+import { getSession } from "@/lib/auth";
 import { getTablesMapApi } from "@/lib/orders-api";
 import { NewOrderDialog } from "@/components/new-order-dialog";
 import { OrderDetailSheet } from "@/components/order-detail-sheet";
@@ -53,6 +55,10 @@ interface QrModalTable {
 
 export function TablesPageView() {
   const profile = useProfile("restaurant");
+  const scope = useAppScope();
+  const { name: authBizName, business: authBiz } = useAuthenticatedBusiness();
+  const session = getSession();
+
   const [presetTableId, setPresetTableId] = useState<string | null>(null);
   const [presetTableName, setPresetTableName] = useState<string | null>(null);
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
@@ -74,10 +80,15 @@ export function TablesPageView() {
     refetchInterval: 10000, // Refresh every 10s for live table updates
   });
 
-  const bizSlug = profile.businessSlug || "restaurant";
+  const activeBizName = authBiz?.name || authBizName || session?.businessName || (profile?.name !== "Aroma Bistro" ? profile?.name : null) || "restaurant";
+  const activeSlug = (scope?.business && scope.business !== "business" && scope.business !== "restaurant")
+    ? scope.business
+    : (session?.businessSlug || slugify(activeBizName));
+
+  const bizSlug = activeSlug || "restaurant";
 
   const handleOpenQrModal = (table: any) => {
-    const relPath = `/qr/${bizSlug}/${table.id}`;
+    const relPath = `/restaurant/qr/${bizSlug}/${table.id}`;
     const fullUrl = `${window.location.origin}${relPath}`;
     setSelectedQrTable({
       tableName: table.table_name,

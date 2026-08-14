@@ -421,6 +421,10 @@ class FestivalService:
         discount_desc: str | None = None,
     ) -> str:
         """Generates festival-specific Gemini AI message with placeholders intact."""
+        from app.services.subscription_limit_service import SubscriptionLimitService
+        sub_limit_svc = SubscriptionLimitService(self.db)
+        sub_limit_svc.check_ai_limit(current_user.business_id)
+
         fest = None
         if festival_id:
             fest = self.db.scalar(select(Festival).where(Festival.id == festival_id))

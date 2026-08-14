@@ -5,12 +5,16 @@ export interface SubscriptionPlanItem {
   name: string;
   monthly_price: number;
   trial_days: number;
+  max_customers?: number;
   max_staff: number;
   max_active_devices: number;
+  max_campaigns_per_month?: number;
   storage_limit_gb: number;
   monthly_ai_credits: number;
-  features: Record<string, boolean | string> | null;
+  features: Record<string, any> | null;
   is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface SubscriptionUpgradeRequestItem {
@@ -81,6 +85,25 @@ export async function getAvailablePlansApi(): Promise<SubscriptionPlanItem[]> {
   return await res.json();
 }
 
+export async function getPublicPlansApi(): Promise<SubscriptionPlanItem[]> {
+  try {
+    const res = await apiFetch("/api/v1/subscription/public-plans");
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch (err) {
+    console.warn("Public pricing fetch /public-plans failed, attempting /plans fallback:", err);
+  }
+
+  const resFallback = await apiFetch("/api/v1/subscription/plans");
+  if (!resFallback.ok) {
+    const err = await resFallback.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to fetch subscription plans");
+  }
+  return await resFallback.json();
+}
+
 export async function requestUpgradeApi(requestedPlanId: string): Promise<SubscriptionUpgradeRequestItem> {
   const res = await apiFetch("/api/v1/subscription/upgrade-request", {
     method: "POST",
@@ -149,4 +172,88 @@ export async function getSubscriptionUsageApi(): Promise<SubscriptionUsageSummar
     throw new Error(err.detail || "Failed to fetch subscription usage summary");
   }
   return await res.json();
+}
+
+export interface AiEntitlementDetails {
+  can_use_ai: boolean;
+  ai_included_in_plan: boolean;
+  credits_available: boolean;
+  current_plan: string;
+  credits_remaining: number;
+  monthly_plan_credits: number;
+  purchased_remaining_credits: number;
+  reason: "PLAN_NOT_ELIGIBLE" | "NO_CREDITS" | "AVAILABLE";
+}
+
+export async function getAiEntitlementApi(): Promise<AiEntitlementDetails> {
+  const res = await apiFetch("/api/v1/subscription/ai-entitlement");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to fetch AI entitlement details");
+  }
+  return await res.json();
+}
+
+/**
+ * Global AI Error & Entitlement Interceptor.
+ * Dispatches `growthos:open-ai-upgrade-modal` event when AI access is restricted.
+ * Returns true if the error was intercepted (and upgrade modal opened).
+ */
+export function handleAiApiError(err: any): boolean {
+  let code = "";
+  let detailMsg = "";
+
+  if (err && typeof err === "object") {
+    if (err.code) code = String(err.code);
+    if (err.detail && typeof err.detail === "object") {
+      code = String(err.detail.code || code);
+      detailMsg = String(err.detail.detail || err.detail.message || "");
+    } else if (typeof err.detail === "string") {
+      detailMsg = err.detail;
+    }
+    if (!detailMsg && err.message) detailMsg = String(err.message);
+  } else if (typeof err === "string") {
+    detailMsg = err;
+  }
+
+  const isPlanEligibleError =
+    code === "AI_PLAN_NOT_ELIGIBLE" ||
+    detailMsg.includes("AI_PLAN_NOT_ELIGIBLE") ||
+    detailMsg.includes("not included in your current subscription") ||
+    detailMsg.includes("disabled for your current subscription plan");
+
+  const isCreditsExhaustedError =
+    code === "AI_CREDITS_EXHAUSTED" ||
+    detailMsg.includes("AI_CREDITS_EXHAUSTED") ||
+    detailMsg.includes("used all available AI Credits") ||
+    detailMsg.includes("used all available AI credits") ||
+    detailMsg.includes("reached your available AI credits");
+
+  if (isPlanEligibleError) {
+    window.dispatchEvent(
+      new CustomEvent("growthos:open-ai-upgrade-modal", {
+        detail: {
+          reason: "PLAN_NOT_ELIGIBLE",
+          message:
+            "AI features aren't included in your current subscription plan. Upgrade your subscription to unlock Gemini AI copywriter features.",
+        },
+      })
+    );
+    return true;
+  }
+
+  if (isCreditsExhaustedError) {
+    window.dispatchEvent(
+      new CustomEvent("growthos:open-ai-upgrade-modal", {
+        detail: {
+          reason: "NO_CREDITS",
+          message:
+            "You've reached your available AI credits. Upgrade your plan or purchase additional AI credits to continue.",
+        },
+      })
+    );
+    return true;
+  }
+
+  return false;
 }

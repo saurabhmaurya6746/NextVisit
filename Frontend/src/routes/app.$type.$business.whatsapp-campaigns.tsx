@@ -45,11 +45,23 @@ import {
   type CampaignModel,
   type CampaignLogItem,
 } from "@/lib/campaigns-api";
+import { useParams } from "react-router-dom";
+import { useProfile, useAuthenticatedBusiness } from "@/lib/business-profile";
 import { openWhatsApp } from "@/lib/celebration-utils";
+import { handleAiApiError } from "@/lib/subscription-api";
 
 export const Route = createFileRoute("/app/$type/$business/whatsapp-campaigns")({ component: WhatsAppPage });
 
 export default function WhatsAppPage() {
+  const { type } = useParams<{ type?: string }>();
+  const bizType = type === "salon" ? "salon" : "restaurant";
+  const profile = useProfile(bizType);
+  const authBiz = useAuthenticatedBusiness();
+
+  const bizName = authBiz?.name || profile?.name || (bizType === "salon" ? "My Salon" : "My Restaurant");
+  const bizAddress = profile?.address || "";
+  const bizPhone = profile?.phone || "";
+
   // 1. ALL HOOKS CALLED UNCONDITIONALLY AT TOP LEVEL
   const [campaignsList, setCampaignsList] = useState<CampaignModel[]>([]);
   const [pendingLogs, setPendingLogs] = useState<CampaignLogItem[]>([]);
@@ -69,6 +81,7 @@ export default function WhatsAppPage() {
   const [cMessage, setCMessage] = useState("Happy Birthday {{customer_name}}! 🎉 Enjoy {{discount}} on your next visit. See you soon! ❤️");
   const [creating, setCreating] = useState(false);
   const [generatingCreateAi, setGeneratingCreateAi] = useState(false);
+  const [hasGeneratedCreateAi, setHasGeneratedCreateAi] = useState(false);
 
   // Edit Campaign Modal State
   const [editCampaign, setEditCampaign] = useState<CampaignModel | null>(null);
@@ -80,6 +93,22 @@ export default function WhatsAppPage() {
   const [editMessage, setEditMessage] = useState("");
   const [updating, setUpdating] = useState(false);
   const [generatingEditAi, setGeneratingEditAi] = useState(false);
+  const [hasGeneratedEditAi, setHasGeneratedEditAi] = useState(false);
+
+  // Mandatory Field Validation Rules
+  const canGenerateCreateAi =
+    cName.trim().length > 0 &&
+    cType.trim().length > 0 &&
+    cSegment.trim().length > 0 &&
+    cTitle.trim().length > 0 &&
+    cMessage.trim().length > 0;
+
+  const canGenerateEditAi =
+    editName.trim().length > 0 &&
+    editType.trim().length > 0 &&
+    editSegment.trim().length > 0 &&
+    editTitle.trim().length > 0 &&
+    editMessage.trim().length > 0;
 
   // Delete Campaign Confirm Modal State
   const [deleteCampaignId, setDeleteCampaignId] = useState<string | null>(null);
@@ -119,28 +148,66 @@ export default function WhatsAppPage() {
 
   // Gemini AI Generator Handlers
   const handleGenerateCreateAiMessage = async () => {
+    if (!canGenerateCreateAi) return;
     setGeneratingCreateAi(true);
     try {
-      const aiText = await generateCampaignMessageWithGemini(cType, cTitle, cDiscount);
+      const aiText = await generateCampaignMessageWithGemini({
+        campaign_name: cName.trim(),
+        campaign_type: cType.trim(),
+        target_segment: cSegment.trim(),
+        title: cTitle.trim(),
+        discount: cDiscount.trim() || undefined,
+        message_content: cMessage.trim() || undefined,
+        business_name: bizName,
+        business_type: bizType,
+        business_address: bizAddress,
+        business_phone: bizPhone,
+      });
       setCMessage(aiText);
+      setHasGeneratedCreateAi(true);
       toast.success("✨ New AI Message variation generated!");
     } catch (err: any) {
-      console.error("[GEMINI AI] Error generating message:", err);
-      toast.error("Failed to generate AI message.");
+      console.error("AI campaign generation failed", {
+        error: err.message || err,
+        payload: { cName, cType, cSegment, cTitle, cDiscount, cMessage, bizName, bizType },
+      });
+      if (handleAiApiError(err)) {
+        return;
+      }
+      toast.error(err.message || "Failed to generate AI message.");
     } finally {
       setGeneratingCreateAi(false);
     }
   };
 
   const handleGenerateEditAiMessage = async () => {
+    if (!canGenerateEditAi) return;
     setGeneratingEditAi(true);
     try {
-      const aiText = await generateCampaignMessageWithGemini(editType, editTitle, editDiscount);
+      const aiText = await generateCampaignMessageWithGemini({
+        campaign_name: editName.trim(),
+        campaign_type: editType.trim(),
+        target_segment: editSegment.trim(),
+        title: editTitle.trim(),
+        discount: editDiscount.trim() || undefined,
+        message_content: editMessage.trim() || undefined,
+        business_name: bizName,
+        business_type: bizType,
+        business_address: bizAddress,
+        business_phone: bizPhone,
+      });
       setEditMessage(aiText);
+      setHasGeneratedEditAi(true);
       toast.success("✨ New AI Message variation generated!");
     } catch (err: any) {
-      console.error("[GEMINI AI] Error generating message:", err);
-      toast.error("Failed to generate AI message.");
+      console.error("AI campaign generation failed", {
+        error: err.message || err,
+        payload: { editName, editType, editSegment, editTitle, editDiscount, editMessage, bizName, bizType },
+      });
+      if (handleAiApiError(err)) {
+        return;
+      }
+      toast.error(err.message || "Failed to generate AI message.");
     } finally {
       setGeneratingEditAi(false);
     }
@@ -588,8 +655,12 @@ export default function WhatsAppPage() {
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={generatingCreateAi}
-                  className="h-7 text-xs rounded-full border-primary/40 text-primary hover:bg-primary/10"
+                  disabled={!canGenerateCreateAi || generatingCreateAi}
+                  className={`h-7 text-xs rounded-full border-primary/40 text-primary transition-all ${
+                    !canGenerateCreateAi
+                      ? "opacity-50 cursor-not-allowed bg-muted/20"
+                      : "hover:bg-primary/10 shadow-xs"
+                  }`}
                   onClick={handleGenerateCreateAiMessage}
                 >
                   {generatingCreateAi ? (
@@ -598,7 +669,8 @@ export default function WhatsAppPage() {
                     </>
                   ) : (
                     <>
-                      <Sparkles className="mr-1 h-3 w-3" /> ✨ Generate AI Message
+                      <Sparkles className="mr-1 h-3 w-3" />{" "}
+                      {hasGeneratedCreateAi ? "✨ Regenerate with AI" : "✨ Generate AI Message"}
                     </>
                   )}
                 </Button>
@@ -685,8 +757,12 @@ export default function WhatsAppPage() {
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={generatingEditAi}
-                  className="h-7 text-xs rounded-full border-primary/40 text-primary hover:bg-primary/10"
+                  disabled={!canGenerateEditAi || generatingEditAi}
+                  className={`h-7 text-xs rounded-full border-primary/40 text-primary transition-all ${
+                    !canGenerateEditAi
+                      ? "opacity-50 cursor-not-allowed bg-muted/20"
+                      : "hover:bg-primary/10 shadow-xs"
+                  }`}
                   onClick={handleGenerateEditAiMessage}
                 >
                   {generatingEditAi ? (
@@ -695,7 +771,8 @@ export default function WhatsAppPage() {
                     </>
                   ) : (
                     <>
-                      <Sparkles className="mr-1 h-3 w-3" /> ✨ Generate AI Message
+                      <Sparkles className="mr-1 h-3 w-3" />{" "}
+                      {hasGeneratedEditAi ? "✨ Regenerate with AI" : "✨ Generate AI Message"}
                     </>
                   )}
                 </Button>

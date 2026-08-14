@@ -242,6 +242,9 @@ class VisitService:
                 visit.payment_method = data.payment_method
             if data.notes:
                 visit.notes = data.notes
+            if data.discount is not None and data.discount >= 0:
+                visit.discount = data.discount
+                visit.total_amount = max(0.0, (visit.subtotal or 0.0) - visit.discount)
 
         now_ts = datetime.now(timezone.utc)
         visit.status = VisitStatus.COMPLETED

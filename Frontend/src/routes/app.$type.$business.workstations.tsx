@@ -1,5 +1,5 @@
 import { createFileRoute } from "@/lib/route-compat";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Scissors,
@@ -42,10 +42,11 @@ import {
   releaseSalonChairApi,
   deleteSalonChairApi,
   createSalonServiceAreaApi,
+  getNextUniqueChairName,
   type SalonServiceArea,
   type SalonChair,
 } from "@/lib/salon-chairs-api";
-import { NewAppointmentDialog } from "@/routes/app.$type.$business.appointments";
+import { NewAppointmentDialog } from "@/components/salon/NewAppointmentDialog";
 import { AppointmentDetailSheet } from "@/components/appointment-detail-sheet";
 import { WorkstationDetailsDrawer } from "@/components/salon/WorkstationDetailsDrawer";
 import { useAppointments, updateAppointment, type Appointment } from "@/lib/appointments-store";
@@ -66,6 +67,16 @@ const STATUS_CONFIG: Record<string, { label: string; badge: string; cardBorder: 
     badge: "bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300 font-bold",
     cardBorder: "border-amber-500/30 bg-amber-500/5 hover:border-amber-500/50",
   },
+  Unavailable: {
+    label: "Unavailable",
+    badge: "bg-muted text-muted-foreground border-border font-medium",
+    cardBorder: "border-border/60 bg-muted/20 opacity-70",
+  },
+  Disabled: {
+    label: "Disabled",
+    badge: "bg-muted text-muted-foreground border-border font-medium",
+    cardBorder: "border-border/60 bg-muted/20 opacity-70",
+  },
 };
 
 function formatApptTime(iso?: string): string {
@@ -82,8 +93,8 @@ function getApptDateStr(iso?: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-function WorkstationTypeIcon({ type }: { type: string }) {
-  switch (type.toLowerCase()) {
+function WorkstationTypeIcon({ type }: { type?: string }) {
+  switch ((type || "").toLowerCase()) {
     case "bed":
       return <Bed className="h-4 w-4 text-primary" />;
     case "room":
@@ -94,27 +105,6 @@ function WorkstationTypeIcon({ type }: { type: string }) {
     default:
       return <Armchair className="h-4 w-4 text-primary" />;
   }
-}
-
-export function getNextUniqueChairName(chairs: { chair_name?: string }[], prefix = "Chair"): string {
-  const existingNames = new Set(chairs.map((c) => (c.chair_name || "").toLowerCase().trim()));
-  let maxDigit = 0;
-  for (const c of chairs) {
-    const match = (c.chair_name || "").match(/(\d+)/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > maxDigit) maxDigit = num;
-    }
-  }
-  let candidateNum = Math.max(chairs.length + 1, maxDigit + 1);
-  while (
-    existingNames.has(`${prefix.toLowerCase()}${candidateNum}`) ||
-    existingNames.has(`${prefix.toLowerCase()} ${candidateNum}`) ||
-    existingNames.has(`${prefix.toLowerCase()}-${candidateNum}`)
-  ) {
-    candidateNum++;
-  }
-  return `${prefix}${candidateNum}`;
 }
 
 export default function WorkstationsPage() {
@@ -159,14 +149,49 @@ export default function WorkstationsPage() {
   // Form States
   const [chairName, setChairName] = useState("");
   const [chairNumber, setChairNumber] = useState("");
-  const [workstationType, setWorkstationType] = useState<string>("Chair");
+  const [workstationType, setWorkstationType] = useState<string>("");
   const [areaId, setAreaId] = useState("");
+  const [statusVal, setStatusVal] = useState<string>("Available");
   const [isActive, setIsActive] = useState(true);
 
   // New Area Form State
   const [newAreaName, setNewAreaName] = useState("");
 
   const isLoading = loadingAreas || loadingChairs;
+
+  // Sync initial areaId and workstationType when serviceAreas load
+  useEffect(() => {
+    if (serviceAreas.length > 0 && !areaId) {
+      setAreaId(serviceAreas[0].id);
+      setWorkstationType(serviceAreas[0].name);
+    }
+  }, [serviceAreas, areaId]);
+
+  // Reset Form
+  function resetForm(targetAreaId?: string) {
+    const selectedArea = serviceAreas.find((a) => a.id === targetAreaId) || serviceAreas[0];
+    if (selectedArea) {
+      setAreaId(selectedArea.id);
+      setWorkstationType(selectedArea.name);
+    }
+    const defaultName = getNextUniqueChairName(chairs, "Chair");
+    setChairName(defaultName);
+    setChairNumber("");
+    setStatusVal("Available");
+    setIsActive(true);
+  }
+
+  // Open Edit Modal
+  function openEdit(c: SalonChair) {
+    setEditChair(c);
+    setChairName(c.chair_name);
+    setChairNumber(c.chair_number || "");
+    setAreaId(c.service_area_id);
+    const areaName = serviceAreas.find((a) => a.id === c.service_area_id)?.name || c.workstation_type || "Chair";
+    setWorkstationType(c.workstation_type || areaName);
+    setStatusVal(c.status === "Unavailable" || c.is_active === false ? "Unavailable" : "Available");
+    setIsActive(c.is_active);
+  }
 
   // Filter today's pending (unassigned) appointments
   const todayPendingAppointments = useMemo(() => {
@@ -189,7 +214,8 @@ export default function WorkstationsPage() {
         appointments.find((a) => a.chairId === c.id && a.status !== "cancelled");
 
       if (active) {
-        setActiveApptSheet(active);
+        const synced = { ...active, status: "checkedin" as const };
+        setActiveApptSheet(synced);
       } else {
         setSelectedWorkstation(c);
         setIsDrawerOpen(true);
@@ -220,28 +246,18 @@ export default function WorkstationsPage() {
     }
   }
 
-  // Reset Form with auto-generated unique default name across the salon
+  // Reset Form
   function resetForm(targetAreaId?: string) {
-    if (targetAreaId) {
-      setAreaId(targetAreaId);
-    } else if (serviceAreas.length > 0) {
-      setAreaId(serviceAreas[0].id);
+    const selectedArea = serviceAreas.find((a) => a.id === targetAreaId) || serviceAreas[0];
+    if (selectedArea) {
+      setAreaId(selectedArea.id);
+      setWorkstationType(selectedArea.name);
     }
     const defaultName = getNextUniqueChairName(chairs, "Chair");
     setChairName(defaultName);
     setChairNumber("");
-    setWorkstationType("Chair");
+    setStatusVal("Available");
     setIsActive(true);
-  }
-
-  // Open Edit Modal
-  function openEdit(c: SalonChair) {
-    setEditChair(c);
-    setChairName(c.chair_name);
-    setChairNumber(c.chair_number || "");
-    setWorkstationType(c.workstation_type || "Chair");
-    setAreaId(c.service_area_id);
-    setIsActive(c.is_active);
   }
 
   // Create Area Handler
@@ -257,28 +273,33 @@ export default function WorkstationsPage() {
       setNewAreaName("");
       setCreateAreaOpen(false);
       setAreaId(created.id);
+      setWorkstationType(created.name);
     } catch (err: any) {
       toast.error(err?.message || "Failed creating service area");
     }
   }
-
-  // Create Chair Handler
   async function handleCreateChair() {
-    if (!chairName.trim()) {
-      toast.error("Workstation name is required");
-      return;
-    }
     if (!areaId) {
       toast.error("Service area is required");
       return;
     }
+    if (!chairName.trim()) {
+      toast.error("Workstation name is required");
+      return;
+    }
+    if (!workstationType) {
+      toast.error("Workstation type is required");
+      return;
+    }
+    const finalStatus = statusVal === "Unavailable" ? "Unavailable" : "Available";
+    const finalActive = statusVal !== "Unavailable";
     try {
       await createSalonChairApi({
         service_area_id: areaId,
         chair_name: chairName.trim(),
-        chair_number: chairNumber.trim() || undefined,
-        workstation_type: workstationType,
-        is_active: isActive,
+        workstation_type: workstationType.trim(),
+        status: finalStatus,
+        is_active: finalActive,
       });
       toast.success("Workstation created successfully");
       qc.invalidateQueries({ queryKey: ["salon-chairs"] });
@@ -295,17 +316,27 @@ export default function WorkstationsPage() {
   // Update Chair Handler
   async function handleUpdateChair() {
     if (!editChair) return;
+    if (!areaId) {
+      toast.error("Service area is required");
+      return;
+    }
     if (!chairName.trim()) {
       toast.error("Workstation name is required");
       return;
     }
+    if (!workstationType) {
+      toast.error("Workstation type is required");
+      return;
+    }
+    const finalStatus = statusVal === "Unavailable" ? "Unavailable" : "Available";
+    const finalActive = statusVal !== "Unavailable";
     try {
       await updateSalonChairApi(editChair.id, {
         service_area_id: areaId,
         chair_name: chairName.trim(),
-        chair_number: chairNumber.trim() || undefined,
-        workstation_type: workstationType,
-        is_active: isActive,
+        workstation_type: workstationType.trim(),
+        status: finalStatus,
+        is_active: finalActive,
       });
       toast.success("Workstation updated");
       qc.invalidateQueries({ queryKey: ["salon-chairs"] });
@@ -466,7 +497,7 @@ export default function WorkstationsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                   {areaChairs.map((c) => {
                     const isAvailable = c.status === "Available";
-                    const statusTheme = isAvailable ? STATUS_CONFIG.Available : STATUS_CONFIG.Occupied;
+                    const statusTheme = isAvailable ? STATUS_CONFIG.Available : (STATUS_CONFIG[c.status] || STATUS_CONFIG.Occupied);
                     const activeAppt = appointments.find(
                       (a) => a.chairId === c.id && a.status !== "cancelled" && a.paymentStatus !== "paid"
                     );
@@ -651,62 +682,82 @@ export default function WorkstationsPage() {
           </DialogHeader>
 
           <div className="space-y-4 py-2 text-xs">
+            {/* 1. Service Area * */}
             <div>
               <Label className="text-xs font-semibold">Service Area *</Label>
-              <Select value={areaId} onValueChange={setAreaId}>
-                <SelectTrigger className="mt-1 rounded-xl"><SelectValue placeholder="Select Service Area…" /></SelectTrigger>
-                <SelectContent>
-                  {serviceAreas.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {serviceAreas.length === 0 ? (
+                <div className="mt-1 rounded-xl border border-dashed p-3 text-center text-xs text-muted-foreground">
+                  No service areas created yet. Please create a service area first.
+                </div>
+              ) : (
+                <Select
+                  value={areaId}
+                  onValueChange={(val) => {
+                    setAreaId(val);
+                    const matched = serviceAreas.find((a) => a.id === val);
+                    if (matched) setWorkstationType(matched.name);
+                  }}
+                >
+                  <SelectTrigger className="mt-1 rounded-xl"><SelectValue placeholder="Select Service Area ▼" /></SelectTrigger>
+                  <SelectContent>
+                    {serviceAreas.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs font-semibold">Workstation Name *</Label>
-                <Input
-                  className="mt-1 rounded-xl"
-                  placeholder="e.g. Chair 1, Bed 2"
-                  value={chairName}
-                  onChange={(e) => setChairName(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <Label className="text-xs font-semibold">Workstation Number</Label>
-                <Input
-                  className="mt-1 rounded-xl"
-                  placeholder="e.g. 01, B2"
-                  value={chairNumber}
-                  onChange={(e) => setChairNumber(e.target.value)}
-                />
-              </div>
+            {/* 2. Workstation Name * */}
+            <div>
+              <Label className="text-xs font-semibold">Workstation Name *</Label>
+              <Input
+                className="mt-1 rounded-xl"
+                placeholder="e.g. Chair 1, Nail Station 1, Facial Bed 1"
+                value={chairName}
+                onChange={(e) => setChairName(e.target.value)}
+              />
             </div>
 
+            {/* 3. Workstation Type * */}
             <div>
               <Label className="text-xs font-semibold">Workstation Type *</Label>
-              <Select value={workstationType} onValueChange={setWorkstationType}>
-                <SelectTrigger className="mt-1 rounded-xl"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Chair">Chair (Styling / Haircut)</SelectItem>
-                  <SelectItem value="Bed">Bed (Facial / Massage)</SelectItem>
-                  <SelectItem value="Station">Station (Nail / Makeup)</SelectItem>
-                  <SelectItem value="Room">Room (Bridal / Spa Suite)</SelectItem>
-                </SelectContent>
-              </Select>
+              {serviceAreas.length === 0 ? (
+                <Input className="mt-1 rounded-xl" disabled placeholder="Select Workstation Type" />
+              ) : (
+                <Select value={workstationType} onValueChange={setWorkstationType}>
+                  <SelectTrigger className="mt-1 rounded-xl"><SelectValue placeholder="Select Workstation Type ▼" /></SelectTrigger>
+                  <SelectContent>
+                    {serviceAreas.map((a) => (
+                      <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
-            <div className="flex items-center justify-between pt-2">
-              <Label className="text-xs font-semibold">Active Status</Label>
-              <Switch checked={isActive} onCheckedChange={setIsActive} />
+            {/* 4. Status * */}
+            <div>
+              <Label className="text-xs font-semibold">Status *</Label>
+              <Select value={statusVal} onValueChange={setStatusVal}>
+                <SelectTrigger className="mt-1 rounded-xl"><SelectValue placeholder="Available" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Available">Available</SelectItem>
+                  <SelectItem value="Unavailable">Unavailable</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
           <DialogFooter className="gap-2">
             <Button variant="ghost" className="rounded-full" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button className="rounded-full gradient-brand text-primary-foreground" onClick={handleCreateChair}>Save Workstation</Button>
+            <Button
+              className="rounded-full gradient-brand text-primary-foreground"
+              onClick={handleCreateChair}
+              disabled={!areaId || !chairName.trim() || !workstationType || !statusVal || serviceAreas.length === 0}
+            >
+              Create Workstation
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -719,10 +770,18 @@ export default function WorkstationsPage() {
           </DialogHeader>
 
           <div className="space-y-4 py-2 text-xs">
+            {/* 1. Service Area * */}
             <div>
-              <Label className="text-xs font-semibold">Move to Service Area *</Label>
-              <Select value={areaId} onValueChange={setAreaId}>
-                <SelectTrigger className="mt-1 rounded-xl"><SelectValue placeholder="Select Service Area…" /></SelectTrigger>
+              <Label className="text-xs font-semibold">Service Area *</Label>
+              <Select
+                value={areaId}
+                onValueChange={(val) => {
+                  setAreaId(val);
+                  const matched = serviceAreas.find((a) => a.id === val);
+                  if (matched) setWorkstationType(matched.name);
+                }}
+              >
+                <SelectTrigger className="mt-1 rounded-xl"><SelectValue placeholder="Select Service Area ▼" /></SelectTrigger>
                 <SelectContent>
                   {serviceAreas.map((a) => (
                     <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
@@ -731,48 +790,52 @@ export default function WorkstationsPage() {
               </Select>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs font-semibold">Workstation Name *</Label>
-                <Input
-                  className="mt-1 rounded-xl"
-                  value={chairName}
-                  onChange={(e) => setChairName(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <Label className="text-xs font-semibold">Workstation Number</Label>
-                <Input
-                  className="mt-1 rounded-xl"
-                  value={chairNumber}
-                  onChange={(e) => setChairNumber(e.target.value)}
-                />
-              </div>
+            {/* 2. Workstation Name * */}
+            <div>
+              <Label className="text-xs font-semibold">Workstation Name *</Label>
+              <Input
+                className="mt-1 rounded-xl"
+                placeholder="e.g. Chair 1, Nail Station 1"
+                value={chairName}
+                onChange={(e) => setChairName(e.target.value)}
+              />
             </div>
 
+            {/* 3. Workstation Type * */}
             <div>
               <Label className="text-xs font-semibold">Workstation Type *</Label>
               <Select value={workstationType} onValueChange={setWorkstationType}>
-                <SelectTrigger className="mt-1 rounded-xl"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="mt-1 rounded-xl"><SelectValue placeholder="Select Workstation Type ▼" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Chair">Chair (Styling / Haircut)</SelectItem>
-                  <SelectItem value="Bed">Bed (Facial / Massage)</SelectItem>
-                  <SelectItem value="Station">Station (Nail / Makeup)</SelectItem>
-                  <SelectItem value="Room">Room (Bridal / Spa Suite)</SelectItem>
+                  {serviceAreas.map((a) => (
+                    <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
 
-            <div className="flex items-center justify-between pt-2">
-              <Label className="text-xs font-semibold">Active Status</Label>
-              <Switch checked={isActive} onCheckedChange={setIsActive} />
+            {/* 4. Status * */}
+            <div>
+              <Label className="text-xs font-semibold">Status *</Label>
+              <Select value={statusVal} onValueChange={setStatusVal}>
+                <SelectTrigger className="mt-1 rounded-xl"><SelectValue placeholder="Available" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Available">Available</SelectItem>
+                  <SelectItem value="Unavailable">Unavailable</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
           <DialogFooter className="gap-2">
             <Button variant="ghost" className="rounded-full" onClick={() => setEditChair(null)}>Cancel</Button>
-            <Button className="rounded-full gradient-brand text-primary-foreground" onClick={handleUpdateChair}>Update Workstation</Button>
+            <Button
+              className="rounded-full gradient-brand text-primary-foreground"
+              onClick={handleUpdateChair}
+              disabled={!areaId || !chairName.trim() || !workstationType || !statusVal || serviceAreas.length === 0}
+            >
+              Update Workstation
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -834,6 +897,7 @@ export default function WorkstationsPage() {
         appt={activeApptSheet}
         open={!!activeApptSheet}
         onOpenChange={(o) => !o && setActiveApptSheet(null)}
+        mode="workstation"
       />
 
       {/* OCCUPIED WORKSTATION DETAILS SLIDE-OVER DRAWER */}
@@ -853,10 +917,10 @@ export default function WorkstationsPage() {
             : null
         }
         onCollectPayment={(appt) => {
-          setActiveApptSheet(appt);
+          setActiveApptSheet(appt ? { ...appt, status: "checkedin" as const } : null);
         }}
         onEditAppointment={(appt) => {
-          setActiveApptSheet(appt);
+          setActiveApptSheet(appt ? { ...appt, status: "checkedin" as const } : null);
         }}
         onCancelAppointment={(appt) => {
           setActiveApptSheet(appt);

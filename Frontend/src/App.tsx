@@ -10,6 +10,7 @@ import { AppLayout } from "./routes/app.$type.$business";
 
 // Public & Auth Pages
 import LandingPage from "./routes/index";
+import FeaturesPage from "./routes/features";
 import PricingPage from "./routes/pricing";
 import UseCasesPage from "./routes/use-cases";
 import DocsPage from "./routes/docs";
@@ -110,6 +111,7 @@ export default function App() {
           <Routes>
             {/* Public Marketing Routes */}
             <Route path="/" element={<LandingPage />} />
+            <Route path="/features" element={<FeaturesPage />} />
             <Route path="/pricing" element={<PricingPage />} />
             <Route path="/use-cases" element={<UseCasesPage />} />
             <Route path="/docs" element={<DocsPage />} />
@@ -123,6 +125,8 @@ export default function App() {
             {/* Public Customer QR Routes */}
             <Route path="/qr/:business/:table" element={<QrBusinessTablePage />} />
             <Route path="/qr/:table" element={<QrTablePage />} />
+            <Route path="/restaurant/qr/:business/:table" element={<QrBusinessTablePage />} />
+            <Route path="/restaurant/qr/:table" element={<QrTablePage />} />
 
             {/* Admin Console Subtree */}
             <Route path="/admin" element={<AdminLayout />}>

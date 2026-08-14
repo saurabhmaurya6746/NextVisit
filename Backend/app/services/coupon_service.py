@@ -495,6 +495,22 @@ class CouponService:
         self.db.add(redemption)
 
         cp.redeemed_count += 1
+
+        if data.visit_id:
+            try:
+                from app.models.visit import Visit
+                visit_obj = self.db.get(Visit, data.visit_id)
+                if visit_obj:
+                    visit_obj.discount = discount
+                    note_entry = f"Coupon Applied: {cp.code} ({cp.reward_description or f'{cp.reward_value}% OFF'} - Saved ${discount:.2f})"
+                    if visit_obj.notes:
+                        if cp.code not in visit_obj.notes:
+                            visit_obj.notes += f" | {note_entry}"
+                    else:
+                        visit_obj.notes = note_entry
+            except Exception as e:
+                logger.warning("Failed updating visit discount on coupon redemption: %s", e)
+
         self.db.commit()
 
         logger.info("COUPON REDEEMED | code=%s discount=%f", cp.code, discount)

@@ -34,12 +34,12 @@ def get_my_plan(
     return SubscriptionService(db).get_my_plan(current_user)
 
 
+@router.get("/public-plans", response_model=list[SubscriptionPlanResponse], summary="List all active public platform plans")
 @router.get("/plans", response_model=list[SubscriptionPlanResponse], summary="List all active platform plans")
 def list_available_plans(
-    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Returns all active platform plans for merchant viewing and upgrade selection."""
+    """Returns all active platform plans for homepage pricing, merchant viewing, and upgrade selection."""
     return SubscriptionService(db).list_plans()
 
 
@@ -89,6 +89,16 @@ def get_subscription_usage(
     """Returns current active plan limits, active staff count, and monthly AI usage."""
     from app.services.subscription_limit_service import SubscriptionLimitService
     return SubscriptionLimitService(db).get_full_usage_summary(current_user.business_id)
+
+
+@router.get("/ai-entitlement", summary="Get centralized AI entitlement details for active merchant")
+def get_ai_entitlement(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Returns AI entitlement status: can_use_ai, ai_included_in_plan, credits_available, reason, current_plan, credits_remaining."""
+    from app.services.subscription_limit_service import SubscriptionLimitService
+    return SubscriptionLimitService(db).get_ai_entitlement(current_user.business_id)
 
 
 @router.get("/credit-packs", response_model=list[AiCreditPackResponse], summary="List active AI credit packs for merchant purchasing")

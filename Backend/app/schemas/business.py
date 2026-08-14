@@ -37,6 +37,8 @@ class BusinessResponse(BaseModel):
 # Business Profile — read
 # ---------------------------------------------------------------------------
 
+from app.schemas.business_type import BusinessTypeResponse
+
 class BusinessProfileResponse(BaseModel):
     """Full business profile returned by GET /api/v1/business."""
     model_config = ConfigDict(from_attributes=True)
@@ -44,6 +46,8 @@ class BusinessProfileResponse(BaseModel):
     id: UUID
     name: str
     business_type_id: UUID
+    type: str | None = None
+    business_type: BusinessTypeResponse | None = None
     owner_name: str
     email: str
     phone: str

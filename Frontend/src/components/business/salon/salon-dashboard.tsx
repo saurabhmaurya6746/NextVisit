@@ -1,7 +1,8 @@
 import { AppLink } from "@/lib/app-nav";
 import { useQuery } from "@tanstack/react-query";
 import { getSalonChairMetricsApi } from "@/lib/salon-chairs-api";
-import { useAppointments } from "@/lib/appointments-store";
+import { useAppointments, apptCode } from "@/lib/appointments-store";
+import { listCustomersApi } from "@/lib/customers-api";
 import {
   DollarSign, Calendar, Users, Cake, Gift, UserMinus, Ticket, Star,
   Sparkles, ChevronRight, ListChecks, Scissors,
@@ -62,72 +63,76 @@ export function SalonDashboard({
 }: SalonDashboardProps) {
   // Core Salon Metrics & Real-Time Sync
   const appts = useAppointments();
-  const todayStr = new Date().toISOString().split("T")[0];
+  const todayStr = new Date().toISOString().slice(0, 10);
 
-  // 1. Today's Appointments (Booked Appointments ONLY — Excludes Walk-Ins & Start Walk-in Booking)
-  const todaysApptsList = appts.filter((a) => {
-    if (a.status === "cancelled") return false;
-    if (a.isWalkIn === true) return false;
-    const dt = a.start ? a.start.split("T")[0] : "";
-    return dt === todayStr;
+  const { data: customerList = [] } = useQuery({
+    queryKey: ["customers-list"],
+    queryFn: listCustomersApi,
   });
-  const todaysAppointments = todaysApptsList.length;
 
-  const completedCount = todaysApptsList.filter(
-    (a) => a.status === "completed" || a.paymentStatus === "paid"
-  ).length;
+  // Today's Appointments Base Filter
+  const localTodayAppts = appts.filter((a) => {
+    if (a.status === "cancelled") return false;
+    const aDate = a.start ? a.start.slice(0, 10) : "";
+    return aDate === todayStr;
+  });
 
-  const remainingCount = todaysApptsList.filter(
-    (a) => a.status === "pending" || a.status === "checkedin"
-  ).length;
+  const localCompletedAppts = localTodayAppts.filter(
+    (a) => a.status === "completed" || a.paymentStatus === "paid" || !!a.paidAt
+  );
 
+  const localTodayRev = localCompletedAppts.reduce((sum, a) => sum + (a.price || 0), 0);
+  const localTotalRev = appts.filter((a) => a.status === "completed" || a.paymentStatus === "paid" || !!a.paidAt).reduce((sum, a) => sum + (a.price || 0), 0);
+
+  // 1. Today's Appointments (DB Authoritative with local store fallback)
+  const dbTodayVisits = dashData?.today_visits ?? 0;
+  const todaysAppointments = Math.max(dbTodayVisits, localTodayAppts.length);
+
+  // 2. Completed Appointments & Services (COMPLETED SERVICES card and Completed: X subtext ALWAYS match)
+  const dbCompletedVisits = dashData?.completed_visits ?? 0;
+  const completedCount = Math.max(dbCompletedVisits, localCompletedAppts.length);
+  const completedServices = completedCount;
+
+  // 3. Remaining Count & Subtitle
+  const remainingCount = Math.max(0, todaysAppointments - completedCount);
   const todaysApptsSubtitle = `Completed: ${completedCount} | Remaining: ${remainingCount}`;
 
-  // 2. Today's Revenue (Only Successful Payments Today)
-  const paidTodayList = appts.filter(
-    (a) =>
-      a.paymentStatus === "paid" &&
-      a.paidAt &&
-      a.paidAt.split("T")[0] === todayStr
-  );
-  const todaysRevenue = paidTodayList.length > 0 ? paidTodayList.reduce((sum, a) => sum + (a.price || 0), 0) : (dashData?.today_revenue ?? 0);
+  // 4. Today's Revenue (DB Authoritative with local store fallback)
+  const dbTodayRev = dashData?.today_revenue ?? 0;
+  const todaysRevenue = dbTodayRev > 0 ? dbTodayRev : Math.max(dbTodayRev, localTodayRev);
 
-  // 3. Ongoing Appointments (Checked-In / In Service, not completed/paid)
-  const ongoingApptsList = appts.filter(
-    (a) => a.status === "checkedin" && a.paymentStatus !== "paid"
-  );
-  const ongoingAppointments = ongoingApptsList.length > 0 ? ongoingApptsList.length : (dashData?.open_visits ?? 0);
-  const ongoingSubtitle = `Today's Total: ${todaysAppointments} Bookings`;
-
-  // 4. Ongoing Services (In Service with workstation active)
-  const ongoingServices = appts.filter(
-    (a) => a.status === "checkedin" && a.chairId && a.paymentStatus !== "paid"
+  // 5. Ongoing Services (Only checkedin or in-service appointments)
+  const localOngoing = appts.filter(
+    (a) => (a.status === "checkedin" || a.status === "in-service") && a.status !== "cancelled"
   ).length;
+  const dbOpenVisits = dashData?.open_visits ?? 0;
+  const ongoingServices = dbOpenVisits > 0 ? dbOpenVisits : localOngoing;
 
-  // 5. Completed Services Today (Mark Completed today)
-  const completedServices = todaysApptsList.filter(
-    (a) => a.status === "completed" || a.paymentStatus === "paid"
-  ).length || (dashData?.completed_visits ?? 0);
+  // 6. Total Clients (Unique non-empty customer IDs/phones from customerList or appts)
+  const uniqueClientsFromAppts = new Set(
+    appts
+      .map((a) => (a.customerPhone || a.customerId || "").trim())
+      .filter(Boolean)
+  ).size;
+  const dbTotalCustomers = dashData?.total_customers ?? 0;
+  const totalCustomers = dbTotalCustomers > 0
+    ? dbTotalCustomers
+    : (customerList.length > 0 ? customerList.length : uniqueClientsFromAppts);
+  const activeCustomers = dashData?.active_customers ?? totalCustomers;
 
-  // 7. Total Clients
-  const totalCustomers = dashData?.total_customers ?? 0;
-  const activeCustomers = dashData?.active_customers ?? 0;
+  // 7. Total Revenue
+  const dbTotalRev = dashData?.total_revenue ?? 0;
+  const totalRevenue = dbTotalRev > 0 ? dbTotalRev : Math.max(dbTotalRev, localTotalRev);
 
-  // 8. Average Service Value (Completed AND Paid appointments)
-  const allPaidAppts = appts.filter((a) => a.paymentStatus === "paid");
-  const averageServiceValue =
-    allPaidAppts.length > 0
-      ? allPaidAppts.reduce((sum, a) => sum + (a.price || 0), 0) / allPaidAppts.length
-      : (dashData?.average_bill ?? 0);
+  // 8. Average Service Value
+  const dbAvgBill = dashData?.average_bill ?? 0;
+  const computedAvgBill = completedCount > 0 ? Math.round(todaysRevenue / completedCount) : (todaysRevenue > 0 ? todaysRevenue : 0);
+  const averageServiceValue = dbAvgBill > 0 ? dbAvgBill : computedAvgBill;
 
   // 9. Avg Daily Revenue
-  const avgDailyRevenue = dashData?.avg_daily_revenue ?? 0;
-
-  // 10. Total Revenue (Lifetime Successful Payments)
-  const totalRevenue =
-    allPaidAppts.length > 0
-      ? allPaidAppts.reduce((sum, a) => sum + (a.price || 0), 0)
-      : (dashData?.total_revenue ?? 0);
+  const dbAvgDaily = dashData?.avg_daily_revenue ?? 0;
+  const computedAvgDaily = dbTotalRev > 0 ? dbTotalRev : (todaysRevenue > 0 ? todaysRevenue : 0);
+  const avgDailyRevenue = dbAvgDaily > 0 ? dbAvgDaily : computedAvgDaily;
 
   // Action Tasks from DB
   const tasksData = dashData?.tasks || {
@@ -165,17 +170,48 @@ export function SalonDashboard({
 
   const repeatCustomerTrend = dashData?.repeat_customer_trend || [];
   
+  // Local Top Services Aggregation
+  const serviceCountMap: Record<string, { count: number; rev: number }> = {};
+  appts.forEach((a) => {
+    const list = a.services && a.services.length > 0 ? a.services : [{ name: a.service, price: a.price }];
+    list.forEach((s) => {
+      const name = s.name || "General Service";
+      if (!serviceCountMap[name]) serviceCountMap[name] = { count: 0, rev: 0 };
+      serviceCountMap[name].count += 1;
+      serviceCountMap[name].rev += (s.price || ((a.price || 0) / list.length));
+    });
+  });
+
+  const localTopServices = Object.entries(serviceCountMap)
+    .map(([service_name, data]) => ({ service_name, visit_count: data.count, revenue: data.rev }))
+    .sort((a, b) => b.visit_count - a.visit_count)
+    .slice(0, 5);
+
   // Salon Specific Analytics (Top Services)
-  const topServices = dashData?.top_services && dashData.top_services.length > 0 
+  const topServices = (dashData?.top_services && dashData.top_services.length > 0)
     ? dashData.top_services 
-    : (dashData?.top_selling_items || []).map((it: any) => ({
+    : (dashData?.top_selling_items && dashData.top_selling_items.length > 0)
+    ? dashData.top_selling_items.map((it: any) => ({
         service_name: it.name,
         visit_count: it.quantity,
         revenue: it.revenue
-      }));
+      }))
+    : localTopServices;
 
   const payBreakdown = dashData?.payment_breakdown || { cash: 0, upi: 0, card: 0, wallet: 0, other: 0 };
-  const recentActivity = dashData?.recent_activity || [];
+
+  const localRecentActivity = appts.slice(0, 8).map((a) => ({
+    id: a.id,
+    type: "visit",
+    title: `Salon Appointment #${apptCode(a)}`,
+    description: `${a.customerName || "Valued Client"} · ${a.service || "Salon Services"} · Total ${fmt(a.price || 0)} · Status ${(a.status || "OPEN").toUpperCase()}`,
+    timestamp: a.start || new Date().toISOString(),
+  }));
+
+  const recentActivity = (dashData?.recent_activity && dashData.recent_activity.length > 0)
+    ? dashData.recent_activity
+    : localRecentActivity;
+
   const calculatedInsights = dashData?.calculated_insights || [];
   const revComparison = dashData?.revenue_comparison || { today_vs_yesterday_pct: 0, week_vs_last_week_pct: 0, month_vs_last_month_pct: 0 };
   const growthMetrics = dashData?.growth_metrics || { customer_growth_pct: 0, revenue_growth_pct: 0, visit_growth_pct: 0, order_growth_pct: 0 };
@@ -185,11 +221,6 @@ export function SalonDashboard({
       <PageHeader
         title={`Welcome back, ${displayName} 👋`}
         description={`Here's what's happening at ${displayBizName} today.`}
-        actions={
-          <Badge variant="secondary" className="rounded-full px-3 py-1 text-xs">
-            <Sparkles className="mr-1.5 h-3.5 w-3.5 text-primary" /> Salon Live Analytics
-          </Badge>
-        }
       />
 
       {isError ? (
@@ -238,8 +269,6 @@ export function SalonDashboard({
               <StatCard
                 label="Today's Revenue"
                 value={fmt(todaysRevenue)}
-                delta={`${revComparison.today_vs_yesterday_pct >= 0 ? "+" : ""}${revComparison.today_vs_yesterday_pct}% vs yesterday`}
-                trend={revComparison.today_vs_yesterday_pct >= 0 ? "up" : "down"}
                 icon={DollarSign}
                 accent="accent"
                 index={1}
@@ -249,7 +278,6 @@ export function SalonDashboard({
               <StatCard
                 label="Ongoing Services"
                 value={ongoingServices}
-                delta="currently in service"
                 icon={Activity}
                 accent="primary"
                 index={2}
@@ -259,7 +287,6 @@ export function SalonDashboard({
               <StatCard
                 label="Completed Services"
                 value={completedServices}
-                delta="services completed today"
                 icon={CheckCircle2}
                 accent="warning"
                 index={3}
@@ -269,7 +296,6 @@ export function SalonDashboard({
               <StatCard
                 label="Total Clients"
                 value={totalCustomers}
-                delta={`${activeCustomers} active clients`}
                 icon={Users}
                 accent="primary"
                 index={4}
@@ -279,7 +305,6 @@ export function SalonDashboard({
               <StatCard
                 label="Average Service Value"
                 value={fmt(averageServiceValue)}
-                delta="per paid service"
                 icon={TrendingUp}
                 accent="destructive"
                 index={5}
@@ -289,7 +314,6 @@ export function SalonDashboard({
               <StatCard
                 label="Avg Daily Revenue"
                 value={fmt(avgDailyRevenue)}
-                delta="current month avg"
                 icon={DollarSign}
                 accent="info"
                 index={6}
@@ -299,8 +323,6 @@ export function SalonDashboard({
               <StatCard
                 label="Total Revenue"
                 value={fmt(totalRevenue)}
-                delta={`${growthMetrics.revenue_growth_pct >= 0 ? "+" : ""}${growthMetrics.revenue_growth_pct}% MoM`}
-                trend={growthMetrics.revenue_growth_pct >= 0 ? "up" : "down"}
                 icon={Sparkles}
                 accent="accent"
                 index={7}
@@ -398,7 +420,7 @@ export function SalonDashboard({
                     <XAxis dataKey="month" stroke="var(--muted-foreground)" fontSize={12} />
                     <YAxis stroke="var(--muted-foreground)" fontSize={12} unit="%" />
                     <Tooltip contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12 }} />
-                    <Line type="monotone" dataKey="rate" stroke="oklch(0.65 0.2 340)" strokeWidth={3} dot={{ r: 4 }} />
+                    <Line type="monotone" dataKey="rate" stroke="#ec4899" strokeWidth={3} dot={{ r: 4 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </CardContent>

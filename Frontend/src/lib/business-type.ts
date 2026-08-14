@@ -11,18 +11,42 @@ function read(): BusinessType {
 }
 
 export function resolveBusinessType(
-  bizProfile?: { type?: string; name?: string } | null,
+  bizProfile?: { type?: string; business_type?: { name?: string }; name?: string } | null,
   session?: { businessType?: string; businessName?: string } | null,
   routeType?: string | null
 ): BusinessType {
-  const pType = (bizProfile?.type || "").toLowerCase();
+  // 1. Direct Backend Profile Type (Highest Priority)
+  const pType = (bizProfile?.type || bizProfile?.business_type?.name || "").toLowerCase();
+  if (pType.includes("salon")) {
+    return "salon";
+  }
+  if (pType.includes("restaurant")) {
+    return "restaurant";
+  }
+
+  // 2. Auth Session Business Type
   const sType = (session?.businessType || "").toLowerCase();
+  if (sType.includes("salon")) {
+    return "salon";
+  }
+  if (sType.includes("restaurant")) {
+    return "restaurant";
+  }
+
+  // 3. Route Parameter
   const rType = (routeType || "").toLowerCase();
+  if (rType.includes("salon")) {
+    return "salon";
+  }
+  if (rType.includes("restaurant")) {
+    return "restaurant";
+  }
 
-  if (pType === "salon" || sType === "salon" || rType === "salon") return "salon";
-
+  // 4. Fallback: Name Heuristics
   const name = (bizProfile?.name || session?.businessName || "").toLowerCase();
-  if (name.includes("salon")) return "salon";
+  if (name.includes("salon")) {
+    return "salon";
+  }
 
   return read();
 }

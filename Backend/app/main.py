@@ -45,6 +45,7 @@ from app.api.v1.salon.chairs.router import router as salon_chairs_router
 from app.api.v1.salon.service_categories.router import router as salon_service_categories_router
 from app.api.v1.salon.invoices.router import router as salon_invoices_router
 from app.api.v1.salon.revenue.router import router as salon_revenue_router
+from app.api.v1.calendar.router import router as calendar_router
 from app.db.database import engine
 from app.models.base import Base
 
@@ -261,6 +262,11 @@ app.include_router(
 
 app.include_router(
     salon_revenue_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    calendar_router,
     prefix="/api/v1",
 )
 

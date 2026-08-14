@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Printer } from "lucide-react";
 import { fmt } from "@/lib/currency";
+import { jsPDF } from "jspdf";
 
 export interface InvoiceData {
   order_number: string;
@@ -22,6 +23,7 @@ export interface InvoiceData {
   subtotal: number;
   coupon_code?: string | null;
   tax_amount?: number;
+  tax_rate?: number;
   discount_amount?: number;
   enable_gst?: boolean;
   gst_percentage?: number;
@@ -59,15 +61,15 @@ export function InvoiceView({
     invoice_number: order?.invoice_number || `INV-${(order?.order_number || order?.id || "1001").replace("ORD-", "")}`,
     created_at: order?.created_at || order?.createdAt || new Date().toISOString(),
     table_name: order?.table_name || order?.table || "Table 1",
-    customer_name: order?.customer_name || order?.customerName,
-    customer_phone: order?.customer_phone || order?.customerPhone,
-    payment_method: order?.payment_method || order?.payment,
+    customer_name: order?.customer?.name || order?.customer_name || order?.customerName || "Guest Customer",
+    customer_phone: order?.customer?.phone || order?.customer_phone || order?.customerPhone,
+    payment_method: order?.payment_method || order?.payment_mode || order?.payment || "CASH",
     items: (order?.items || []).map((i: any) => ({
       id: i.id,
       item_name: i.item_name || i.name || "Dish",
       quantity: i.quantity || i.qty || 1,
       unit_price: i.unit_price || i.price || 0,
-      subtotal: i.subtotal || (i.price * i.qty) || 0,
+      subtotal: i.subtotal || (i.price * (i.quantity || i.qty || 1)) || 0,
       notes: i.notes,
     })),
     subtotal: order?.subtotal || 0,
@@ -75,7 +77,7 @@ export function InvoiceView({
     discount_amount: order?.discount_amount || 0,
     total_amount: order?.total_amount || order?.total || 0,
     business: order?.business || {
-      restaurant_name: order?.restaurantName || "Aroma Bistro",
+      restaurant_name: order?.restaurantName || "Jail Restaurant",
     },
     loyalty: order?.loyalty || null,
   };
@@ -86,27 +88,179 @@ export function InvoiceView({
   const timeStr = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   const handlePrint = () => {
-    window.print();
+    try {
+      const invNo = invNum;
+      const dateStrFormatted = `${dateStr} at ${timeStr}`;
+      const items = invData.items || [];
+      const baseHeight = 125;
+      const itemsHeight = Math.max(items.length, 1) * 5;
+      const totalHeight = baseHeight + itemsHeight;
+
+      const pdf = new jsPDF({
+        unit: "mm",
+        format: [80, Math.max(totalHeight, 130)],
+      });
+
+      let y = 10;
+
+      pdf.setTextColor(0, 0, 0);
+      pdf.setDrawColor(180, 180, 180);
+      pdf.setLineWidth(0.25);
+
+      // Header
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(11);
+      pdf.text(invData.business?.restaurant_name || "Jail Restaurant", 40, y, { align: "center" });
+      y += 4.5;
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(7);
+      if (invData.business?.address) {
+        pdf.text(invData.business.address, 40, y, { align: "center" });
+        y += 3.5;
+      }
+      if (invData.business?.phone) {
+        pdf.text(`Ph: ${invData.business.phone}`, 40, y, { align: "center" });
+        y += 3.5;
+      }
+      if (invData.business?.gst_number) {
+        pdf.text(`GSTIN: ${invData.business.gst_number}`, 40, y, { align: "center" });
+        y += 3.5;
+      }
+
+      y += 2;
+      pdf.line(8, y, 72, y);
+      y += 5;
+
+      // Metadata
+      pdf.text("Invoice No:", 8, y);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(invNo, 72, y, { align: "right" });
+      y += 4;
+
+      pdf.setFont("helvetica", "normal");
+      pdf.text("Order No:", 8, y);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(invData.order_number, 72, y, { align: "right" });
+      y += 4;
+
+      pdf.setFont("helvetica", "normal");
+      pdf.text("Date & Time:", 8, y);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(dateStrFormatted, 72, y, { align: "right" });
+      y += 4;
+
+      if (invData.table_name) {
+        pdf.setFont("helvetica", "normal");
+        pdf.text("Table:", 8, y);
+        pdf.setFont("helvetica", "bold");
+        pdf.text(invData.table_name, 72, y, { align: "right" });
+        y += 4;
+      }
+
+      pdf.setFont("helvetica", "normal");
+      pdf.text("Customer:", 8, y);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(invData.customer_name || "Guest", 72, y, { align: "right" });
+      y += 4;
+
+      pdf.setFont("helvetica", "normal");
+      pdf.text("Payment Method:", 8, y);
+      pdf.setFont("helvetica", "bold");
+      pdf.text((invData.payment_method || "CASH").toUpperCase(), 72, y, { align: "right" });
+      y += 5;
+
+      pdf.line(8, y, 72, y);
+      y += 4;
+
+      // Items Header
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(7);
+      pdf.text("Item", 8, y);
+      pdf.text("Qty", 42, y, { align: "right" });
+      pdf.text("Price", 57, y, { align: "right" });
+      pdf.text("Total", 72, y, { align: "right" });
+      y += 4;
+
+      pdf.line(8, y, 72, y);
+      y += 5;
+
+      // Items Rows
+      pdf.setFont("helvetica", "normal");
+      items.forEach((item) => {
+        const name = item.item_name.length > 18 ? item.item_name.slice(0, 16) + ".." : item.item_name;
+        pdf.text(name, 8, y);
+        pdf.text(String(item.quantity), 42, y, { align: "right" });
+        pdf.text(`Rs.${item.unit_price}`, 57, y, { align: "right" });
+        pdf.text(`Rs.${item.subtotal}`, 72, y, { align: "right" });
+        y += 5;
+      });
+
+      pdf.line(8, y, 72, y);
+      y += 5;
+
+      // Totals
+      pdf.text("Subtotal", 8, y);
+      pdf.text(`Rs.${invData.subtotal}`, 72, y, { align: "right" });
+      y += 4;
+
+      if (invData.discount_amount && invData.discount_amount > 0) {
+        const codeLabel = invData.coupon_code ? `Coupon (${invData.coupon_code.toUpperCase()})` : "Coupon (BIRTHDAY20)";
+        pdf.text(codeLabel, 8, y);
+        pdf.setTextColor(220, 38, 38);
+        pdf.text(`-Rs.${invData.discount_amount}`, 72, y, { align: "right" });
+        pdf.setTextColor(0, 0, 0);
+        y += 4;
+      }
+
+      if (invData.tax_amount) {
+        pdf.text("GST", 8, y);
+        pdf.text(`Rs.${invData.tax_amount}`, 72, y, { align: "right" });
+        y += 4;
+      }
+
+      pdf.line(8, y, 72, y);
+      y += 5;
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(9);
+      pdf.text("Grand Total", 8, y);
+      pdf.text(`Rs.${invData.total_amount}`, 72, y, { align: "right" });
+      y += 6;
+
+      pdf.line(8, y, 72, y);
+      y += 6;
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(7.5);
+      pdf.text("Thank you for visiting!", 40, y, { align: "center" });
+
+      pdf.autoPrint();
+      const blobUrl = pdf.output("bloburl");
+      window.open(blobUrl, "_blank");
+    } catch (err) {
+      console.error("Failed to print thermal PDF:", err);
+    }
   };
 
   return (
     <div className="space-y-4">
       {showPrintButton && (
-        <div className="flex justify-end print:hidden">
+        <div className="flex justify-end">
           <Button size="sm" variant="outline" className="rounded-full gap-1.5 text-xs" onClick={handlePrint}>
-            <Printer className="h-3.5 w-3.5" /> Print Invoice
+            <Printer className="h-3.5 w-3.5" /> Print Thermal Invoice
           </Button>
         </div>
       )}
 
       <div
         id="print-invoice"
-        className="mx-auto max-w-md rounded-2xl border bg-card p-6 text-card-foreground text-sm shadow-sm print:border-0 print:shadow-none print:max-w-none print:w-full"
+        className="mx-auto max-w-md rounded-2xl border bg-card p-6 text-card-foreground text-sm shadow-sm"
       >
         {/* Restaurant Header */}
         <div className="text-center space-y-0.5">
           <p className="font-display text-xl font-bold tracking-tight">
-            {invData.business?.restaurant_name || "Aroma Bistro"}
+            {invData.business?.restaurant_name || "Jail Restaurant"}
           </p>
           {invData.business?.address && <p className="text-xs text-muted-foreground">{invData.business.address}</p>}
           {invData.business?.phone && <p className="text-xs text-muted-foreground">Ph: {invData.business.phone}</p>}
@@ -137,24 +291,22 @@ export function InvoiceView({
               <span className="font-medium">{invData.table_name}</span>
             </div>
           )}
-          {invData.customer_name && (
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Customer:</span>
-              <span>{invData.customer_name}</span>
-            </div>
-          )}
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Customer:</span>
+            <span className="font-medium">{invData.customer_name || "Guest Customer"}</span>
+          </div>
           {invData.customer_phone && (
             <div className="flex justify-between">
               <span className="text-muted-foreground">Phone:</span>
               <span>{invData.customer_phone}</span>
             </div>
           )}
-          {invData.payment_method && (
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Payment Method:</span>
-              <span className="font-semibold uppercase text-primary">{invData.payment_method}</span>
-            </div>
-          )}
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Payment Method:</span>
+            <span className="font-semibold uppercase text-primary">
+              {(invData.payment_method || "CASH").toUpperCase()}
+            </span>
+          </div>
           {invData.staff_name && (
             <div className="flex justify-between">
               <span className="text-muted-foreground">Cashier / Staff:</span>
@@ -196,7 +348,11 @@ export function InvoiceView({
           const netSubtotal = Math.max(0, subtotal - discount);
           
           const enableGst = invData.enable_gst ?? invData.business?.enable_gst ?? (invData.tax_amount ? invData.tax_amount > 0 : true);
-          const gstPct = invData.gst_percentage ?? invData.business?.tax_percentage ?? 18.0;
+          
+          // Dynamic GST calculation fallback (checks passed gst_percentage, tax_rate, or calculates from subtotal vs tax_amount)
+          const calculatedGst = subtotal > 0 && invData.tax_amount ? Math.round((invData.tax_amount / subtotal) * 100) : 5;
+          const gstPct = invData.gst_percentage ?? invData.tax_rate ?? invData.business?.tax_percentage ?? (calculatedGst > 0 ? calculatedGst : 5);
+          
           const isInclusive = invData.price_includes_gst ?? invData.business?.price_includes_gst ?? false;
 
           let taxableAmt = netSubtotal;
@@ -226,13 +382,13 @@ export function InvoiceView({
               {/* Coupon Discount */}
               {discount > 0 && (
                 <div className="flex justify-between text-emerald-600 font-medium">
-                  <span>Coupon Discount {couponCode ? `(${couponCode})` : ""}</span>
+                  <span>Coupon Discount ({couponCode ? couponCode.toUpperCase() : "BIRTHDAY20"})</span>
                   <span className="tabular-nums font-mono">-{fmt(discount)}</span>
                 </div>
               )}
 
-              {/* Taxable Amount & GST Breakdown (HIDDEN IF GST IS DISABLED) */}
-              {enableGst && gstPct > 0 && (
+              {/* Taxable Amount & GST Breakdown */}
+              {enableGst && (taxAmt > 0 || gstPct > 0) && (
                 <>
                   <div className="flex justify-between text-muted-foreground">
                     <span>Taxable Amount</span>

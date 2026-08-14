@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
 from app.models.business import Business
 from app.repositories.base_repository import BaseRepository
@@ -15,7 +16,11 @@ class BusinessRepository(BaseRepository):
         return business
 
     def get_by_id(self, business_id: UUID) -> Business | None:
-        stmt = select(Business).where(Business.id == business_id)
+        stmt = (
+            select(Business)
+            .options(joinedload(Business.business_type))
+            .where(Business.id == business_id)
+        )
         return self.db.scalar(stmt)
 
     def update(self, business: Business) -> Business:

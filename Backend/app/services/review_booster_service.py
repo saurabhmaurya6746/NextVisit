@@ -65,88 +65,10 @@ class ReviewBoosterService:
 
     def _seed_demo_customers_if_empty(self, business_id: UUID):
         """
-        If no completed & paid visits exist for this business in the DB,
-        seeds 3 realistic completed visits & customers (Rahul Sharma, Priya Singh, Amit Verma)
-        in the local database for development/testing.
+        No-op function. Production database tables must never be mutated with fake visits/customers.
+        All business statistics and reviews must strictly evaluate real customer transactions.
         """
-        count = self.db.scalar(
-            select(func.count(Visit.id)).where(
-                Visit.business_id == business_id,
-                Visit.status == VisitStatus.COMPLETED,
-                Visit.payment_status == PaymentStatus.PAID,
-            )
-        )
-        if count and count > 0:
-            return
-
-        now = datetime.now(timezone.utc)
-        demo_data = [
-            {
-                "name": "Rahul Sharma",
-                "phone": "+919876543210",
-                "email": "rahul.sharma@example.com",
-                "gender": "Male",
-                "visit_count": 2,
-                "total_spent": 450.0,
-                "completed_at": now - timedelta(days=2),
-                "amount": 450.0,
-            },
-            {
-                "name": "Priya Singh",
-                "phone": "+919812345678",
-                "email": "priya.singh@example.com",
-                "gender": "Female",
-                "visit_count": 4,
-                "total_spent": 890.0,
-                "completed_at": now - timedelta(days=5),
-                "amount": 890.0,
-            },
-            {
-                "name": "Amit Verma",
-                "phone": "+919988776655",
-                "email": "amit.verma@example.com",
-                "gender": "Male",
-                "visit_count": 6,
-                "total_spent": 1250.0,
-                "completed_at": now - timedelta(days=20),
-                "amount": 1250.0,
-            },
-        ]
-
-        for item in demo_data:
-            cust = self.db.scalar(
-                select(Customer).where(
-                    Customer.business_id == business_id,
-                    Customer.phone == item["phone"],
-                )
-            )
-            if not cust:
-                cust = Customer(
-                    business_id=business_id,
-                    name=item["name"],
-                    phone=item["phone"],
-                    email=item["email"],
-                    gender=item["gender"],
-                    visit_count=item["visit_count"],
-                    total_spent=item["total_spent"],
-                    last_visit_at=item["completed_at"],
-                    is_active=True,
-                )
-                self.db.add(cust)
-                self.db.flush()
-
-            v = Visit(
-                business_id=business_id,
-                customer_id=cust.id,
-                status=VisitStatus.COMPLETED,
-                payment_status=PaymentStatus.PAID,
-                total_amount=item["amount"],
-                completed_at=item["completed_at"],
-            )
-            self.db.add(v)
-
-        self.db.commit()
-        logger.info("SEEDED DEMO CUSTOMERS FOR REVIEW BOOSTER | business_id=%s", business_id)
+        return
 
     def _get_last_completed_visit_map(self, business_id: UUID) -> dict[UUID, Visit]:
         """

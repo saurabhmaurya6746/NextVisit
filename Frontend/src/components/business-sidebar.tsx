@@ -91,6 +91,7 @@ const restaurantGrowth = [
 const salonGrowth = [
   { title: "Review Booster", path: "review-booster", icon: Star },
   { title: "Coupons", path: "coupons", icon: Ticket },
+  { title: "Loyalty Program", path: "loyalty", icon: Trophy },
   { title: "Templates", path: "templates", icon: MessageSquare },
 ];
 const insights = [

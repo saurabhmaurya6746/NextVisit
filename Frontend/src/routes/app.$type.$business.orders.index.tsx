@@ -21,7 +21,9 @@ import { OrderDetailSheet } from "@/components/order-detail-sheet";
 import { SkeletonRows } from "@/components/skeletons";
 import { useQuery } from "@tanstack/react-query";
 import { listOrdersApi, getTablesMapApi, type BackendOrder } from "@/lib/orders-api";
-import { useProfile } from "@/lib/business-profile";
+import { useProfile, useAuthenticatedBusiness } from "@/lib/business-profile";
+import { useAppScope, slugify } from "@/lib/app-nav";
+import { getSession } from "@/lib/auth";
 import { toast } from "sonner";
 import { fmt } from "@/lib/currency";
 
@@ -42,6 +44,9 @@ const STATUS_TONE: Record<string, string> = {
 
 export default function OrdersPage() {
   const profile = useProfile("restaurant");
+  const scope = useAppScope();
+  const { name: authBizName, business: authBiz } = useAuthenticatedBusiness();
+  const session = getSession();
   const [open, setOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [filter, setFilter] = useState<string>("all");
@@ -143,11 +148,12 @@ export default function OrdersPage() {
     return diningAreas.flatMap((a) => (a.tables || []).map((t) => t.table_name));
   }, [diningAreas]);
 
-  const bizSlug =
-    (profile.name || "business")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "") || "business";
+  const activeBizName = authBiz?.name || authBizName || session?.businessName || (profile?.name !== "Aroma Bistro" ? profile?.name : null) || "restaurant";
+  const activeSlug = (scope?.business && scope.business !== "business" && scope.business !== "restaurant")
+    ? scope.business
+    : (session?.businessSlug || slugify(activeBizName));
+
+  const bizSlug = activeSlug || "restaurant";
 
   // Build page numbers list for desktop pagination
   const pageNumbers = useMemo(() => {
@@ -472,7 +478,7 @@ export default function OrdersPage() {
           <div className="max-h-[380px] space-y-2 overflow-y-auto">
             {allTablesList.map((t) => {
               const slug = t.toLowerCase().replace(/\s+/g, "-");
-              const path = `/qr/${bizSlug}/${encodeURIComponent(slug)}`;
+              const path = `/restaurant/qr/${bizSlug}/${encodeURIComponent(slug)}`;
               const url = typeof window !== "undefined" ? `${window.location.origin}${path}` : path;
               return (
                 <div key={t} className="flex items-center justify-between rounded-xl border p-2">

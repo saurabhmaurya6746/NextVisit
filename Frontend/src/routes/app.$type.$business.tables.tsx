@@ -30,7 +30,9 @@ import {
   TooltipContent,
   TooltipProvider,
 } from "@/components/ui/tooltip";
-import { useProfile } from "@/lib/business-profile";
+import { useProfile, useAuthenticatedBusiness } from "@/lib/business-profile";
+import { useAppScope, slugify } from "@/lib/app-nav";
+import { getSession } from "@/lib/auth";
 import { getTablesMapApi } from "@/lib/orders-api";
 import { NewOrderDialog } from "@/components/new-order-dialog";
 import { OrderDetailSheet } from "@/components/order-detail-sheet";
@@ -56,6 +58,10 @@ interface QrModalTable {
 
 export default function TablesPage() {
   const profile = useProfile("restaurant");
+  const scope = useAppScope();
+  const { name: authBizName, business: authBiz } = useAuthenticatedBusiness();
+  const session = getSession();
+
   const [presetTableId, setPresetTableId] = useState<string | null>(null);
   const [presetTableName, setPresetTableName] = useState<string | null>(null);
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
@@ -77,11 +83,12 @@ export default function TablesPage() {
     refetchInterval: 10000, // Refresh every 10s for live table updates
   });
 
-  const bizSlug =
-    (profile.name || "business")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "") || "business";
+  const activeBizName = authBiz?.name || authBizName || session?.businessName || (profile?.name !== "Aroma Bistro" ? profile?.name : null) || "restaurant";
+  const activeSlug = (scope?.business && scope.business !== "business" && scope.business !== "restaurant")
+    ? scope.business
+    : (session?.businessSlug || slugify(activeBizName));
+
+  const bizSlug = activeSlug || "restaurant";
 
   const restaurantName = profile.name || "Restaurant";
 
@@ -302,7 +309,7 @@ export default function TablesPage() {
             <div className="grid gap-2 sm:grid-cols-2">
               {allTables.map((t) => {
                 // Use the table UUID directly in the QR URL — guarantees exact backend lookup
-                const path = `/qr/${bizSlug}/${t.id}`;
+                const path = `/restaurant/qr/${bizSlug}/${t.id}`;
                 const url = typeof window !== "undefined" ? `${window.location.origin}${path}` : path;
                 return (
                   <div key={t.id} className="flex items-center justify-between gap-2 rounded-xl border p-2.5 bg-card">

@@ -13,7 +13,7 @@ from app.models.menu_item import MenuItem
 from app.models.order import Order, OrderItem, OrderStatus
 from app.models.service import Service
 from app.models.user import User
-from app.models.visit import Visit, VisitService, VisitStatus
+from app.models.visit import PaymentStatus, Visit, VisitService, VisitStatus
 from app.repositories.base_repository import BaseRepository
 
 logger = logging.getLogger(__name__)
@@ -23,12 +23,20 @@ class DashboardRepository(BaseRepository):
 
     def get_full_dashboard_analytics(self, business_id: UUID) -> dict:
         biz = self.db.get(Business, business_id)
-        if biz and biz.business_type_id:
-            btype = self.db.get(BusinessType, biz.business_type_id)
-            if btype:
-                btype_name = str(getattr(btype, "name", "") or "").lower()
-                if "salon" in btype_name or "spa" in btype_name:
-                    return self.get_salon_dashboard_analytics(business_id)
+        if biz:
+            if biz.business_type_id:
+                btype = self.db.get(BusinessType, biz.business_type_id)
+                if btype:
+                    btype_name = str(getattr(btype, "name", "") or "").lower()
+                    btype_slug = str(getattr(btype, "slug", "") or "").lower()
+                    if "salon" in btype_name or "spa" in btype_name or "salon" in btype_slug or "spa" in btype_slug:
+                        return self.get_salon_dashboard_analytics(business_id)
+
+            has_visits = self.db.scalar(
+                select(func.count(Visit.id)).where(Visit.business_id == business_id)
+            ) or 0
+            if has_visits > 0:
+                return self.get_salon_dashboard_analytics(business_id)
 
         now = datetime.now(timezone.utc)
         start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -748,16 +756,16 @@ class DashboardRepository(BaseRepository):
             or 0
         )
 
-        # 2. APPOINTMENTS & SERVICES COUNTS (EXCLUDING CANCELLED & POS WALK-INS)
+        # 2. APPOINTMENTS & SERVICES COUNTS (EXCLUDING CANCELLED)
         today_visits_count = (
             self.db.scalar(
                 select(func.count(Visit.id)).where(
                     Visit.business_id == business_id,
                     Visit.status != VisitStatus.CANCELLED,
-                    Visit.created_at >= start_of_today,
                     or_(
-                        Visit.notes.ilike("%APP-%"),
-                        Visit.notes.ilike("%appointment%"),
+                        Visit.created_at >= start_of_today,
+                        Visit.started_at >= start_of_today,
+                        Visit.completed_at >= start_of_today,
                     ),
                 )
             )
@@ -775,23 +783,53 @@ class DashboardRepository(BaseRepository):
             or 0
         )
 
-        # Today's Completed Services
+        # Today's Completed Services: Sum of VisitService quantity for completed or paid visits today
         today_completed_services_count = (
             self.db.scalar(
-                select(func.count(Visit.id)).where(
+                select(func.coalesce(func.sum(VisitService.quantity), 0))
+                .join(Visit, VisitService.visit_id == Visit.id)
+                .where(
                     Visit.business_id == business_id,
-                    Visit.status == VisitStatus.COMPLETED,
-                    Visit.completed_at >= start_of_today,
+                    or_(
+                        Visit.payment_status == PaymentStatus.PAID,
+                        Visit.status == VisitStatus.COMPLETED,
+                    ),
+                    or_(
+                        Visit.completed_at >= start_of_today,
+                        Visit.started_at >= start_of_today,
+                        Visit.created_at >= start_of_today,
+                    ),
                 )
             )
             or 0
         )
+        if today_completed_services_count == 0:
+            today_completed_services_count = (
+                self.db.scalar(
+                    select(func.count(Visit.id)).where(
+                        Visit.business_id == business_id,
+                        or_(
+                            Visit.payment_status == PaymentStatus.PAID,
+                            Visit.status == VisitStatus.COMPLETED,
+                        ),
+                        or_(
+                            Visit.completed_at >= start_of_today,
+                            Visit.started_at >= start_of_today,
+                            Visit.created_at >= start_of_today,
+                        ),
+                    )
+                )
+                or 0
+            )
 
         completed_visits_count = (
             self.db.scalar(
                 select(func.count(Visit.id)).where(
                     Visit.business_id == business_id,
-                    Visit.status == VisitStatus.COMPLETED,
+                    or_(
+                        Visit.payment_status == PaymentStatus.PAID,
+                        Visit.status == VisitStatus.COMPLETED,
+                    ),
                 )
             )
             or 0
@@ -811,8 +849,15 @@ class DashboardRepository(BaseRepository):
             self.db.scalar(
                 select(func.count(Visit.id)).where(
                     Visit.business_id == business_id,
-                    Visit.status == VisitStatus.COMPLETED,
-                    Visit.created_at >= start_of_month,
+                    or_(
+                        Visit.payment_status == PaymentStatus.PAID,
+                        Visit.status == VisitStatus.COMPLETED,
+                    ),
+                    or_(
+                        Visit.created_at >= start_of_month,
+                        Visit.started_at >= start_of_month,
+                        Visit.completed_at >= start_of_month,
+                    ),
                 )
             )
             or 0
@@ -823,7 +868,10 @@ class DashboardRepository(BaseRepository):
             self.db.scalar(
                 select(func.coalesce(func.sum(Visit.total_amount), 0.0)).where(
                     Visit.business_id == business_id,
-                    Visit.status == VisitStatus.COMPLETED,
+                    or_(
+                        Visit.payment_status == PaymentStatus.PAID,
+                        Visit.status == VisitStatus.COMPLETED,
+                    ),
                 )
             )
             or 0.0
@@ -833,10 +881,14 @@ class DashboardRepository(BaseRepository):
             self.db.scalar(
                 select(func.coalesce(func.sum(Visit.total_amount), 0.0)).where(
                     Visit.business_id == business_id,
-                    Visit.status == VisitStatus.COMPLETED,
+                    or_(
+                        Visit.payment_status == PaymentStatus.PAID,
+                        Visit.status == VisitStatus.COMPLETED,
+                    ),
                     or_(
                         Visit.completed_at >= start_of_today,
                         Visit.started_at >= start_of_today,
+                        Visit.created_at >= start_of_today,
                     ),
                 )
             )
@@ -878,23 +930,29 @@ class DashboardRepository(BaseRepository):
             or 0.0
         )
 
-        average_service_value = (
-            round(total_revenue / completed_visits_count, 2)
-            if completed_visits_count > 0
-            else 0.0
-        )
+        if completed_visits_count > 0:
+            average_service_value = round(total_revenue / completed_visits_count, 2)
+        elif today_completed_services_count > 0:
+            average_service_value = round(today_revenue / today_completed_services_count, 2)
+        elif today_revenue > 0:
+            average_service_value = round(today_revenue, 2)
+        else:
+            average_service_value = 0.0
 
         distinct_days_count = self.db.scalar(
-            select(func.count(func.distinct(func.date(Visit.completed_at)))).where(
+            select(func.count(func.distinct(func.date(func.coalesce(Visit.completed_at, Visit.started_at, Visit.created_at))))).where(
                 Visit.business_id == business_id,
-                Visit.status == VisitStatus.COMPLETED,
-                Visit.completed_at.isnot(None),
+                or_(
+                    Visit.payment_status == PaymentStatus.PAID,
+                    Visit.status == VisitStatus.COMPLETED,
+                ),
             )
         ) or 0
 
+        effective_days = max(1, distinct_days_count) if total_revenue > 0 else distinct_days_count
         avg_daily_revenue = (
-            round(total_revenue / distinct_days_count, 2)
-            if (distinct_days_count > 0 and total_revenue > 0)
+            round(total_revenue / effective_days, 2)
+            if (effective_days > 0 and total_revenue > 0)
             else 0.0
         )
 
@@ -1022,7 +1080,10 @@ class DashboardRepository(BaseRepository):
             .join(Service, VisitService.service_id == Service.id)
             .where(
                 Visit.business_id == business_id,
-                Visit.status == VisitStatus.COMPLETED,
+                or_(
+                    Visit.payment_status == PaymentStatus.PAID,
+                    Visit.status == VisitStatus.COMPLETED,
+                ),
             )
             .group_by(Service.name)
             .order_by(func.sum(VisitService.quantity).desc())
@@ -1046,7 +1107,10 @@ class DashboardRepository(BaseRepository):
             )
             .where(
                 Visit.business_id == business_id,
-                Visit.status == VisitStatus.COMPLETED,
+                or_(
+                    Visit.payment_status == PaymentStatus.PAID,
+                    Visit.status == VisitStatus.COMPLETED,
+                ),
             )
             .group_by("pm")
         ).all()
@@ -1067,7 +1131,10 @@ class DashboardRepository(BaseRepository):
         online_rev = float(self.db.scalar(
             select(func.coalesce(func.sum(Visit.total_amount), 0.0)).where(
                 Visit.business_id == business_id,
-                Visit.status == VisitStatus.COMPLETED,
+                or_(
+                    Visit.payment_status == PaymentStatus.PAID,
+                    Visit.status == VisitStatus.COMPLETED,
+                ),
                 Visit.notes.like("%online%"),
             )
         ) or 0.0)
@@ -1075,7 +1142,10 @@ class DashboardRepository(BaseRepository):
         staff_rev = float(self.db.scalar(
             select(func.coalesce(func.sum(Visit.total_amount), 0.0)).where(
                 Visit.business_id == business_id,
-                Visit.status == VisitStatus.COMPLETED,
+                or_(
+                    Visit.payment_status == PaymentStatus.PAID,
+                    Visit.status == VisitStatus.COMPLETED,
+                ),
                 Visit.staff_id.isnot(None),
                 or_(Visit.notes.is_(None), ~Visit.notes.like("%online%")),
             )

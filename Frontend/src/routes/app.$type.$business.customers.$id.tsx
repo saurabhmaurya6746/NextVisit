@@ -43,6 +43,9 @@ export default function CustomerProfile() {
   const { id } = useParams<{ id?: string }>();
 
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
+  const [showAllTimeline, setShowAllTimeline] = useState(false);
+  const [showAllVisits, setShowAllVisits] = useState(false);
+  const [showAllOrders, setShowAllOrders] = useState(false);
   const [noteText, setNoteText] = useState("");
 
   // Edit modal state
@@ -344,7 +347,7 @@ export default function CustomerProfile() {
               </TabsList>
 
               {/* 1. OVERVIEW TAB */}
-              <TabsContent value="overview" className="space-y-4">
+              <TabsContent value="overview" className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="font-display text-sm font-semibold flex items-center gap-2">
                     <Clock className="h-4 w-4 text-primary" /> Activity Timeline
@@ -359,26 +362,50 @@ export default function CustomerProfile() {
                     icon={<Clock className="h-6 w-6 text-muted-foreground" />}
                   />
                 ) : (
-                  <div className="relative pl-6 space-y-4 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-border">
-                    {crmData.timeline.map((ev) => (
-                      <div key={ev.id} className="relative flex items-start gap-3 rounded-xl border p-3.5 bg-card shadow-xs text-xs">
-                        <div className="absolute -left-[27px] top-4 h-3.5 w-3.5 rounded-full border-2 border-background bg-primary" />
-                        <div className="flex-1 space-y-1">
-                          <div className="flex items-center justify-between">
-                            <p className="font-semibold text-foreground text-sm">{ev.title}</p>
-                            {ev.badge && (
-                              <Badge variant="outline" className="rounded-full text-[10px] px-2 py-0.5 font-mono">
-                                {ev.badge}
-                              </Badge>
+                  <div className="space-y-2">
+                    <div className="max-h-[400px] overflow-y-auto pr-2 relative pl-6 space-y-3 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-border/60">
+                      {(showAllTimeline ? crmData.timeline : crmData.timeline.slice(0, 6)).map((ev) => (
+                        <div key={ev.id} className="relative flex items-start gap-3 py-1 group">
+                          {/* Dot / Node */}
+                          <div className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-primary ring-2 ring-primary/20 group-hover:scale-110 transition-transform" />
+
+                          <div className="flex-1 min-w-0 space-y-0.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="font-semibold text-foreground text-xs truncate">{ev.title}</p>
+                              {ev.badge && (
+                                <Badge variant="secondary" className="rounded-full text-[10px] px-2 py-0 font-mono shrink-0">
+                                  {ev.badge}
+                                </Badge>
+                              )}
+                            </div>
+                            {ev.description && (
+                              <p className="text-xs text-muted-foreground leading-snug">{ev.description}</p>
                             )}
+                            <p className="text-[10px] text-muted-foreground/80 font-mono pt-0.5">
+                              {new Date(ev.timestamp).toLocaleString(undefined, {
+                                dateStyle: "medium",
+                                timeStyle: "short",
+                              })}
+                            </p>
                           </div>
-                          {ev.description && <p className="text-muted-foreground">{ev.description}</p>}
-                          <p className="text-[10px] text-muted-foreground font-mono">
-                            {new Date(ev.timestamp).toLocaleString()}
-                          </p>
                         </div>
+                      ))}
+                    </div>
+
+                    {crmData.timeline.length > 6 && (
+                      <div className="pt-2 text-center border-t border-border/40">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowAllTimeline(!showAllTimeline)}
+                          className="text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-full h-8 px-4"
+                        >
+                          {showAllTimeline
+                            ? "Show Less"
+                            : `View All Activities (${crmData.timeline.length})`}
+                        </Button>
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
               </TabsContent>
@@ -392,25 +419,40 @@ export default function CustomerProfile() {
                     icon={<Calendar className="h-6 w-6 text-muted-foreground" />}
                   />
                 ) : (
-                  <div className="space-y-2.5">
-                    {crmData.visits.map((v) => (
-                      <div key={v.id} className="rounded-xl border p-3.5 bg-card flex items-center justify-between text-xs hover:border-primary/40 transition-colors">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-foreground">Visit #{v.visit_number}</span>
-                            <Badge variant="secondary" className="rounded-full text-[10px] px-2 py-0.2">{v.source}</Badge>
-                            <Badge className={`rounded-full text-[10px] px-2 py-0.2 ${v.status === "COMPLETED" ? "bg-emerald-600 text-white" : "bg-primary text-white"}`}>{v.status}</Badge>
+                  <div className="space-y-2">
+                    <div className="max-h-[420px] overflow-y-auto pr-2 space-y-2.5">
+                      {(showAllVisits ? crmData.visits : crmData.visits.slice(0, 6)).map((v) => (
+                        <div key={v.id} className="rounded-xl border p-3 bg-card flex items-center justify-between text-xs hover:border-primary/40 transition-colors shadow-xs">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-foreground">Visit #{v.visit_number}</span>
+                              <Badge variant="secondary" className="rounded-full text-[10px] px-2 py-0.2">{v.source}</Badge>
+                              <Badge className={`rounded-full text-[10px] px-2 py-0.2 ${v.status === "COMPLETED" ? "bg-emerald-600 text-white" : "bg-primary text-white"}`}>{v.status}</Badge>
+                            </div>
+                            <p className="text-muted-foreground">
+                              {v.dining_area_name} · Table {v.table_name} · {new Date(v.date).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+                            </p>
                           </div>
-                          <p className="text-muted-foreground">
-                            {v.dining_area_name} · Table {v.table_name} · {new Date(v.date).toLocaleString()}
-                          </p>
+                          <div className="text-right space-y-0.5">
+                            <p className="font-bold text-sm text-foreground font-mono">{fmt(v.total_amount)}</p>
+                            <p className="text-[10px] text-emerald-600 font-medium font-mono">+{v.loyalty_earned} pts</p>
+                          </div>
                         </div>
-                        <div className="text-right space-y-1">
-                          <p className="font-bold text-sm text-foreground font-mono">{fmt(v.total_amount)}</p>
-                          <p className="text-[10px] text-emerald-600 font-medium font-mono">+{v.loyalty_earned} pts earned</p>
-                        </div>
+                      ))}
+                    </div>
+
+                    {crmData.visits.length > 6 && (
+                      <div className="pt-2 text-center border-t border-border/40">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowAllVisits(!showAllVisits)}
+                          className="text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-full h-8 px-4"
+                        >
+                          {showAllVisits ? "Show Less" : `View All Visits (${crmData.visits.length})`}
+                        </Button>
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
               </TabsContent>
@@ -424,75 +466,90 @@ export default function CustomerProfile() {
                     icon={<ShoppingBag className="h-6 w-6 text-muted-foreground" />}
                   />
                 ) : (
-                  <div className="space-y-3">
-                    {crmData.orders.map((o) => {
-                      const isExpanded = !!expandedOrders[o.id];
-                      return (
-                        <div key={o.id} className="rounded-xl border bg-card overflow-hidden transition-colors">
-                          <div
-                            className="p-3.5 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors"
-                            onClick={() => toggleOrderExpand(o.id)}
-                          >
-                            <div className="flex items-center gap-3">
-                              {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <span className="font-bold text-sm text-foreground font-mono">Order #{o.order_number}</span>
-                                  <Badge variant="outline" className="text-[10px] rounded-full px-2 py-0.2">{o.source}</Badge>
-                                  <Badge className={`text-[10px] rounded-full px-2 py-0.2 ${o.status === "SERVED" ? "bg-emerald-600 text-white" : "bg-amber-600 text-white"}`}>{o.status}</Badge>
+                  <div className="space-y-2">
+                    <div className="max-h-[420px] overflow-y-auto pr-2 space-y-2.5">
+                      {(showAllOrders ? crmData.orders : crmData.orders.slice(0, 6)).map((o) => {
+                        const isExpanded = !!expandedOrders[o.id];
+                        return (
+                          <div key={o.id} className="rounded-xl border bg-card overflow-hidden transition-colors shadow-xs">
+                            <div
+                              className="p-3 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors"
+                              onClick={() => toggleOrderExpand(o.id)}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-xs text-foreground font-mono">Order #{o.order_number}</span>
+                                    <Badge variant="outline" className="text-[10px] rounded-full px-2 py-0.2">{o.source}</Badge>
+                                    <Badge className={`text-[10px] rounded-full px-2 py-0.2 ${o.status === "SERVED" ? "bg-emerald-600 text-white" : "bg-amber-600 text-white"}`}>{o.status}</Badge>
+                                  </div>
+                                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                                    Table {o.table_name} · {new Date(o.created_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+                                  </p>
                                 </div>
-                                <p className="text-xs text-muted-foreground mt-0.5">
-                                  Table {o.table_name} · {new Date(o.created_at).toLocaleString()}
-                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-bold text-xs text-foreground font-mono">{fmt(o.total_amount)}</p>
+                                <p className="text-[10px] text-muted-foreground">{o.items.length} item(s)</p>
                               </div>
                             </div>
-                            <div className="text-right">
-                              <p className="font-bold text-sm text-foreground font-mono">{fmt(o.total_amount)}</p>
-                              <p className="text-[10px] text-muted-foreground">{o.items.length} item(s)</p>
-                            </div>
-                          </div>
 
-                          {/* Expandable Order Details */}
-                          {isExpanded && (
-                            <div className="border-t bg-muted/20 p-3.5 space-y-3 text-xs">
-                              <p className="font-semibold text-foreground">Order Items:</p>
-                              <div className="space-y-1.5">
-                                {o.items.map((it) => (
-                                  <div key={it.id} className="flex justify-between items-center bg-card p-2 rounded-lg border">
-                                    <div>
-                                      <p className="font-medium text-foreground">{it.name} x {it.quantity}</p>
-                                      {it.notes && <p className="text-[10px] text-muted-foreground">Note: {it.notes}</p>}
+                            {/* Expandable Order Details */}
+                            {isExpanded && (
+                              <div className="border-t bg-muted/20 p-3 space-y-2 text-xs">
+                                <p className="font-semibold text-foreground text-xs">Order Items:</p>
+                                <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                                  {o.items.map((it) => (
+                                    <div key={it.id} className="flex justify-between items-center bg-card p-2 rounded-lg border text-xs">
+                                      <div>
+                                        <p className="font-medium text-foreground">{it.name} x {it.quantity}</p>
+                                        {it.notes && <p className="text-[10px] text-muted-foreground">Note: {it.notes}</p>}
+                                      </div>
+                                      <p className="font-bold text-foreground font-mono">{fmt(it.subtotal)}</p>
                                     </div>
-                                    <p className="font-bold text-foreground font-mono">{fmt(it.subtotal)}</p>
-                                  </div>
-                                ))}
-                              </div>
+                                  ))}
+                                </div>
 
-                              <div className="border-t pt-2 space-y-1 text-[11px] text-right font-mono">
-                                <div className="flex justify-between">
-                                  <span className="text-muted-foreground">Subtotal:</span>
-                                  <span>{fmt(o.subtotal)}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-muted-foreground">Tax:</span>
-                                  <span>{fmt(o.tax_amount)}</span>
-                                </div>
-                                {o.discount_amount > 0 && (
-                                  <div className="flex justify-between text-emerald-600 font-medium">
-                                    <span>Discount:</span>
-                                    <span>-{fmt(o.discount_amount)}</span>
+                                <div className="border-t pt-2 space-y-1 text-[11px] text-right font-mono">
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Subtotal:</span>
+                                    <span>{fmt(o.subtotal)}</span>
                                   </div>
-                                )}
-                                <div className="flex justify-between font-bold text-xs text-foreground pt-1 border-t">
-                                  <span>Total Amount:</span>
-                                  <span>{fmt(o.total_amount)}</span>
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Tax:</span>
+                                    <span>{fmt(o.tax_amount)}</span>
+                                  </div>
+                                  {o.discount_amount > 0 && (
+                                    <div className="flex justify-between text-emerald-600 font-medium">
+                                      <span>Discount:</span>
+                                      <span>-{fmt(o.discount_amount)}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex justify-between font-bold text-xs text-foreground pt-1 border-t">
+                                    <span>Total Amount:</span>
+                                    <span>{fmt(o.total_amount)}</span>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {crmData.orders.length > 6 && (
+                      <div className="pt-2 text-center border-t border-border/40">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowAllOrders(!showAllOrders)}
+                          className="text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-full h-8 px-4"
+                        >
+                          {showAllOrders ? "Show Less" : `View All Orders (${crmData.orders.length})`}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
               </TabsContent>
@@ -500,21 +557,21 @@ export default function CustomerProfile() {
               {/* 4. LOYALTY TAB */}
               <TabsContent value="loyalty" className="space-y-4">
                 <div className="grid grid-cols-3 gap-3 text-center">
-                  <div className="rounded-xl border bg-card p-3">
+                  <div className="rounded-xl border bg-card p-3 shadow-xs">
                     <p className="text-[10px] uppercase font-semibold text-muted-foreground">Current Points</p>
                     <p className="font-display text-xl font-bold text-primary font-mono">{crmData.loyalty_current_points}</p>
                   </div>
-                  <div className="rounded-xl border bg-card p-3">
+                  <div className="rounded-xl border bg-card p-3 shadow-xs">
                     <p className="text-[10px] uppercase font-semibold text-muted-foreground">Total Earned</p>
                     <p className="font-display text-xl font-bold text-emerald-600 font-mono">+{crmData.loyalty_lifetime_points}</p>
                   </div>
-                  <div className="rounded-xl border bg-card p-3">
+                  <div className="rounded-xl border bg-card p-3 shadow-xs">
                     <p className="text-[10px] uppercase font-semibold text-muted-foreground">Total Redeemed</p>
                     <p className="font-display text-xl font-bold text-rose-600 font-mono">-{crmData.loyalty_redeemed_points}</p>
                   </div>
                 </div>
 
-                <h4 className="font-display text-xs font-semibold text-foreground pt-2">Loyalty Transaction History</h4>
+                <h4 className="font-display text-xs font-semibold text-foreground pt-1">Loyalty Transaction History</h4>
 
                 {crmData.loyalty_history.length === 0 ? (
                   <EmptyState
@@ -523,12 +580,12 @@ export default function CustomerProfile() {
                     icon={<Crown className="h-6 w-6 text-muted-foreground" />}
                   />
                 ) : (
-                  <div className="space-y-2 text-xs">
+                  <div className="max-h-[380px] overflow-y-auto pr-2 space-y-2 text-xs">
                     {crmData.loyalty_history.map((l) => (
-                      <div key={l.id} className="rounded-xl border p-3 bg-card flex items-center justify-between">
+                      <div key={l.id} className="rounded-xl border p-2.5 bg-card flex items-center justify-between hover:border-primary/30 transition-colors">
                         <div>
                           <p className="font-medium text-foreground">{l.reason}</p>
-                          <p className="text-[10px] text-muted-foreground font-mono">{new Date(l.date).toLocaleString()}</p>
+                          <p className="text-[10px] text-muted-foreground font-mono">{new Date(l.date).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</p>
                         </div>
                         <div className="text-right">
                           <Badge className="bg-emerald-600 text-white rounded-full text-[10px] font-mono">+{l.points} pts</Badge>
@@ -548,14 +605,14 @@ export default function CustomerProfile() {
                     icon={<MessageCircle className="h-6 w-6 text-muted-foreground" />}
                   />
                 ) : (
-                  <div className="space-y-2 text-xs">
+                  <div className="max-h-[380px] overflow-y-auto pr-2 space-y-2 text-xs">
                     {crmData.whatsapp_logs.map((wa) => (
-                      <div key={wa.id} className="rounded-xl border p-3 bg-card space-y-1.5">
+                      <div key={wa.id} className="rounded-xl border p-3 bg-card space-y-1.5 hover:border-primary/30 transition-colors">
                         <div className="flex items-center justify-between">
                           <Badge variant="outline" className="text-[10px] font-semibold">{wa.type}</Badge>
                           <span className="text-[10px] text-muted-foreground font-mono">{new Date(wa.sent_at).toLocaleString()}</span>
                         </div>
-                        <p className="text-muted-foreground">{wa.message}</p>
+                        <p className="text-muted-foreground leading-relaxed">{wa.message}</p>
                         <Badge className="bg-emerald-600 text-white text-[9px] rounded-full px-2 py-0.2">{wa.status}</Badge>
                       </div>
                     ))}
@@ -572,9 +629,9 @@ export default function CustomerProfile() {
                     icon={<Sparkles className="h-6 w-6 text-muted-foreground" />}
                   />
                 ) : (
-                  <div className="space-y-2 text-xs">
+                  <div className="max-h-[380px] overflow-y-auto pr-2 space-y-2 text-xs">
                     {crmData.campaigns.map((cmp) => (
-                      <div key={cmp.id} className="rounded-xl border p-3 bg-card flex justify-between items-center">
+                      <div key={cmp.id} className="rounded-xl border p-3 bg-card flex justify-between items-center hover:border-primary/30 transition-colors">
                         <div>
                           <p className="font-semibold text-foreground">{cmp.name}</p>
                           <p className="text-[10px] text-muted-foreground">Type: {cmp.type}</p>
@@ -595,15 +652,15 @@ export default function CustomerProfile() {
                     icon={<Star className="h-6 w-6 text-muted-foreground" />}
                   />
                 ) : (
-                  <div className="space-y-2 text-xs">
+                  <div className="max-h-[380px] overflow-y-auto pr-2 space-y-2 text-xs">
                     {crmData.reviews.map((r) => (
-                      <div key={r.id} className="rounded-xl border p-3 bg-card space-y-1">
+                      <div key={r.id} className="rounded-xl border p-3 bg-card space-y-1 hover:border-primary/30 transition-colors">
                         <div className="flex items-center gap-1 text-amber-500">
                           {Array.from({ length: r.rating }).map((_, i) => (
                             <Star key={i} className="h-3.5 w-3.5 fill-current" />
                           ))}
                         </div>
-                        <p className="text-foreground">{r.comment}</p>
+                        <p className="text-foreground leading-relaxed">{r.comment}</p>
                       </div>
                     ))}
                   </div>
@@ -612,18 +669,32 @@ export default function CustomerProfile() {
 
               {/* 8. NOTES TAB */}
               <TabsContent value="notes" className="space-y-3">
-                <Textarea
-                  value={noteText}
-                  onChange={(e) => setNoteText(e.target.value)}
-                  rows={6}
-                  placeholder="Record customer dietary preferences, allergies, VIP notes..."
-                  className="rounded-xl text-xs"
-                />
-                <div className="flex justify-end">
-                  <Button size="sm" className="rounded-full gradient-brand text-primary-foreground text-xs gap-1.5" onClick={handleSaveNote}>
-                    <FileText className="h-3.5 w-3.5" /> Save Note
-                  </Button>
+                <div className="sticky top-0 bg-card z-10 pb-2 space-y-2">
+                  <Textarea
+                    value={noteText}
+                    onChange={(e) => setNoteText(e.target.value)}
+                    rows={3}
+                    placeholder="Record customer dietary preferences, allergies, VIP notes..."
+                    className="rounded-xl text-xs"
+                  />
+                  <div className="flex justify-end">
+                    <Button size="sm" className="rounded-full gradient-brand text-primary-foreground text-xs gap-1.5" onClick={handleSaveNote}>
+                      <FileText className="h-3.5 w-3.5" /> Save Note
+                    </Button>
+                  </div>
                 </div>
+
+                {crmData.notes && crmData.notes.length > 0 && (
+                  <div className="max-h-[300px] overflow-y-auto pr-2 space-y-2 pt-2 border-t text-xs">
+                    <p className="font-semibold text-xs text-muted-foreground">Previous Notes History</p>
+                    {crmData.notes.map((n: any, idx: number) => (
+                      <div key={idx} className="rounded-xl border p-2.5 bg-muted/20 text-xs">
+                        <p className="text-foreground leading-relaxed">{typeof n === 'string' ? n : n.text || n.note}</p>
+                        {n.date && <p className="text-[10px] text-muted-foreground font-mono mt-1">{new Date(n.date).toLocaleString()}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </TabsContent>
 
               {/* 9. AI INSIGHTS TAB */}

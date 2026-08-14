@@ -23,8 +23,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { API_BASE_URL } from "@/lib/auth";
 import { useQueryClient } from "@tanstack/react-query";
-import { listStaffApi } from "@/lib/staff-api";
-import { Edit2 } from "lucide-react";
+import { Edit2, Tag, X } from "lucide-react";
+import { validateCouponApi, redeemCouponApi, type CouponValidateResponse } from "@/lib/coupons-api";
 
 const statusColor: Record<string, string> = {
   pending: "bg-warning/15 text-warning-foreground border-warning/30",
@@ -41,29 +41,48 @@ const statusLabel: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
-function getDisplayStatus(a: Appointment) {
-  if (a.status === "cancelled") return { label: "Cancelled", color: statusColor.cancelled };
-  if (a.status === "pending") return { label: "Pending", color: statusColor.pending };
-  if (a.status === "checkedin") return { label: "In Service", color: statusColor.checkedin };
-  if (a.status === "completed") {
+function getDisplayStatus(a: Appointment, mode: "appointment" | "workstation" = "appointment") {
+  const effectiveStatus = (mode === "workstation" || a.status === "checkedin") ? "checkedin" : a.status;
+  if (effectiveStatus === "cancelled") return { label: "Cancelled", color: statusColor.cancelled };
+  if (effectiveStatus === "pending") return { label: "Pending", color: statusColor.pending };
+  if (effectiveStatus === "checkedin") return { label: "In Service", color: statusColor.checkedin };
+  if (effectiveStatus === "completed") {
     if (a.paymentStatus === "paid" || a.paidAt) {
       return { label: "Paid", color: statusColor.paid };
     }
     return { label: "Completed", color: statusColor.completed };
   }
-  return { label: a.status, color: "bg-muted text-muted-foreground" };
+  return { label: effectiveStatus, color: "bg-muted text-muted-foreground" };
 }
 
 import { useEffect } from "react";
 import { Download, MessageCircle, Check, Plus, Search, QrCode } from "lucide-react";
+import { jsPDF } from "jspdf";
+import html2canvas from "html2canvas";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: Appointment | null; open: boolean; onOpenChange: (o: boolean) => void }) {
+export function AppointmentDetailSheet({
+  appt,
+  open,
+  onOpenChange,
+  mode = "appointment",
+}: {
+  appt: Appointment | null;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  mode?: "appointment" | "workstation";
+}) {
   const qc = useQueryClient();
   const [payOpen, setPayOpen] = useState(false);
   const [payment, setPayment] = useState<ApptPayment>("cash");
   const [notes, setNotes] = useState(appt?.notes || "");
+
+  // Coupon State for Collect Salon Payment
+  const [couponCode, setCouponCode] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponValidateResponse | null>(null);
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
+  const [couponError, setCouponError] = useState<string | null>(null);
 
   const [invoiceSuccessOpen, setInvoiceSuccessOpen] = useState(false);
   const [countdown, setCountdown] = useState(30);
@@ -88,6 +107,7 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
 
   // Add Extra Service Modal State
   const [addServiceModalOpen, setAddServiceModalOpen] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
 
   // Remove Service Confirmation Target State
   const [removeServiceTarget, setRemoveServiceTarget] = useState<{ index: number; service: { name: string; price: number; duration: number } } | null>(null);
@@ -207,6 +227,9 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
   if (!appt) return null;
   const a = liveAppt || appt;
 
+  // ✅ Context-aware effective status: workstation mode or checkedin status = checkedin; appointment mode = original a.status
+  const effectiveStatus = (mode === "workstation" || a.status === "checkedin") ? "checkedin" : a.status;
+
   const services = a.services && a.services.length ? a.services : [{ name: a.service, price: a.price, duration: a.duration || 0 }];
   const totalPrice = services.reduce((s, x) => s + x.price, 0);
   const totalDuration = services.reduce((s, x) => s + x.duration, 0);
@@ -215,21 +238,43 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
   // Target UUID for customer profile navigation
   const targetCustomerId = customerObj?.id || (a.customerId && UUID_REGEX.test(a.customerId) ? a.customerId : null);
 
-  // Extract Advance Paid from notes if present
+  // Extract Advance Paid from notes or direct property if present
   const advancePaidMatch = (a.notes || "").match(/Advance Paid:\s*₹?\s*(\d+(?:\.\d+)?)/i);
-  const advancePaid = advancePaidMatch ? parseFloat(advancePaidMatch[1]) : 0;
+  const advancePaid = (a as any).advancePaid ?? (a as any).advance_paid ?? (advancePaidMatch ? parseFloat(advancePaidMatch[1]) : 0);
   const remainingAmount = Math.max(0, totalPrice - advancePaid);
 
   // Calculated End Time
   const startTime = new Date(a.start);
   const endTime = !isNaN(startTime.getTime()) ? new Date(startTime.getTime() + totalDuration * 60000) : null;
 
+  function isStaffAssigned(staffName?: string | null): boolean {
+    if (!staffName) return false;
+    const s = staffName.trim().toLowerCase();
+    if (
+      !s ||
+      s === "unassigned staff" ||
+      s === "unassigned" ||
+      s === "not assigned" ||
+      s === "staff member" ||
+      s === "—"
+    ) {
+      return false;
+    }
+    return true;
+  }
+
   function saveNotes() { updateAppointment(a.id, { notes }); toast.success("Notes saved"); }
   async function setStatus(s: Appointment["status"]) {
+    if (s === "completed" && !isStaffAssigned(a?.staff)) {
+      toast.error("Please assign a staff member before completing appointment or collecting payment");
+      return;
+    }
+
+    // For Check-In: open the workstation assignment panel
     // For Check-In: open the workstation assignment panel
     if (s === "checkedin") {
       setAssignAreaIdPick(a.serviceAreaId || "");
-      setAssignChairIdPick("");
+      setAssignChairIdPick(a.chairId || ""); // ✅ Pre-selected chair clear nahi hogi
       setAssignStaffPick(a.staff || "");
       setAssignChairOpen(true);
       return;
@@ -444,6 +489,208 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
     setRemoveServiceTarget(null);
   }
 
+ function generateClientInvoicePdf(apptData: Appointment) {
+    const invNo = (apptData.id || "00000").slice(0, 8).toUpperCase();
+    const apptCodeStr = apptCode(apptData);
+    
+    // Exact Date & Time Format (e.g. 13/08/2026, 11:21 am)
+    const startDateObj = apptData.start ? new Date(apptData.start) : new Date();
+    const dateFormatted = startDateObj.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric"
+    });
+    const timeFormatted = startDateObj.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true
+    }).toLowerCase();
+    const dateTimeStr = `${dateFormatted}, ${timeFormatted}`;
+
+    const custName = apptData.customerName || "Valued Client";
+    const chairName = apptData.chairName || apptData.serviceAreaName || "Table1";
+    const payMethodStr = (payment || (apptData as any).paymentMethod || "CASH").toUpperCase();
+
+    const bizHeader = (businessSettings as any)?.name || bizName || "Vivazen Salon";
+    const bizAddress = (businessSettings as any)?.address || "Jaunpur";
+    const bizPhone = (businessSettings as any)?.phone || "1234567890";
+
+    const servicesList = apptData.services && apptData.services.length
+      ? apptData.services
+      : [{ name: apptData.service || "Salon Service", price: apptData.price || 0, duration: apptData.duration || 30 }];
+
+    const subtotal = servicesList.reduce((sum, s) => sum + (s.price || 0), 0);
+    const discount = discountAmount || 0;
+    const codeName = activeCouponCode || "COUPON";
+    const taxable = Math.max(0, subtotal - discount);
+    const tax = Math.round((taxable * taxPct) / 100);
+    const grandTotalVal = Math.max(0, taxable + tax);
+    const payable = Math.max(0, grandTotalVal - advancePaid);
+
+    // Calculate dynamic page height based on item count
+    const pageHeight = Math.max(160, 145 + servicesList.length * 8);
+
+    const pdf = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: [80, pageHeight],
+    });
+
+    let y = 10;
+    const leftMargin = 6;
+    const rightMargin = 74;
+    const centerX = 40;
+
+    // --- 1. HEADER (CENTERED BOLD BUSINESS INFO) ---
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(14);
+    pdf.text(bizHeader, centerX, y, { align: "center" });
+    y += 5;
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    pdf.text(bizAddress, centerX, y, { align: "center" });
+    y += 4;
+    pdf.text(`Ph: ${bizPhone}`, centerX, y, { align: "center" });
+    y += 6;
+
+    // Divider Line 1
+    pdf.setDrawColor(200, 200, 200);
+    pdf.setLineWidth(0.3);
+    pdf.line(leftMargin, y, rightMargin, y);
+    y += 5;
+
+    // --- 2. META DETAILS (LEFT GRAY LABEL, RIGHT BOLD VALUE) ---
+    pdf.setFontSize(8.5);
+
+    const printMetaRow = (label: string, value: string) => {
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(110, 110, 110);
+      pdf.text(label, leftMargin, y);
+      
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(0, 0, 0);
+      pdf.text(value, rightMargin, y, { align: "right" });
+      y += 4.5;
+    };
+
+    printMetaRow("Invoice No:", `INV-${invNo}`);
+    printMetaRow("Order No:", apptCodeStr);
+    printMetaRow("Date & Time:", dateTimeStr);
+    printMetaRow("Table / Chair:", chairName);
+    printMetaRow("Customer:", `${custName},`);
+    printMetaRow("Payment Method:", payMethodStr);
+
+    y += 1;
+    // Divider Line 2
+    pdf.line(leftMargin, y, rightMargin, y);
+    y += 5;
+
+    // --- 3. TABLE HEADER (Item | Qty | Price | Total) ---
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(8.5);
+    pdf.setTextColor(0, 0, 0);
+
+    pdf.text("Item", leftMargin, y);
+    pdf.text("Qty", 45, y, { align: "center" });
+    pdf.text("Price", 58, y, { align: "right" });
+    pdf.text("Total", rightMargin, y, { align: "right" });
+    y += 3;
+
+    // Divider Line 3
+    pdf.line(leftMargin, y, rightMargin, y);
+    y += 5;
+
+    // --- 4. TABLE ROWS ---
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8.5);
+
+    servicesList.forEach((s) => {
+      const sName = s.name.length > 18 ? s.name.substring(0, 16) + ".." : s.name;
+      pdf.text(sName, leftMargin, y);
+      pdf.text("1", 45, y, { align: "center" });
+      pdf.text(`${s.price}`, 58, y, { align: "right" });
+      pdf.text(`${s.price}`, rightMargin, y, { align: "right" });
+      y += 5;
+    });
+
+    y += 1;
+    // Divider Line 4
+    pdf.line(leftMargin, y, rightMargin, y);
+    y += 5;
+
+    // --- 5. TOTALS BREAKDOWN (Subtotal, Coupon, GST, Advance) ---
+    pdf.setFontSize(8.5);
+
+    const printTotalRow = (label: string, value: string, isDiscount = false) => {
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(110, 110, 110);
+      pdf.text(label, leftMargin, y);
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(isDiscount ? 220 : 0, isDiscount ? 38 : 0, isDiscount ? 38 : 0);
+      pdf.text(value, rightMargin, y, { align: "right" });
+      y += 4.5;
+    };
+
+    printTotalRow("Subtotal", `Rs.${subtotal}`);
+
+    // Dynamic Coupon Row
+    if (discount > 0) {
+      printTotalRow(`Coupon (${codeName})`, `-Rs.${discount}`, true);
+    }
+
+    if (tax > 0) {
+      printTotalRow(`GST (${taxPct}%)`, `Rs.${tax}`);
+    }
+
+    if (advancePaid > 0) {
+      printTotalRow("Advance Paid", `-Rs.${advancePaid}`, true);
+    }
+
+    y += 1;
+    // Divider Line 5
+    pdf.line(leftMargin, y, rightMargin, y);
+    y += 5;
+
+    // --- 6. GRAND TOTAL & PAYMENT STATUS ---
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(11);
+    pdf.setTextColor(0, 0, 0);
+    pdf.text("Grand Total", leftMargin, y);
+    pdf.text(`Rs.${payable}`, rightMargin, y, { align: "right" });
+    y += 6;
+
+    pdf.setFontSize(8.5);
+    pdf.setFont("helvetica", "normal");
+    pdf.setTextColor(110, 110, 110);
+    pdf.text("Payment Status:", leftMargin, y);
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(0, 0, 0);
+    pdf.text(`PAID (${payMethodStr})`, rightMargin, y, { align: "right" });
+    y += 6;
+
+    // Divider Line 6
+    pdf.line(leftMargin, y, rightMargin, y);
+    y += 6;
+
+    // --- 7. FOOTER ---
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(9.5);
+    pdf.setTextColor(0, 0, 0);
+    pdf.text("Thank you for visiting!", centerX, y, { align: "center" });
+    y += 4.5;
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8);
+    pdf.setTextColor(130, 130, 130);
+    pdf.text("We look forward to serving you again.", centerX, y, { align: "center" });
+
+    pdf.save(`Invoice_${apptCodeStr}.pdf`);
+    toast.success("Thermal receipt PDF generated successfully!");
+  }
+
   async function handleDownloadPdf() {
     if (!a) return;
     setDownloadingPdf(true);
@@ -451,9 +698,29 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
       await downloadInvoicePdfApi(a.id, apptCode(a));
       toast.success("Invoice PDF downloaded successfully!");
     } catch (err: any) {
-      console.error("Failed to download PDF invoice:", err);
-      const msg = typeof err === "string" ? err : (err?.message && typeof err.message === "string" ? err.message : "Failed to download PDF invoice.");
-      toast.error(msg);
+      console.warn("Backend API not reachable/local appointment, generating pure vector PDF:", err);
+      try {
+        generateClientInvoicePdf(a);
+      } catch (clientErr: any) {
+        console.error("Client-side PDF generation error:", clientErr);
+        toast.error("Failed to generate PDF invoice.");
+      }
+    } finally {
+      setDownloadingPdf(false);
+    }
+    if (!a) return;
+    setDownloadingPdf(true);
+    try {
+      await downloadInvoicePdfApi(a.id, apptCode(a));
+      toast.success("Invoice PDF downloaded successfully!");
+    } catch (err: any) {
+      console.warn("Backend PDF API failed/local appointment, falling back to client-side PDF generation:", err);
+      try {
+        await generateClientInvoicePdf(a);
+      } catch (clientErr: any) {
+        console.error("Client-side PDF generation failed:", clientErr);
+        toast.error("Failed to generate PDF invoice.");
+      }
     } finally {
       setDownloadingPdf(false);
     }
@@ -466,12 +733,35 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
       setCustomWaMsg(res.message);
     } catch (err: any) {
       console.error("Failed to generate WhatsApp message from backend:", err);
+      const couponLine = activeCouponCode && discountAmount > 0
+        ? `\n• Coupon Applied: ${activeCouponCode} (${activeDiscountDesc || "Discount"} - Saved ${fmt(discountAmount)})`
+        : "";
       setCustomWaMsg(
-        `Dear ${a.customerName || "Valued Client"},\n\nThank you for visiting ${bizName} today! ❤️\n\nVisit Details:\n• Date: ${startTime.toLocaleDateString()}\n• Services: ${services.map((s) => s.name).join(", ")}\n• Amount Paid: ₹${grandTotal - advancePaid}\n• Loyalty Points Earned: +${Math.floor(grandTotal / 10)} pts\n\nWe look forward to seeing you again soon!\n\nRegards,\nTeam ${bizName}`
+        `Dear ${a.customerName || "Valued Client"},\n\nThank you for visiting ${bizName} today! ❤️\n\nVisit Details:\n• Date: ${startTime.toLocaleDateString()}\n• Services: ${services.map((s) => s.name).join(", ")}${couponLine}\n• Amount Paid: ${fmt(grandTotal - advancePaid)}\n• Loyalty Points Earned: +${Math.floor(grandTotal / 10)} pts\n\nWe look forward to seeing you again soon!\n\nRegards,\nTeam ${bizName}`
       );
     } finally {
       setGeneratingWa(false);
     }
+  }
+
+  async function handleConfirmCancel() {
+    setCancelConfirmOpen(false);
+    if (a.chairId) {
+      try {
+        await releaseSalonChairApi(a.chairId);
+        qc.invalidateQueries({ queryKey: ["salon-chairs"] });
+        qc.invalidateQueries({ queryKey: ["salon-chairs-metrics"] });
+      } catch (err) {
+        console.warn("Failed releasing chair on cancellation:", err);
+      }
+    }
+    const updated = updateAppointment(a.id, { status: "cancelled" });
+    if (updated) setLiveAppt(updated);
+    qc.invalidateQueries({ queryKey: ["appointments"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
+    qc.invalidateQueries({ queryKey: ["salon-chairs"] });
+    onOpenChange(false);
+    toast.success("Appointment cancelled and workstation released to Available");
   }
 
   async function handleRegenerateWaMsg() {
@@ -480,10 +770,63 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
     toast.success("Regenerated personalized AI WhatsApp message!");
   }
 
-  // Tax and Grand Total calculation (uses businessSettings)
+  async function handleApplyCoupon() {
+    if (!couponCode.trim()) {
+      setCouponError("Please enter a coupon code.");
+      return;
+    }
+    setIsValidatingCoupon(true);
+    setCouponError(null);
+
+    try {
+      const res = await validateCouponApi({
+        code: couponCode.trim(),
+        customer_id: a.customerId || customerObj?.id,
+        order_amount: totalPrice,
+      });
+
+      if (res.valid) {
+        setAppliedCoupon(res);
+        setCouponError(null);
+        toast.success(`Coupon '${res.coupon?.code || couponCode}' applied! Discount: ${fmt(res.calculated_discount)}`);
+      } else {
+        setAppliedCoupon(null);
+        setCouponError(res.reason || "Invalid coupon code.");
+        toast.error(res.reason || "Invalid coupon code.");
+      }
+    } catch (err: any) {
+      console.error("Coupon validation error:", err);
+      const errMsg = err?.message || "Failed to validate coupon.";
+      setAppliedCoupon(null);
+      setCouponError(errMsg);
+      toast.error(errMsg);
+    } finally {
+      setIsValidatingCoupon(false);
+    }
+  }
+
+  function handleRemoveCoupon() {
+    setAppliedCoupon(null);
+    setCouponCode("");
+    setCouponError(null);
+    toast.info("Coupon removed.");
+  }
+
+  // Active Coupon Data Resolution (persisted in appointment or live applied coupon)
+  const activeCouponCode = appliedCoupon?.coupon?.code || a.couponCode || (a as any).coupon_code || (a as any).applied_coupon_code || "";
+  const discountAmount = appliedCoupon?.valid
+    ? (appliedCoupon.calculated_discount || 0)
+    : (a.couponDiscount || (a as any).coupon_discount || (a as any).discount || 0);
+  const activeDiscountDesc = appliedCoupon?.coupon?.reward_description
+    || a.discountDescription
+    || (a as any).discount_description
+    || (appliedCoupon?.coupon?.coupon_type === "PERCENTAGE" ? `${appliedCoupon.coupon.reward_value}% OFF` : activeCouponCode ? `${fmt(discountAmount)} OFF` : "");
+
+  // Tax, Coupon Discount and Grand Total calculation (uses businessSettings)
+  const taxableAmount = Math.max(0, totalPrice - discountAmount);
   const taxPct = Number((businessSettings as any)?.tax_percentage ?? (businessSettings as any)?.tax_rate ?? 0);
-  const taxAmount = Math.round(((totalPrice * taxPct) / 100) * 100) / 100;
-  const grandTotal = Math.round((totalPrice + taxAmount) * 100) / 100;
+  const taxAmount = Math.round(((taxableAmount * taxPct) / 100) * 100) / 100;
+  const grandTotal = Math.round((taxableAmount + taxAmount) * 100) / 100;
   const remainingBalance = Math.max(0, Math.round((grandTotal - advancePaid) * 100) / 100);
   const rawQrPath = businessSettings?.payment_qr_image || (businessSettings as any)?.payment_qr_url;
   const paymentQrUrl = rawQrPath
@@ -493,7 +836,12 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
     : null;
   const bizName = (businessSettings as any)?.name || "Vivazen Salon";
 
-  async function collectPayment() {
+async function collectPayment() {
+    if (!isStaffAssigned(a?.staff)) {
+      toast.error("Please assign a staff member before completing appointment or collecting payment");
+      return;
+    }
+
     let customer: { id?: string; name?: string; phone?: string } | undefined;
     if (customerObj) {
       customer = { id: customerObj.id, name: customerObj.name, phone: customerObj.phone };
@@ -507,7 +855,31 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
         customer = { id: c.id, name: c.name, phone: c.phone };
       }
     }
-    markAppointmentPaid(a.id, payment, customer);
+
+    const codeToRedeem = appliedCoupon?.coupon?.code || activeCouponCode;
+    const discountToSave = appliedCoupon?.valid ? (appliedCoupon.calculated_discount || 0) : discountAmount;
+    const descToSave = activeDiscountDesc || (codeToRedeem ? `${codeToRedeem} Applied` : "");
+
+    const couponDetails = codeToRedeem && discountToSave > 0 ? {
+      code: codeToRedeem,
+      discount: discountToSave,
+      description: descToSave,
+    } : undefined;
+
+    const updatedLocally = markAppointmentPaid(a.id, payment, customer, couponDetails);
+
+    // Update sheet state immediately for instant financial totals re-render
+    const nextApptObj: Appointment = updatedLocally || {
+      ...a,
+      paymentStatus: "paid",
+      status: "completed",
+      paidAt: new Date().toISOString(),
+      couponCode: codeToRedeem,
+      couponDiscount: discountToSave,
+      discountDescription: descToSave,
+      discount: discountToSave,
+    } as any;
+    setLiveAppt(nextApptObj);
 
     // Sync Visit Services, Completion & Payment Status in PostgreSQL backend
     if (UUID_REGEX.test(a.id)) {
@@ -516,6 +888,7 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
         await completeVisitApi(a.id, {
           payment_method: payment,
           payment_status: "paid",
+          discount: discountToSave,
         });
         await loadWaMessage(a.id);
       } catch (e) {
@@ -523,8 +896,24 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
       }
     }
 
-    // Sync Customer Visit Count, Spend & Loyalty Points in PostgreSQL backend
+    // Redeem coupon if applied & invalidate query cache for usage count (+1)
     const targetCId = customerObj?.id || customer?.id;
+    if (codeToRedeem) {
+      try {
+        await redeemCouponApi({
+          code: codeToRedeem,
+          customer_id: targetCId || a.customerId,
+          order_amount: totalPrice,
+          visit_id: a.id,
+        });
+        qc.invalidateQueries({ queryKey: ["coupons"] });
+        qc.invalidateQueries({ queryKey: ["coupon"] });
+      } catch (e) {
+        console.warn("Failed redeeming coupon in backend:", e);
+      }
+    }
+
+    // Sync Customer Visit Count, Spend & Loyalty Points in PostgreSQL backend
     if (targetCId && UUID_REGEX.test(targetCId)) {
       try {
         await recordCustomerVisitApi(targetCId, grandTotal);
@@ -533,7 +922,8 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
       }
     }
 
-    // Global Query Cache Invalidation for real-time automatic UI updates
+    // Global Query Cache Invalidation for real-time UI updates
+    qc.invalidateQueries({ queryKey: ["coupons"] });
     qc.invalidateQueries({ queryKey: ["customers-list"] });
     qc.invalidateQueries({ queryKey: ["customers"] });
     qc.invalidateQueries({ queryKey: ["customer-crm"] });
@@ -550,26 +940,25 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
         qc.invalidateQueries({ queryKey: ["salon-chairs-metrics"] });
         qc.invalidateQueries({ queryKey: ["dashboard-analytics"] });
         qc.invalidateQueries({ queryKey: ["dashboard"] });
-        toast.success(`Payment collected · ${fmt(totalPrice)} · Workstation released`);
+        toast.success(`Payment collected · ${fmt(grandTotal - advancePaid)} · Workstation released`);
       } catch (err) {
         console.warn("Failed releasing workstation status on payment:", err);
       }
     } else {
-      toast.success(`Payment collected · ${fmt(totalPrice)}`);
+      toast.success(`Payment collected · ${fmt(grandTotal - advancePaid)}`);
     }
 
     setPayOpen(false);
     setCountdown(30);
     setInvoiceSuccessOpen(true);
   }
-
   function handleOpenPayModal() {
     if (services.length === 0) {
       toast.error("Please add at least one service before collecting payment.");
       return;
     }
-    if (!a.staff || a.staff === "Unassigned" || a.staff === "Staff Member") {
-      toast.error("Please assign a staff member before collecting payment.");
+    if (!isStaffAssigned(a?.staff)) {
+      toast.error("Please assign a staff member before completing appointment or collecting payment");
       return;
     }
     setPayOpen(true);
@@ -586,7 +975,7 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
             </div>
             <div className="flex items-center gap-2">
               {(() => {
-                const st = getDisplayStatus(a);
+                const st = getDisplayStatus(a, mode);
                 return <Badge variant="outline" className={`rounded-full text-[10px] ${st.color}`}>{st.label}</Badge>;
               })()}
               {paid ? (
@@ -702,14 +1091,43 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
 
             {!isEditingSchedule ? (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                <div><span className="text-muted-foreground block text-[10px]">Assigned Staff</span><span className="font-semibold text-foreground">{a.staff || "Staff Member"}</span></div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px]">Assigned Staff</span>
+                  {isStaffAssigned(a.staff) ? (
+                    <span className="font-semibold text-foreground">{a.staff}</span>
+                  ) : (
+                    <div className="mt-0.5">
+                      <Select
+                        value={a.staff || ""}
+                        onValueChange={(staffName) => {
+                          if (!staffName) return;
+                          const updated = updateAppointment(a.id, { staff: staffName });
+                          if (updated) setLiveAppt(updated);
+                          qc.invalidateQueries({ queryKey: ["appointments"] });
+                          toast.success(`Staff assigned: ${staffName}`);
+                        }}
+                      >
+                        <SelectTrigger className="h-7 text-xs rounded-lg border-amber-500/50 bg-amber-500/10 text-amber-800 dark:text-amber-300 font-bold">
+                          <SelectValue placeholder="⚠️ Select Staff Member..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {staffList.map((st) => (
+                            <SelectItem key={st.id} value={st.name}>
+                              {st.name} ({st.designation || st.role || "Staff"})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
                 <div><span className="text-muted-foreground block text-[10px]">Service Area</span><span className="font-semibold text-foreground">{a.serviceAreaName || "Not Assigned"}</span></div>
                 <div><span className="text-muted-foreground block text-[10px]">Assigned Chair / Station</span><span className="font-semibold text-primary">{a.chairName || "Not Assigned"}</span></div>
                 <div><span className="text-muted-foreground block text-[10px]">Start Time</span><span className="font-medium">{startTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
                 <div><span className="text-muted-foreground block text-[10px]">Est. Finish Time</span><span className="font-semibold text-primary">{endTime ? endTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</span></div>
                 <div><span className="text-muted-foreground block text-[10px]">Date</span><span className="font-medium">{startTime.toLocaleDateString()}</span></div>
                 <div><span className="text-muted-foreground block text-[10px]">Duration</span><span className="font-medium">{totalDuration} minutes</span></div>
-                <div><span className="text-muted-foreground block text-[10px]">Booking Status</span><span className="font-medium capitalize">{a.status}</span></div>
+                <div><span className="text-muted-foreground block text-[10px]">Booking Status</span><span className="font-medium capitalize">{effectiveStatus === "checkedin" ? "In Service" : effectiveStatus}</span></div>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
@@ -827,6 +1245,24 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
           <div className="space-y-1.5 text-xs">
             <div className="flex justify-between"><span className="text-muted-foreground">Total Service Duration:</span><span className="font-medium">{totalDuration} min</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Services Subtotal:</span><span className="font-mono font-semibold">{fmt(totalPrice)}</span></div>
+            {(() => {
+              const showDiscount = discountAmount > 0 || (a as any).couponDiscount > 0 || (a as any).discount > 0 || (a as any).coupon_discount > 0;
+              if (!showDiscount) return null;
+
+              return (
+                <div className="flex justify-between items-center text-emerald-600 dark:text-emerald-400 font-medium">
+                  <span className="flex items-center gap-1.5">
+                    <span>Coupon Discount ({activeCouponCode}):</span>
+                    {activeDiscountDesc && (
+                      <Badge variant="outline" className="rounded-full text-[10px] bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 font-bold px-2 py-0">
+                        {activeDiscountDesc}
+                      </Badge>
+                    )}
+                  </span>
+                  <span className="font-mono font-bold">-{fmt(discountAmount)}</span>
+                </div>
+              );
+            })()}
             <div className="flex justify-between text-muted-foreground">
               <span>GST / Service Tax ({taxPct}%):</span>
               <span className="font-mono font-medium">{fmt(taxAmount)}</span>
@@ -838,22 +1274,11 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
         </div>
 
           {/* NOTES & PREFERENCES SECTION */}
-          <div className="rounded-2xl border bg-card p-4 space-y-2 shadow-xs">
-            <Label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Appointment Notes & Preferences</Label>
-            <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} className="mt-1 text-xs" disabled={paid} placeholder="Allergies, client preferences, referral details…" />
-            {!paid && (
-              <div className="mt-2 flex justify-end">
-                <Button size="sm" variant="outline" className="rounded-full h-8 text-xs" onClick={saveNotes}>
-                  Save Notes
-                </Button>
-              </div>
-            )}
-          </div>
-
+        
           {/* ACTION BUTTONS */}
           {!paid && (
             <div className="flex flex-wrap items-center gap-2 pt-2">
-              {a.status === "pending" && (
+              {effectiveStatus === "pending" && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -863,7 +1288,7 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
                   <LogIn className="mr-1.5 h-4 w-4" /> Check In (Customer Arrived)
                 </Button>
               )}
-              {a.status === "checkedin" && (
+              {effectiveStatus === "checkedin" && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -873,7 +1298,7 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
                   <CheckCircle2 className="mr-1.5 h-4 w-4" /> Mark completed
                 </Button>
               )}
-              {a.status === "completed" && (
+              {effectiveStatus === "completed" && (
                 <Button
                   size="sm"
                   className="rounded-full gradient-brand text-primary-foreground"
@@ -882,14 +1307,14 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
                   <CreditCard className="mr-1.5 h-4 w-4" /> Collect payment
                 </Button>
               )}
-              {a.status !== "completed" && (
+              {a.status !== "cancelled" && (
                 <Button
                   size="sm"
-                  variant="ghost"
-                  className="rounded-full text-destructive"
-                  onClick={() => setStatus("cancelled")}
+                  variant="outline"
+                  className="rounded-full text-destructive border-destructive/30 hover:bg-destructive/10 font-semibold"
+                  onClick={() => setCancelConfirmOpen(true)}
                 >
-                  <XCircle className="mr-1.5 h-4 w-4" /> Cancel
+                  <XCircle className="mr-1.5 h-4 w-4 text-destructive" /> Cancel Appointment
                 </Button>
               )}
             </div>
@@ -1004,6 +1429,44 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
                 </Badge>
               </div>
 
+              {/* EXISTING CUSTOMER LOYALTY RECOGNITION BANNER */}
+              {(customerObj || a.customerName) && (() => {
+                const cName = customerObj?.name || a.customerName || "Valued Client";
+                const currentPts = (customerObj as any)?.points ?? (customerObj as any)?.loyalty_points ?? (customerObj?.raw as any)?.loyalty_points ?? 0;
+                const earnedPts = Math.floor(grandTotal / 10);
+                const totalAfter = currentPts + earnedPts;
+
+                return (
+                  <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 dark:bg-emerald-950/20 p-3.5 space-y-2.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="font-bold text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-1.5">
+                        <span>👋</span> Welcome Back, {cName}!
+                      </div>
+                      <span className="bg-emerald-600 text-white rounded-full text-[10px] px-2.5 py-0.5 font-bold shadow-2xs">
+                        Existing Customer
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-center pt-1 border-t border-emerald-500/20">
+                      <div className="bg-card/70 dark:bg-card/40 p-2 rounded-xl border border-emerald-500/20">
+                        <span className="text-[10px] text-muted-foreground block font-medium">Current Points</span>
+                        <span className="font-mono font-bold text-xs text-foreground">{currentPts} pts</span>
+                      </div>
+
+                      <div className="bg-card/70 dark:bg-card/40 p-2 rounded-xl border border-emerald-500/20">
+                        <span className="text-[10px] text-muted-foreground block font-medium">Earned Today</span>
+                        <span className="font-mono font-bold text-xs text-emerald-600 dark:text-emerald-400">+{earnedPts} pts</span>
+                      </div>
+
+                      <div className="bg-card/70 dark:bg-card/40 p-2 rounded-xl border border-emerald-500/20">
+                        <span className="text-[10px] text-muted-foreground block font-medium">After Payment</span>
+                        <span className="font-mono font-extrabold text-xs text-emerald-700 dark:text-emerald-300">{totalAfter} pts</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* APPOINTMENT & CUSTOMER SUMMARY GRID */}
               <div className="rounded-xl border bg-muted/20 p-3 space-y-2 text-xs">
                 <div className="grid grid-cols-2 gap-2 border-b pb-2">
@@ -1055,6 +1518,12 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
                   <span className="text-muted-foreground">Services Subtotal:</span>
                   <span className="font-mono font-semibold">{fmt(totalPrice)}</span>
                 </div>
+                {discountAmount > 0 && (
+                  <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
+                    <span>Coupon Discount ({appliedCoupon?.coupon?.code}):</span>
+                    <span className="font-mono font-bold">-{fmt(discountAmount)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-muted-foreground">
                   <span>GST / Service Tax ({taxPct}%):</span>
                   <span className="font-mono">{fmt(taxAmount)}</span>
@@ -1074,6 +1543,78 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
                     <span className="text-foreground">Remaining Balance:</span>
                     <span className="font-mono text-primary">{fmt(remainingBalance)}</span>
                   </div>
+                )}
+              </div>
+
+              {/* SALON PROMO CODE / COUPON INTEGRATION */}
+              <div className="rounded-xl border bg-card p-3 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold flex items-center gap-1.5">
+                    <Tag className="h-3.5 w-3.5 text-primary" /> Promo Code / Coupon
+                  </Label>
+                  {appliedCoupon?.valid && (
+                    <Badge variant="outline" className="rounded-full text-[10px] bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 font-bold">
+                      ✓ {appliedCoupon.coupon?.code} Applied
+                    </Badge>
+                  )}
+                </div>
+
+                {!appliedCoupon?.valid ? (
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Input
+                        placeholder="Enter coupon code (e.g. WELCOME10)"
+                        value={couponCode}
+                        onChange={(e) => {
+                          setCouponCode(e.target.value.toUpperCase());
+                          if (couponError) setCouponError(null);
+                        }}
+                        className="rounded-xl text-xs uppercase font-mono h-9"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleApplyCoupon();
+                          }
+                        }}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-xl h-9 text-xs font-semibold px-4 border-primary text-primary hover:bg-primary/10"
+                      onClick={handleApplyCoupon}
+                      disabled={isValidatingCoupon || !couponCode.trim()}
+                    >
+                      {isValidatingCoupon ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : "Apply"}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs">
+                    <div className="min-w-0 pr-2">
+                      <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300 block">
+                        {appliedCoupon.coupon?.code}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground truncate block">
+                        {appliedCoupon.reason || `Savings of ${fmt(discountAmount)}`}
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-destructive hover:bg-destructive/10 rounded-lg shrink-0"
+                      onClick={handleRemoveCoupon}
+                    >
+                      <X className="h-3.5 w-3.5 mr-1" /> Remove
+                    </Button>
+                  </div>
+                )}
+
+                {couponError && (
+                  <p className="text-[11px] text-destructive font-medium flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3 text-destructive" /> {couponError}
+                  </p>
                 )}
               </div>
 
@@ -1243,10 +1784,16 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
 
               {/* PAYMENT SUMMARY */}
               <div className="rounded-2xl border bg-card p-4 text-xs space-y-1.5">
-                <div className="flex justify-between text-muted-foreground"><span>Subtotal:</span><span className="font-mono font-medium">{fmt(totalPrice)}</span></div>
+                <div className="flex justify-between text-muted-foreground"><span>Services Subtotal:</span><span className="font-mono font-medium">{fmt(totalPrice)}</span></div>
+                {discountAmount > 0 && (
+                  <div className="flex justify-between items-center text-emerald-600 font-medium">
+                    <span>Coupon Applied ({activeCouponCode} - {activeDiscountDesc}):</span>
+                    <span className="font-mono font-bold">-{fmt(discountAmount)}</span>
+                  </div>
+                )}
                 {taxPct > 0 && <div className="flex justify-between text-muted-foreground"><span>Tax ({taxPct}% GST):</span><span className="font-mono">{fmt(taxAmount)}</span></div>}
                 {advancePaid > 0 && <div className="flex justify-between text-emerald-600"><span>Advance Paid:</span><span className="font-mono">-{fmt(advancePaid)}</span></div>}
-                <div className="flex justify-between border-t pt-2 font-bold text-sm"><span>Grand Total:</span><span className="font-mono text-primary">{fmt(grandTotal - advancePaid)}</span></div>
+                <div className="flex justify-between border-t pt-2 font-bold text-sm"><span>Grand Total Paid:</span><span className="font-mono text-primary">{fmt(grandTotal - advancePaid)}</span></div>
                 <div className="flex justify-between text-[11px] text-muted-foreground pt-1"><span>Payment Method:</span><span className="font-semibold uppercase">{payment}</span></div>
               </div>
 
@@ -1389,6 +1936,17 @@ export function AppointmentDetailSheet({ appt, open, onOpenChange }: { appt: App
           confirmLabel="Remove"
           destructive
           onConfirm={handleConfirmRemoveService}
+        />
+
+        {/* CANCEL APPOINTMENT CONFIRMATION DIALOG */}
+        <ConfirmDialog
+          open={cancelConfirmOpen}
+          onOpenChange={setCancelConfirmOpen}
+          title="Cancel Appointment & Release Workstation?"
+          description={`Are you sure you want to cancel appointment #${apptCode(a)} for ${a.customerName}? If a workstation is currently assigned, it will be released back to Available.`}
+          confirmLabel="Yes, Cancel Appointment"
+          destructive
+          onConfirm={handleConfirmCancel}
         />
 
         {/* ADD EXTRA SERVICE MODAL */}

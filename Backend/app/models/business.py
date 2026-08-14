@@ -98,6 +98,12 @@ class Business(BaseModel):
     )
     
     business_type = relationship("BusinessType")
+
+    @property
+    def type(self) -> str:
+        if self.business_type and self.business_type.name:
+            return self.business_type.name.upper()
+        return "RESTAURANT"
     subscription_plan = relationship("SubscriptionPlan")
     users = relationship(
         "User",

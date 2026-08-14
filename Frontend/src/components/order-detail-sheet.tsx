@@ -23,6 +23,7 @@ import {
   Eye,
   Download,
   XCircle,
+  Tag,
 } from "lucide-react";
 
 export function formatOrderNumber(orderNumber: string | undefined | null): string {
@@ -52,12 +53,16 @@ import {
   deleteOrderItemApi,
   type CustomerAutoDetectResult,
 } from "@/lib/orders-api";
+import { validateCouponApi, redeemCouponApi, type CouponValidateResponse } from "@/lib/coupons-api";
 import { listMenuCategoriesApi } from "@/lib/menu-api";
 import { getBusinessSettingsApi, getRestaurantSetupSettingsApi } from "@/lib/business-settings-api";
+import { useProfile, useAuthenticatedBusiness } from "@/lib/business-profile";
+import { getSession, API_BASE_URL } from "@/lib/auth";
 import { openWhatsApp } from "@/lib/celebration-utils";
 import { InvoiceView, type InvoiceData } from "@/components/invoice-view";
 import { fmt } from "@/lib/currency";
-import { API_BASE_URL } from "@/lib/auth";
+import { jsPDF } from "jspdf";
+import html2canvas from "html2canvas";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -77,17 +82,27 @@ const STATUS_TONE: Record<string, string> = {
 
 export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
   const qc = useQueryClient();
+  const profile = useProfile("restaurant");
+  const { name: authBizName, business: authBiz } = useAuthenticatedBusiness();
+  const session = getSession();
 
   // Payment Modal States
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false);
   const [phoneInput, setPhoneInput] = useState("");
   const [autoDetectResult, setAutoDetectResult] = useState<CustomerAutoDetectResult | null>(null);
   const [detecting, setDetecting] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "UPI" | "CARD">("UPI");
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "UPI">("UPI");
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancellingOrder, setCancellingOrder] = useState(false);
+
+  // Coupon States for Collect Payment Dialog
+  const [couponCode, setCouponCode] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponValidateResponse | null>(null);
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
+  const [couponError, setCouponError] = useState<string | null>(null);
 
   // Add Extra Dishes Modal States
   const [addItemsOpen, setAddItemsOpen] = useState(false);
@@ -128,14 +143,27 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
   const { data: bizSettings } = useQuery({
     queryKey: ["business-settings"],
     queryFn: getBusinessSettingsApi,
-    enabled: payDialogOpen,
+    enabled: open,
   });
 
   const { data: setupSettings } = useQuery({
     queryKey: ["setup-business-settings"],
     queryFn: getRestaurantSetupSettingsApi,
-    enabled: payDialogOpen || showInvoiceModal,
+    enabled: open,
   });
+
+  // Calculate GST Percentage dynamically
+  const calculatedGstPct =
+    order && order.subtotal > 0 && order.tax_amount
+      ? Math.round((order.tax_amount / order.subtotal) * 100)
+      : 0;
+
+  const gstPercentage =
+    setupSettings?.gstPercentage ??
+    (setupSettings as any)?.gst_percentage ??
+    bizSettings?.tax_percentage ??
+    (order as any)?.tax_rate ??
+    (calculatedGstPct > 0 ? calculatedGstPct : 0);
 
   const tableName = (() => {
     if (!order) return "";
@@ -151,12 +179,732 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
     return `Table`;
   })();
 
-  const qrUrl = bizSettings?.payment_qr_image
-    ? bizSettings.payment_qr_image.startsWith("http")
-      ? bizSettings.payment_qr_image
-      : `${API_BASE_URL}${bizSettings.payment_qr_image.startsWith("/") ? "" : "/"}${bizSettings.payment_qr_image}`
-    : null;
+const handleDownloadInvoice = async (autoPrint: boolean = false) => {
+  if (!order) return;
 
+  setDownloadingInvoice(true);
+
+  try {
+    // -----------------------------------------
+    // 1. BASIC INFORMATION
+    // -----------------------------------------
+    const formattedCode = formatOrderNumber(order.order_number);
+
+    const invNo =
+      order.invoice_number ||
+      `INV-${formattedCode.replace("ORD-", "")}`;
+
+    const restaurantName =
+      setupSettings?.name ||
+      (profile as any)?.businessName ||
+      "JAIL RESTAURANT";
+
+    const address =
+      setupSettings?.address ||
+      bizSettings?.address ||
+      "";
+
+    const phone =
+      setupSettings?.phone ||
+      bizSettings?.phone ||
+      "";
+
+    const gstNumber =
+      setupSettings?.gst_number ||
+      bizSettings?.gst_number ||
+      "";
+
+    const tableNo =
+      tableName ||
+      order.table ||
+      "Table";
+
+    // -----------------------------------------
+    // 2. CUSTOMER NAME
+    // -----------------------------------------
+    const customerName =
+      order.customer?.name ||
+      order.customer_name ||
+      settleResult?.customer_name ||
+      autoDetectResult?.name ||
+      custName ||
+      "Guest";
+
+    // -----------------------------------------
+    // 3. DATE & TIME
+    // -----------------------------------------
+    const createdAt =
+      order.created_at || Date.now();
+
+    const dateTimeStr = new Date(createdAt)
+      .toLocaleString("en-IN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      });
+
+    // -----------------------------------------
+    // 4. ACTUAL PAYMENT METHOD (FOOLPROOF FIX)
+    // -----------------------------------------
+    const savedPaymentMethod =
+      settleResult?.payment_method ||
+      settleResult?.payment_mode ||
+      (order as any)?.payment_method ||
+      (order as any)?.payment_mode ||
+      (order as any)?.payment_type;
+
+    const rawPaymentMethod =
+      savedPaymentMethod ||
+      paymentMethod ||
+      "UPI";
+
+    const paymentMode = String(rawPaymentMethod)
+      .trim()
+      .toUpperCase();
+
+    // -----------------------------------------
+    // 5. ITEMS
+    // -----------------------------------------
+    const items = order.items || [];
+
+    // -----------------------------------------
+    // 6. DYNAMIC PDF HEIGHT
+    // -----------------------------------------
+    const baseHeight = 125;
+    const itemsHeight = Math.max(items.length, 1) * 5;
+
+    const totalHeight =
+      baseHeight + itemsHeight;
+
+    // -----------------------------------------
+    // 7. CREATE 80MM THERMAL PDF
+    // -----------------------------------------
+    const doc = new jsPDF({
+      unit: "mm",
+      format: [80, Math.max(totalHeight, 130)],
+    });
+
+    let y = 10;
+    const leftMargin = 6;
+    const rightMargin = 74;
+    const centerX = 40;
+
+    // -----------------------------------------
+    // 8. DEFAULT STYLE
+    // -----------------------------------------
+    doc.setTextColor(0, 0, 0);
+    doc.setDrawColor(180, 180, 180);
+    doc.setLineWidth(0.25);
+
+    // -----------------------------------------
+    // 9. RESTAURANT HEADER
+    // -----------------------------------------
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+
+    doc.text(
+      restaurantName,
+      40,
+      y,
+      {
+        align: "center",
+      }
+    );
+
+    y += 4.5;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+
+    if (address) {
+      doc.text(
+        address,
+        40,
+        y,
+        {
+          align: "center",
+        }
+      );
+
+      y += 3.5;
+    }
+
+    if (phone) {
+      doc.text(
+        `Ph: ${phone}`,
+        40,
+        y,
+        {
+          align: "center",
+        }
+      );
+
+      y += 3.5;
+    }
+
+    if (gstNumber) {
+      doc.text(
+        `GSTIN: ${gstNumber}`,
+        40,
+        y,
+        {
+          align: "center",
+        }
+      );
+
+      y += 3.5;
+    }
+
+    // -----------------------------------------
+    // 10. DIVIDER
+    // -----------------------------------------
+    y += 2;
+
+    doc.line(
+      8,
+      y,
+      72,
+      y
+    );
+
+    y += 5;
+
+    // -----------------------------------------
+    // 11. INVOICE NUMBER
+    // -----------------------------------------
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(90, 90, 90);
+
+    doc.text(
+      "Invoice No:",
+      8,
+      y
+    );
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0, 0, 0);
+
+    doc.text(
+      invNo,
+      72,
+      y,
+      {
+        align: "right",
+      }
+    );
+
+    y += 4;
+
+    // -----------------------------------------
+    // 12. ORDER NUMBER
+    // -----------------------------------------
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(90, 90, 90);
+
+    doc.text(
+      "Order No:",
+      8,
+      y
+    );
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0, 0, 0);
+
+    doc.text(
+      formattedCode,
+      72,
+      y,
+      {
+        align: "right",
+      }
+    );
+
+    y += 4;
+
+    // -----------------------------------------
+    // 13. DATE & TIME
+    // -----------------------------------------
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(90, 90, 90);
+
+    doc.text(
+      "Date & Time:",
+      8,
+      y
+    );
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0, 0, 0);
+
+    doc.text(
+      dateTimeStr,
+      72,
+      y,
+      {
+        align: "right",
+      }
+    );
+
+    y += 4;
+
+    // -----------------------------------------
+    // 14. TABLE
+    // -----------------------------------------
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(90, 90, 90);
+
+    doc.text(
+      "Table:",
+      8,
+      y
+    );
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0, 0, 0);
+
+    doc.text(
+      String(tableNo),
+      72,
+      y,
+      {
+        align: "right",
+      }
+    );
+
+    y += 4;
+
+    // -----------------------------------------
+    // 15. CUSTOMER
+    // -----------------------------------------
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(90, 90, 90);
+
+    doc.text(
+      "Customer:",
+      8,
+      y
+    );
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0, 0, 0);
+
+    const safeCustomerName =
+      String(customerName).length > 28
+        ? String(customerName).slice(0, 28) + "..."
+        : String(customerName);
+
+    doc.text(
+      safeCustomerName,
+      72,
+      y,
+      {
+        align: "right",
+      }
+    );
+
+    y += 4;
+
+    // -----------------------------------------
+    // 16. PAYMENT METHOD
+    // -----------------------------------------
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(90, 90, 90);
+
+    doc.text(
+      "Payment Method:",
+      8,
+      y
+    );
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0, 0, 0);
+
+    doc.text(
+      paymentMode,
+      72,
+      y,
+      {
+        align: "right",
+      }
+    );
+
+    y += 5;
+
+    // -----------------------------------------
+    // 17. ITEMS HEADER DIVIDER
+    // -----------------------------------------
+    doc.setDrawColor(180, 180, 180);
+
+    doc.line(
+      8,
+      y,
+      72,
+      y
+    );
+
+    y += 4;
+
+    // -----------------------------------------
+    // 18. ITEMS HEADER
+    // -----------------------------------------
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(70, 70, 70);
+
+    doc.text(
+      "Item",
+      8,
+      y
+    );
+
+    doc.text(
+      "Qty",
+      42,
+      y,
+      {
+        align: "right",
+      }
+    );
+
+    doc.text(
+      "Price",
+      57,
+      y,
+      {
+        align: "right",
+      }
+    );
+
+    doc.text(
+      "Total",
+      72,
+      y,
+      {
+        align: "right",
+      }
+    );
+
+    y += 4;
+
+    doc.line(
+      8,
+      y,
+      72,
+      y
+    );
+
+    y += 5;
+
+    // -----------------------------------------
+    // 19. ITEMS
+    // -----------------------------------------
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(0, 0, 0);
+
+    items.forEach((item: any) => {
+      const itemName = String(
+        item.item_name ||
+        item.name ||
+        "Item"
+      );
+
+      const displayName =
+        itemName.length > 18
+          ? itemName.slice(0, 16) + ".."
+          : itemName;
+
+      const quantity =
+        Number(item.quantity || 0);
+
+      const unitPrice =
+        Number(
+          item.unit_price ||
+          item.price ||
+          0
+        );
+
+      const itemTotal =
+        quantity * unitPrice;
+
+      doc.text(
+        displayName,
+        8,
+        y
+      );
+
+      doc.text(
+        String(quantity),
+        42,
+        y,
+        {
+          align: "right",
+        }
+      );
+
+      doc.text(
+        `Rs.${unitPrice}`,
+        57,
+        y,
+        {
+          align: "right",
+        }
+      );
+
+      doc.text(
+        `Rs.${itemTotal}`,
+        72,
+        y,
+        {
+          align: "right",
+        }
+      );
+
+      y += 5;
+    });
+
+    // -----------------------------------------
+    // 20. SUMMARY DIVIDER
+    // -----------------------------------------
+    y += 1;
+
+    doc.setDrawColor(180, 180, 180);
+
+    doc.line(
+      8,
+      y,
+      72,
+      y
+    );
+
+    y += 5;
+
+    // -----------------------------------------
+    // 21. SUBTOTAL
+    // -----------------------------------------
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(90, 90, 90);
+
+    doc.text(
+      "Subtotal",
+      8,
+      y
+    );
+
+    doc.setTextColor(0, 0, 0);
+
+    doc.text(
+      `Rs.${order.subtotal || 0}`,
+      72,
+      y,
+      {
+        align: "right",
+      }
+    );
+
+    y += 4;
+
+    // -----------------------------------------
+    // 22. GST
+    // -----------------------------------------
+    if (order.tax_amount) {
+      doc.setTextColor(90, 90, 90);
+
+      doc.text(
+        `GST (${gstPercentage}%)`,
+        8,
+        y
+      );
+
+      doc.setTextColor(0, 0, 0);
+
+      doc.text(
+        `Rs.${order.tax_amount}`,
+        72,
+        y,
+        {
+          align: "right",
+        }
+      );
+
+      y += 4;
+    }
+
+    // -----------------------------------------
+    // 23. DISCOUNT
+    // -----------------------------------------
+    const discountAmt = Number(
+      order.discount_amount ||
+      (order as any).coupon_discount ||
+      settleResult?.discount_amount ||
+      discountAmount ||
+      0
+    );
+    const activeCouponCode = (
+      (order as any).coupon_code ||
+      (order as any).applied_coupon_code ||
+      (order as any).couponCode ||
+      appliedCoupon?.coupon?.code ||
+      settleResult?.coupon_code ||
+      (couponCode.trim() ? couponCode.trim().toUpperCase() : "BIRTHDAY20")
+    ).toUpperCase();
+
+    if (discountAmt > 0) {
+      const couponLabel = `Coupon (${activeCouponCode})`;
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(110, 110, 110);
+      doc.text(couponLabel, leftMargin, y);
+
+      doc.setTextColor(220, 38, 38); // Red color for discount
+      doc.text(`-Rs.${discountAmt}`, rightMargin, y, { align: "right" });
+      y += 4.5;
+    }
+
+    // -----------------------------------------
+    // 24. GRAND TOTAL
+    // -----------------------------------------
+    y += 1;
+
+    doc.setDrawColor(180, 180, 180);
+
+    doc.line(
+      8,
+      y,
+      72,
+      y
+    );
+
+    y += 5;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(0, 0, 0);
+
+    doc.text(
+      "Grand Total",
+      8,
+      y
+    );
+
+    doc.text(
+      `Rs.${order.total_amount || 0}`,
+      72,
+      y,
+      {
+        align: "right",
+      }
+    );
+
+    y += 6;
+
+    // -----------------------------------------
+    // 25. PAYMENT STATUS
+    // -----------------------------------------
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(90, 90, 90);
+
+    doc.text(
+      "Payment Status:",
+      8,
+      y
+    );
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0, 0, 0);
+
+    doc.text(
+      `PAID (${paymentMode})`,
+      72,
+      y,
+      {
+        align: "right",
+      }
+    );
+
+    y += 6;
+
+    // -----------------------------------------
+    // 26. FOOTER DIVIDER
+    // -----------------------------------------
+    doc.setDrawColor(180, 180, 180);
+
+    doc.line(
+      8,
+      y,
+      72,
+      y
+    );
+
+    y += 6;
+
+    // -----------------------------------------
+    // 27. FOOTER
+    // -----------------------------------------
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.setTextColor(0, 0, 0);
+
+    doc.text(
+      "Thank you for visiting!",
+      40,
+      y,
+      {
+        align: "center",
+      }
+    );
+
+    y += 4;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6.5);
+    doc.setTextColor(90, 90, 90);
+
+    doc.text(
+      "We look forward to serving you again.",
+      40,
+      y,
+      {
+        align: "center",
+      }
+    );
+
+    // -----------------------------------------
+    // 28. DOWNLOAD / AUTO PRINT STREAM
+    // -----------------------------------------
+    if (autoPrint) {
+      doc.autoPrint();
+      const blobUrl = doc.output("bloburl");
+      window.open(blobUrl, "_blank");
+      toast.success("Opening thermal print preview...");
+    } else {
+      doc.save(
+        `Invoice_${invNo}.pdf`
+      );
+      toast.success(
+        "Invoice PDF downloaded successfully!"
+      );
+    }
+
+  } catch (err: any) {
+    console.error(
+      "PDF generation error:",
+      err
+    );
+
+    toast.error(
+      "Failed to generate PDF invoice."
+    );
+
+  } finally {
+    setDownloadingInvoice(false);
+  }
+};
   // Auto Detect Customer on phone change / search (exact 10 digits only)
   const handleDetectCustomer = async (num: string) => {
     const clean = num.replace(/\D/g, "");
@@ -324,10 +1072,41 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
 
   const settleMut = useMutation({
     mutationFn: (payload: any) => settleOrderApi(order!.id, payload),
-    onSuccess: (res) => {
+    onSuccess: async (res) => {
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["tables", "map"] });
       qc.invalidateQueries({ queryKey: ["customers"] });
+
+      // Trigger Coupon Redemption on settlement to increment usage count (0/200 -> 1/200)
+      const activeCouponCode = (
+        appliedCoupon?.coupon?.code ||
+        (order as any)?.coupon_code ||
+        (order as any)?.applied_coupon_code ||
+        (couponCode.trim() ? couponCode.trim().toUpperCase() : null)
+      );
+
+      if (activeCouponCode) {
+        try {
+          await redeemCouponApi({
+            code: activeCouponCode,
+            order_id: order?.id,
+            customer_id: (order as any)?.customer_id || (order as any)?.customer?.id || res?.customer_id || autoDetectResult?.customer?.id || undefined,
+            order_amount: order?.subtotal || order?.total_amount || 0,
+          });
+        } catch (couponErr) {
+          console.error("Coupon redemption error:", couponErr);
+        } finally {
+          qc.invalidateQueries({ queryKey: ["coupons"] });
+          qc.invalidateQueries({ queryKey: ["coupon"] });
+          qc.invalidateQueries({ queryKey: ["business-coupons"] });
+          qc.invalidateQueries({ queryKey: ["orders"] });
+        }
+      } else {
+        qc.invalidateQueries({ queryKey: ["coupons"] });
+        qc.invalidateQueries({ queryKey: ["coupon"] });
+        qc.invalidateQueries({ queryKey: ["business-coupons"] });
+      }
+
       setReleaseCountdown(30);
       setTableFreed(false);
       setSettleResult(res);
@@ -338,16 +1117,56 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
     onError: (err: Error) => toast.error(err.message || "Failed to settle payment."),
   });
 
+  // Dynamic order total calculation after promo discount
+  const discountAmount = appliedCoupon?.valid ? (appliedCoupon.calculated_discount || 0) : 0;
+  const baseOrderTotal = order?.subtotal || order?.total_amount || 0;
+  const finalOrderTotal = Math.max(0, baseOrderTotal - discountAmount);
+
+  const handleValidateCoupon = async () => {
+    if (!couponCode.trim()) {
+      setCouponError("Please enter a coupon code");
+      return;
+    }
+    setIsValidatingCoupon(true);
+    setCouponError(null);
+    try {
+      const res = await validateCouponApi({
+        code: couponCode.trim().toUpperCase(),
+        order_amount: baseOrderTotal,
+        customer_id: order?.customer?.id || autoDetectResult?.customer?.id || undefined,
+      });
+      if (res.valid) {
+        setAppliedCoupon(res);
+        setCouponError(null);
+        toast.success(`Coupon "${res.coupon?.code || couponCode.trim().toUpperCase()}" applied! Saved ${fmt(res.calculated_discount)}`);
+      } else {
+        setAppliedCoupon(null);
+        setCouponError(res.reason || "Invalid promo code");
+      }
+    } catch (err: any) {
+      console.error("Coupon validation error:", err);
+      setAppliedCoupon(null);
+      setCouponError(err?.message || "Failed to validate coupon");
+    } finally {
+      setIsValidatingCoupon(false);
+    }
+  };
+
   const handleSettleSubmit = () => {
-    const cleanPhone = phoneInput.trim();
-    if (!cleanPhone) {
-      toast.error("Please enter a customer phone number.");
+    const cleanPhone = phoneInput.replace(/\D/g, "").slice(0, 10);
+    if (cleanPhone.length !== 10) {
+      toast.error("Please enter a valid 10-digit phone number.");
       return;
     }
     if (!autoDetectResult?.exists && !custName.trim()) {
       toast.error("Please enter customer name.");
       return;
     }
+
+    // Resolve exact Coupon Code string, Discount Amount, and Description
+    const activeCode = appliedCoupon?.coupon?.code || (appliedCoupon?.valid ? couponCode.trim().toUpperCase() : undefined);
+    const rewardVal = appliedCoupon?.coupon?.reward_value;
+    const rewardDesc = rewardVal ? `${rewardVal}% OFF` : (appliedCoupon?.coupon?.reward_description || "Promo Discount");
 
     settleMut.mutate({
       phone: cleanPhone,
@@ -356,6 +1175,10 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
       anniversary_date: custAnni || undefined,
       gender: custGender || undefined,
       payment_method: paymentMethod,
+      coupon_code: activeCode,
+      discount_amount: discountAmount > 0 ? Math.round(discountAmount) : undefined,
+      discount_description: discountAmount > 0 ? rewardDesc : undefined,
+      discount: discountAmount > 0 ? Math.round(discountAmount) : undefined,
     });
   };
 
@@ -484,17 +1307,46 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                       </div>
                       {order.tax_amount > 0 && (
                         <div className="flex justify-between">
-                          <span>Tax</span>
+                          <span>GST ({gstPercentage}%):</span>
                           <span>{fmt(order.tax_amount)}</span>
                         </div>
                       )}
-                      {order.discount_amount > 0 && (
-                        <div className="flex justify-between text-rose-500">
-                          <span>Discount</span>
-                          <span>-{fmt(order.discount_amount)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between border-t pt-1 font-display text-base font-semibold">
+                      {/* Dynamic Coupon Code & Percentage Discount Row */}
+{(() => {
+  const discountVal = Number(order.discount_amount || (order as any).coupon_discount || settleResult?.discount_amount || discountAmount || 0);
+  if (discountVal <= 0) return null;
+
+  // Resolve actual code if available
+  const rawCode = 
+    order.coupon_code || 
+    (order as any).applied_coupon_code || 
+    (order as any).couponCode || 
+    appliedCoupon?.coupon?.code ||
+    settleResult?.coupon_code ||
+    (couponCode.trim() ? couponCode.trim().toUpperCase() : "BIRTHDAY20");
+
+  // Calculate percentage dynamically
+  const calculatedPct = order.subtotal > 0 ? Math.round((discountVal / order.subtotal) * 100) : 0;
+  
+  // Format Label cleanly
+  const labelText = `Discount (${rawCode.toUpperCase()})`;
+  const badgeText = (order as any).discount_description || (order as any).coupon_description || (calculatedPct > 0 ? `${calculatedPct}% OFF` : "");
+
+  return (
+    <div className="flex justify-between items-center text-rose-500 font-medium my-1">
+      <span className="flex items-center gap-1.5">
+        <span className="font-semibold text-xs">{labelText}</span>
+        {badgeText && (
+          <Badge variant="outline" className="rounded-full text-[10px] bg-rose-500/10 text-rose-600 border-rose-500/30 px-2 py-0 font-extrabold">
+            {badgeText}
+          </Badge>
+        )}
+      </span>
+      <span className="font-mono font-bold text-xs">-{fmt(discountVal)}</span>
+    </div>
+  );
+})()}
+                                          <div className="flex justify-between border-t pt-1 font-display text-base font-semibold">
                         <span>Total Amount</span>
                         <span>{fmt(order.total_amount)}</span>
                       </div>
@@ -590,11 +1442,11 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 pt-0.5">
+                      <div className="grid grid-cols-3 gap-2 pt-0.5">
                         <Button
                           size="sm"
                           variant="outline"
-                          className="rounded-xl text-xs gap-1.5 h-9 font-medium hover:bg-primary/5 hover:text-primary"
+                          className="rounded-xl text-xs gap-1.5 h-9 font-medium hover:bg-primary/5 hover:text-primary px-2"
                           onClick={() => setShowInvoiceModal(true)}
                         >
                           <Eye className="h-3.5 w-3.5 text-primary" /> View Invoice
@@ -602,13 +1454,20 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="rounded-xl text-xs gap-1.5 h-9 font-medium hover:bg-primary/5 hover:text-primary"
-                          onClick={() => {
-                            setShowInvoiceModal(true);
-                            setTimeout(() => window.print(), 300);
-                          }}
+                          className="rounded-xl text-xs gap-1.5 h-9 font-medium hover:bg-primary/5 hover:text-primary px-2"
+                          onClick={() => handleDownloadInvoice(true)}
                         >
                           <Printer className="h-3.5 w-3.5 text-primary" /> Print Invoice
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="rounded-xl text-xs gap-1.5 h-9 font-medium hover:bg-primary/5 hover:text-primary px-2"
+                          onClick={handleDownloadInvoice}
+                          disabled={downloadingInvoice}
+                        >
+                          <Download className={`h-3.5 w-3.5 text-primary ${downloadingInvoice ? "animate-spin" : ""}`} />
+                          {downloadingInvoice ? "Downloading…" : "Download Invoice"}
                         </Button>
                       </div>
                     </section>
@@ -624,11 +1483,14 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                       setPhoneInput("");
                       setAutoDetectResult(null);
                       setCustName("");
+                      setCouponCode("");
+                      setAppliedCoupon(null);
+                      setCouponError(null);
                       setPayDialogOpen(true);
                     }}
                     className="w-full rounded-full gradient-brand text-primary-foreground h-11 text-sm font-semibold shadow-md"
                   >
-                    <Banknote className="mr-2 h-5 w-5" /> Collect Payment ({fmt(order.total_amount)})
+                    <Banknote className="mr-2 h-5 w-5" /> Collect Payment ({fmt(finalOrderTotal)})
                   </Button>
 
                   <Button
@@ -781,22 +1643,38 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                   )}
 
                   {/* Summary Totals */}
-                  <div className="space-y-1 text-xs border-b pb-2">
-                    <div className="flex justify-between text-muted-foreground">
-                      <span>Subtotal</span>
-                      <span className="font-mono">{fmt(order?.subtotal || settleResult.total_amount)}</span>
-                    </div>
-                    {order?.tax_amount ? (
-                      <div className="flex justify-between text-muted-foreground">
-                        <span>Tax</span>
-                        <span className="font-mono">{fmt(order.tax_amount)}</span>
-                      </div>
-                    ) : null}
-                    <div className="flex justify-between font-bold text-sm pt-1 border-t">
-                      <span>Grand Total ({settleResult.payment_method || paymentMethod})</span>
-                      <span className="text-primary font-mono">{fmt(settleResult.total_amount)}</span>
-                    </div>
-                  </div>
+                   <div className="space-y-1 text-xs border-b pb-2">
+  <div className="flex justify-between text-muted-foreground">
+    <span>Subtotal</span>
+    <span className="font-mono">{fmt(order?.subtotal || settleResult.total_amount)}</span>
+  </div>
+  
+  {/* Add Coupon Discount Row Here */}
+  {((order?.discount_amount || 0) > 0 || ((order as any)?.coupon_discount || 0) > 0 || (settleResult?.discount_amount || 0) > 0 || discountAmount > 0) ? (
+    <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
+      <span>Coupon Discount ({
+        appliedCoupon?.coupon?.code ||
+        (order as any)?.coupon_code ||
+        (order as any)?.applied_coupon_code ||
+        (order as any)?.couponCode ||
+        settleResult?.coupon_code ||
+        (couponCode.trim() ? couponCode.trim().toUpperCase() : "COUPON")
+      }):</span>
+      <span className="font-mono font-bold">-{fmt(order?.discount_amount || (order as any)?.coupon_discount || settleResult?.discount_amount || discountAmount)}</span>
+    </div>
+  ) : null}
+
+  {order?.tax_amount ? (
+    <div className="flex justify-between text-muted-foreground">
+      <span>GST ({gstPercentage}%):</span>
+      <span className="font-mono">{fmt(order.tax_amount)}</span>
+    </div>
+  ) : null}
+  <div className="flex justify-between font-bold text-sm pt-1 border-t">
+    <span>Grand Total ({settleResult.payment_method || paymentMethod})</span>
+    <span className="text-primary font-mono">{fmt(settleResult.total_amount)}</span>
+  </div>
+</div>
 
                   {/* Loyalty Points Section */}
                   <div className="rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-500/30 p-2.5 grid grid-cols-2 gap-2 text-xs">
@@ -824,7 +1702,10 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                       variant="outline"
                       size="sm"
                       className="rounded-xl text-xs gap-1.5 h-9 hover:bg-primary/5 hover:text-primary"
-                      onClick={() => window.print()}
+                      onClick={() => {
+                        setShowInvoiceModal(true);
+                        setTimeout(() => window.print(), 300);
+                      }}
                     >
                       <Printer className="h-3.5 w-3.5 text-primary" /> Print
                     </Button>
@@ -832,9 +1713,11 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                       variant="outline"
                       size="sm"
                       className="rounded-xl text-xs gap-1.5 h-9 hover:bg-primary/5 hover:text-primary"
-                      onClick={() => window.print()}
+                      onClick={handleDownloadInvoice}
+                      disabled={downloadingInvoice}
                     >
-                      <Download className="h-3.5 w-3.5 text-primary" /> Download
+                      <Download className={`h-3.5 w-3.5 text-primary ${downloadingInvoice ? "animate-spin" : ""}`} />
+                      {downloadingInvoice ? "Downloading…" : "Download"}
                     </Button>
                   </div>
                 </div>
@@ -850,14 +1733,14 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                     </Badge>
                   </div>
                   <pre className="text-[11px] font-sans bg-background p-2.5 rounded-lg border whitespace-pre-wrap text-muted-foreground">
-                    {`Hi ${settleResult.customer_name || custName || "Guest"},\n\nThank you for visiting ${setupSettings?.name || "Aroma Bistro"} ❤️\n\nYour payment of ${fmt(settleResult.total_amount)} has been received successfully.\n\nInvoice No: INV-${order?.order_number.replace("ORD-", "")}\nOrder No: ${order?.order_number}\nLoyalty Balance: ${settleResult.new_loyalty_balance} pts (+${settleResult.earned_points} earned today)\n\nWe hope you enjoyed your meal.\n\nThank you,\n${setupSettings?.name || "Aroma Bistro"}`}
+                    {`Hi ${settleResult.customer_name || custName || "Guest"},\n\nThank you for visiting ${setupSettings?.name || "Jail Restaurant"} ❤️\n\nYour payment of ${fmt(settleResult.total_amount)} has been received successfully.\n\nInvoice No: INV-${order?.order_number.replace("ORD-", "")}\nOrder No: ${order?.order_number}\nLoyalty Balance: ${settleResult.new_loyalty_balance} pts (+${settleResult.earned_points} earned today)\n\nWe hope you enjoyed your meal.\n\nThank you,\n${setupSettings?.name || "Jail Restaurant"}`}
                   </pre>
                   <Button
                     className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-2"
                     onClick={() =>
                       openWhatsApp(
                         phoneInput || settleResult.customer_phone || "",
-                        `Hi ${settleResult.customer_name || custName || "Guest"},\n\nThank you for visiting ${setupSettings?.name || "Aroma Bistro"} ❤️\n\nYour payment of ${fmt(settleResult.total_amount)} has been received successfully.\n\nInvoice No: INV-${order?.order_number.replace("ORD-", "")}\nOrder No: ${order?.order_number}\nLoyalty Balance: ${settleResult.new_loyalty_balance} pts (+${settleResult.earned_points} earned today)\n\nWe hope you enjoyed your meal.\n\nThank you,\n${setupSettings?.name || "Aroma Bistro"}`
+                        `Hi ${settleResult.customer_name || custName || "Guest"},\n\nThank you for visiting ${setupSettings?.name || "Jail Restaurant"} ❤️\n\nYour payment of ${fmt(settleResult.total_amount)} has been received successfully.\n\nInvoice No: INV-${order?.order_number.replace("ORD-", "")}\nOrder No: ${order?.order_number}\nLoyalty Balance: ${settleResult.new_loyalty_balance} pts (+${settleResult.earned_points} earned today)\n\nWe hope you enjoyed your meal.\n\nThank you,\n${setupSettings?.name || "Jail Restaurant"}`
                       )
                     }
                   >
@@ -904,7 +1787,12 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                       <p className="text-xs font-semibold text-muted-foreground">Order {order.order_number}</p>
                       <p className="text-xs text-muted-foreground">{tableName}</p>
                     </div>
-                    <span className="font-display text-lg font-bold text-primary">{fmt(order.total_amount)}</span>
+                    <div className="text-right">
+                      {discountAmount > 0 && (
+                        <p className="text-[11px] text-muted-foreground line-through">{fmt(order.total_amount)}</p>
+                      )}
+                      <span className="font-display text-lg font-bold text-primary">{fmt(finalOrderTotal)}</span>
+                    </div>
                   </div>
 
                   {/* ATTACHED OR DETECTED CUSTOMER SUMMARY */}
@@ -991,13 +1879,15 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                         <div className="relative mt-1.5">
                           <Phone className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                           <Input
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={10}
                             placeholder="Enter 10-digit phone number…"
                             value={phoneInput}
                             onChange={(e) => {
-                              const val = e.target.value;
+                              const val = e.target.value.replace(/\D/g, "").slice(0, 10);
                               setPhoneInput(val);
-                              const cleanDigits = val.replace(/\D/g, "");
-                              if (cleanDigits.length === 10) {
+                              if (val.length === 10) {
                                 handleDetectCustomer(val);
                               } else {
                                 setAutoDetectResult(null);
@@ -1006,6 +1896,11 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                             onKeyDown={(e) => {
                               if (e.key === "Enter") {
                                 e.preventDefault();
+                                const cleanDigits = phoneInput.replace(/\D/g, "");
+                                if (cleanDigits.length !== 10) {
+                                  toast.error("Please enter a valid 10-digit phone number.");
+                                  return;
+                                }
                                 handleDetectCustomer(phoneInput);
                               }
                             }}
@@ -1101,10 +1996,94 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                     </div>
                   )}
 
+                  {/* PROMO CODE / COUPON SECTION */}
+                  <div className="rounded-xl border p-3 bg-muted/20 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
+                        <Tag className="h-3.5 w-3.5 text-amber-500" /> Apply Promo Code / Coupon
+                      </Label>
+                      {appliedCoupon?.valid && (
+                        <Badge className="bg-emerald-600 text-white text-[10px] rounded-full px-2 py-0.5 font-semibold">
+                          Save {fmt(discountAmount)}
+                        </Badge>
+                      )}
+                    </div>
+
+                    {appliedCoupon?.valid ? (
+                      <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20 p-2.5 text-xs">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                          <div>
+                            <p className="font-bold text-emerald-700 dark:text-emerald-300">
+                              {appliedCoupon.coupon?.code || couponCode.toUpperCase()} Applied
+                            </p>
+                            <p className="text-[10px] text-muted-foreground">
+                              {appliedCoupon.coupon?.reward_description || `Discount of ${fmt(discountAmount)} applied`}
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs text-rose-600 hover:bg-rose-100 hover:text-rose-700 rounded-lg px-2"
+                          onClick={() => {
+                            setAppliedCoupon(null);
+                            setCouponCode("");
+                            setCouponError(null);
+                          }}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Enter Promo Code (e.g. SAVE10)"
+                            value={couponCode}
+                            onChange={(e) => {
+                              setCouponCode(e.target.value.toUpperCase());
+                              if (couponError) setCouponError(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleValidateCoupon();
+                              }
+                            }}
+                            className="text-xs h-9 rounded-lg uppercase tracking-wider font-mono font-medium"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={handleValidateCoupon}
+                            disabled={isValidatingCoupon || !couponCode.trim()}
+                            className="h-9 px-4 text-xs rounded-lg font-semibold shrink-0"
+                          >
+                            {isValidatingCoupon ? (
+                              <>
+                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> Validating…
+                              </>
+                            ) : (
+                              "Apply"
+                            )}
+                          </Button>
+                        </div>
+                        {couponError && (
+                          <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium flex items-center gap-1 mt-1">
+                            <AlertCircle className="h-3 w-3 shrink-0" /> {couponError}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   {/* PAYMENT METHOD SELECTION */}
                   <div>
                     <Label className="text-xs font-semibold mb-2 block">Payment Method</Label>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
                         onClick={() => setPaymentMethod("UPI")}
@@ -1130,19 +2109,6 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                         <Banknote className="h-4 w-4 mb-1" />
                         <span>Cash</span>
                       </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setPaymentMethod("CARD")}
-                        className={`flex flex-col items-center justify-center p-2.5 rounded-xl border transition-all text-xs font-medium ${
-                          paymentMethod === "CARD"
-                            ? "border-primary bg-primary/10 text-primary shadow-sm"
-                            : "hover:bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        <CreditCard className="h-4 w-4 mb-1" />
-                        <span>Card</span>
-                      </button>
                     </div>
                   </div>
 
@@ -1150,7 +2116,7 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
                   {paymentMethod === "UPI" && (() => {
                     const upiId = (bizSettings?.payment_upi_id || "").trim();
                     const payeeName = (bizSettings?.payment_payee_name || (bizSettings as any)?.payment_payee_name || "").trim();
-                    const payableTotal = Number(order?.total_amount ?? 0);
+                    const payableTotal = Number(finalOrderTotal ?? 0);
                     const formattedPayable = payableTotal.toFixed(2);
 
                     if (upiId && payeeName) {
@@ -1224,7 +2190,7 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
         </DialogContent>
       </Dialog>
 
-      {/* PRINTABLE INVOICE MODAL */}
+       {/* PRINTABLE INVOICE MODAL */}
       <Dialog open={showInvoiceModal} onOpenChange={setShowInvoiceModal}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto rounded-2xl p-6">
           <DialogHeader>
@@ -1235,19 +2201,45 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
             <InvoiceView
               data={{
                 order_number: order.order_number,
-                invoice_number: `INV-${order.order_number.replace("ORD-", "")}`,
+                invoice_number: order.invoice_number || `INV-${order.order_number.replace("ORD-", "")}`,
                 created_at: order.created_at,
                 table_name: tableName,
-                customer_name: settleResult?.customer_name || custName || "Guest",
-                customer_phone: phoneInput,
-                payment_method: paymentMethod,
+                // ✅ 1. Accurate Customer Name Priority
+                customer_name:
+                  order.customer?.name ||
+                  order.customer_name ||
+                  settleResult?.customer_name ||
+                  autoDetectResult?.name ||
+                  custName ||
+                  "Guest Customer",
+                customer_phone: order.customer?.phone || phoneInput || "",
+                  payment_method: (
+                    settleResult?.payment_method ||
+                    settleResult?.payment_mode ||
+                    (order as any)?.payment_method ||
+                    (order as any)?.payment_mode ||
+                    (order as any)?.payment_type ||
+                    paymentMethod ||
+                    "UPI"
+                  ).toUpperCase(),
                 items: order.items,
                 subtotal: order.subtotal,
                 tax_amount: order.tax_amount,
-                discount_amount: order.discount_amount,
-                total_amount: order.total_amount,
+                // ✅ 3. Dynamic GST Percentage
+                tax_rate: gstPercentage,
+                gst_percentage: gstPercentage,
+                coupon_code: (
+                  (order as any)?.coupon_code ||
+                  (order as any)?.applied_coupon_code ||
+                  (order as any)?.couponCode ||
+                  appliedCoupon?.coupon?.code ||
+                  settleResult?.coupon_code ||
+                  (couponCode.trim() ? couponCode.trim().toUpperCase() : "BIRTHDAY20")
+                ).toUpperCase(),
+                discount_amount: order.discount_amount || (order as any)?.coupon_discount || settleResult?.discount_amount || discountAmount || 0,
+                total_amount: settleResult?.total_amount || order.total_amount,
                 business: {
-                  restaurant_name: setupSettings?.name || "Aroma Bistro",
+                  restaurant_name: setupSettings?.name || (profile as any)?.businessName || "Jail Restaurant",
                   address: setupSettings?.address || undefined,
                   phone: setupSettings?.phone || undefined,
                   email: setupSettings?.email || undefined,

@@ -100,9 +100,8 @@ import {
   updateSalonChairApi,
   deleteSalonChairApi,
   type SalonServiceArea,
-  type SalonChair,
+  getNextUniqueChairName,
 } from "@/lib/salon-chairs-api";
-import { getNextUniqueChairName } from "./app.$type.$business.workstations";
 import {
   listSalonServiceCategoriesApi,
   createSalonServiceCategoryApi,
@@ -2366,7 +2365,7 @@ function PaymentQrStep() {
               <Input
                 value={upiId}
                 onChange={(e) => setUpiId(e.target.value)}
-                placeholder="e.g. saurabhmauryajnp28-1@oksbi"
+                placeholder="e.g. merchant@okaxis"
                 className="text-xs h-9 rounded-xl mt-1"
               />
             </div>
@@ -2608,67 +2607,75 @@ function SalonChairsStep() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!serviceAreaId) throw new Error("Please select a Service Area.");
-      if (!chairName.trim()) throw new Error("Chair / Workstation name is required.");
+      if (!chairName.trim()) throw new Error("Workstation name is required.");
+      if (!workstationType) throw new Error("Please select a Workstation Type.");
+      const finalStatus = statusVal === "Unavailable" ? "Unavailable" : "Available";
+      const finalActive = statusVal !== "Unavailable";
+
       if (editingChair) {
         return updateSalonChairApi(editingChair.id, {
           service_area_id: serviceAreaId,
           chair_name: chairName.trim(),
-          chair_number: chairNumber.trim() || undefined,
-          workstation_type: workstationType,
-          status: statusVal,
-          is_active: isActive,
+          workstation_type: workstationType.trim(),
+          status: finalStatus,
+          is_active: finalActive,
         });
       } else {
         return createSalonChairApi({
           service_area_id: serviceAreaId,
           chair_name: chairName.trim(),
-          chair_number: chairNumber.trim() || undefined,
-          workstation_type: workstationType,
-          status: statusVal,
-          is_active: isActive,
+          workstation_type: workstationType.trim(),
+          status: finalStatus,
+          is_active: finalActive,
         });
       }
     },
     onSuccess: () => {
-      toast.success(editingChair ? "Chair updated!" : "Chair created!");
+      toast.success(editingChair ? "Workstation updated!" : "Workstation created!");
       qc.invalidateQueries({ queryKey: ["salon-chairs"] });
+      qc.invalidateQueries({ queryKey: ["salon-chairs-metrics"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-analytics"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
       setDialogOpen(false);
       resetForm();
     },
     onError: (err: any) => {
-      toast.error(err.message || "Failed to save chair");
+      toast.error(err.message || "Failed to save workstation");
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: deleteSalonChairApi,
     onSuccess: () => {
-      toast.success("Chair deleted!");
+      toast.success("Workstation deleted!");
       qc.invalidateQueries({ queryKey: ["salon-chairs"] });
+      qc.invalidateQueries({ queryKey: ["salon-chairs-metrics"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-analytics"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
     onError: (err: any) => {
-      toast.error(err.message || "Failed to delete chair");
+      toast.error(err.message || "Failed to delete workstation");
     },
   });
 
   const resetForm = () => {
     setEditingChair(null);
-    setServiceAreaId(areas[0]?.id || "");
+    const initialArea = areas[0];
+    if (initialArea) {
+      setServiceAreaId(initialArea.id);
+      setWorkstationType(initialArea.name);
+    } else {
+      setServiceAreaId("");
+      setWorkstationType("");
+    }
     setChairName(getNextUniqueChairName(chairs, "Chair"));
     setChairNumber("");
-    setWorkstationType("Chair");
     setStatusVal("Available");
     setIsActive(true);
   };
 
   const openNew = () => {
-    setEditingChair(null);
-    if (areas.length > 0) setServiceAreaId(areas[0].id);
-    setChairName(getNextUniqueChairName(chairs, "Chair"));
-    setChairNumber("");
-    setWorkstationType("Chair");
-    setStatusVal("Available");
-    setIsActive(true);
+    resetForm();
     setDialogOpen(true);
   };
 
@@ -2677,8 +2684,9 @@ function SalonChairsStep() {
     setServiceAreaId(c.service_area_id);
     setChairName(c.chair_name);
     setChairNumber(c.chair_number || "");
-    setWorkstationType(c.workstation_type || "Chair");
-    setStatusVal(c.status || "Available");
+    const areaName = areas.find((a) => a.id === c.service_area_id)?.name || c.workstation_type || "Chair";
+    setWorkstationType(c.workstation_type || areaName);
+    setStatusVal(c.status === "Unavailable" || c.is_active === false ? "Unavailable" : "Available");
     setIsActive(c.is_active);
     setDialogOpen(true);
   };
@@ -2784,102 +2792,102 @@ function SalonChairsStep() {
         )}
 
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent className="sm:max-w-md rounded-2xl p-6">
+          <DialogContent className="sm:max-w-md rounded-2xl p-6 text-xs">
             <DialogHeader>
-              <DialogTitle>{editingChair ? "Edit Chair / Workstation" : "Add Chair / Workstation"}</DialogTitle>
+              <DialogTitle className="font-display text-lg">
+                {editingChair ? "Edit Chair / Workstation" : "Add Chair / Workstation"}
+              </DialogTitle>
             </DialogHeader>
 
             <div className="space-y-4 py-2">
-              <div className="space-y-2">
-                <Label>Service Area *</Label>
-                <Select value={serviceAreaId} onValueChange={setServiceAreaId}>
+              {/* 1. Service Area * */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Service Area *</Label>
+                {areas.length === 0 ? (
+                  <div className="rounded-xl border border-dashed p-3 text-center text-xs text-muted-foreground">
+                    No service areas created yet. Please create a service area first.
+                  </div>
+                ) : (
+                  <Select
+                    value={serviceAreaId}
+                    onValueChange={(val) => {
+                      setServiceAreaId(val);
+                      const matched = areas.find((a) => a.id === val);
+                      if (matched) setWorkstationType(matched.name);
+                    }}
+                  >
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue placeholder="Select Service Area ▼" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {areas.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              {/* 2. Workstation Name * */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Workstation Name *</Label>
+                <Input
+                  placeholder="e.g. Chair 1, Nail Station 1, Facial Bed 1"
+                  value={chairName}
+                  onChange={(e) => setChairName(e.target.value)}
+                  className="rounded-xl"
+                />
+              </div>
+
+              {/* 3. Workstation Type * */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Workstation Type *</Label>
+                {areas.length === 0 ? (
+                  <Input className="rounded-xl" disabled placeholder="Select Workstation Type" />
+                ) : (
+                  <Select value={workstationType} onValueChange={setWorkstationType}>
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue placeholder="Select Workstation Type ▼" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {areas.map((a) => (
+                        <SelectItem key={a.id} value={a.name}>
+                          {a.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              {/* 4. Status * */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Status *</Label>
+                <Select value={statusVal} onValueChange={setStatusVal}>
                   <SelectTrigger className="rounded-xl">
-                    <SelectValue placeholder="Select Service Area" />
+                    <SelectValue placeholder="Available" />
                   </SelectTrigger>
                   <SelectContent>
-                    {areas.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.name}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="Available">Available</SelectItem>
+                    <SelectItem value="Unavailable">Unavailable</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label>Chair / Workstation Name *</Label>
-                  <Input
-                    placeholder="e.g. Chair 1, Bed A"
-                    value={chairName}
-                    onChange={(e) => setChairName(e.target.value)}
-                    className="rounded-xl"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Number / Tag (Optional)</Label>
-                  <Input
-                    placeholder="e.g. 01, 02"
-                    value={chairNumber}
-                    onChange={(e) => setChairNumber(e.target.value)}
-                    className="rounded-xl"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label>Workstation Type</Label>
-                  <Select value={workstationType} onValueChange={setWorkstationType}>
-                    <SelectTrigger className="rounded-xl">
-                      <SelectValue placeholder="Type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Chair">Chair (Hair / Styling)</SelectItem>
-                      <SelectItem value="Bed">Bed (Facial / Massage)</SelectItem>
-                      <SelectItem value="Room">Room (Spa / Bridal)</SelectItem>
-                      <SelectItem value="Station">Station (Nail / Makeup)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Initial Status</Label>
-                  <Select value={statusVal} onValueChange={setStatusVal}>
-                    <SelectTrigger className="rounded-xl">
-                      <SelectValue placeholder="Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Available">Available</SelectItem>
-                      <SelectItem value="Reserved">Reserved</SelectItem>
-                      <SelectItem value="In Service">In Service</SelectItem>
-                      <SelectItem value="Cleaning">Cleaning</SelectItem>
-                      <SelectItem value="Disabled">Disabled</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between border p-3 rounded-xl">
-                <div>
-                  <Label className="font-medium">Active Status</Label>
-                  <p className="text-xs text-muted-foreground">Allow selecting for new bookings</p>
-                </div>
-                <Switch checked={isActive} onCheckedChange={setIsActive} />
-              </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="gap-2">
               <Button variant="outline" className="rounded-full" onClick={() => setDialogOpen(false)}>
                 Cancel
               </Button>
               <Button
                 onClick={() => saveMutation.mutate()}
-                disabled={saveMutation.isPending}
+                disabled={saveMutation.isPending || !serviceAreaId || !chairName.trim() || !workstationType || !statusVal || areas.length === 0}
                 className="rounded-full gradient-brand text-primary-foreground"
               >
                 {saveMutation.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
-                {editingChair ? "Save Changes" : "Create Chair"}
+                {editingChair ? "Save Changes" : "Create Workstation"}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -1139,12 +1139,12 @@ export function QrOrderView({ table, business }: { table: string; business?: str
           {/* STEP 1: ORDER REVIEW */}
           {checkoutStep === "REVIEW" && (
             <div className="space-y-4 animate-in fade-in duration-200">
-              <DialogHeader>
-                <DialogTitle className="font-display flex items-center justify-between text-xl">
+              <DialogHeader className="pr-8">
+                <DialogTitle className="font-display flex flex-wrap items-center justify-between gap-2 text-xl pr-2">
                   <span className="flex items-center gap-2">
                     <ShoppingBag className="h-5 w-5 text-primary" /> Order Review
                   </span>
-                  <Badge variant="outline" className="rounded-full font-mono text-xs">
+                  <Badge variant="outline" className="rounded-full font-mono text-xs shrink-0">
                     {tableHierarchyLabel}
                   </Badge>
                 </DialogTitle>
@@ -1192,7 +1192,7 @@ export function QrOrderView({ table, business }: { table: string; business?: str
                 </div>
                 {taxAmount > 0 && (
                   <div className="flex justify-between text-muted-foreground">
-                    <span>Taxes & Charges ({taxPercentage}%)</span>
+                    <span>GST ({taxPercentage}%):</span>
                     <span className="font-semibold text-foreground">{fmt(taxAmount)}</span>
                   </div>
                 )}

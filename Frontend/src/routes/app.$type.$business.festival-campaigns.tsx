@@ -857,10 +857,12 @@ export default function FestivalsPage() {
           festivalName={aiFor.festival_name}
           couponCode={getCoupon(aiFor)}
           discountPercent={getDiscount(aiFor)}
+          initialMessage={getMessage(aiFor)}
+          onCouponChange={(c) => setDraftCoupons((p) => ({ ...p, [aiFor.id]: c }))}
           onDiscountChange={(d) => setDraftDiscounts((p) => ({ ...p, [aiFor.id]: d }))}
           onUse={(m) => {
             setDrafts((p) => ({ ...p, [aiFor.id]: m }));
-            toast.success(`AI template generated for ${aiFor.festival_name}! Click Save template to persist.`);
+            toast.success(`Festival template updated for ${aiFor.festival_name}! Click Save template to persist.`);
           }}
           useLabel="Use this festival template"
         />

@@ -405,7 +405,7 @@ export default function TeamPage() {
                   {staffUsage.remaining_slots} Staff Slots Available
                 </Badge>
                 <Badge variant="secondary" className="rounded-full px-3 py-1 font-semibold text-xs">
-                  {staffUsage.plan_name} PLAN
+                  {(staffUsage.plan_name || "STARTER").toUpperCase()} PLAN
                 </Badge>
               </div>
             </div>

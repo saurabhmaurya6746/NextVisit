@@ -142,6 +142,7 @@ export async function loginApi(emailOrLoginId: string, password: string): Promis
   const user = await getMeApi(token);
 
   let bizName = user.name;
+  let bizType: "restaurant" | "salon" = "restaurant";
   try {
     const bizRes = await fetch(`${API_BASE_URL}/api/v1/business`, {
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -149,6 +150,14 @@ export async function loginApi(emailOrLoginId: string, password: string): Promis
     if (bizRes.ok) {
       const bizData = await bizRes.json();
       if (bizData?.name) bizName = bizData.name;
+      const rawType = (bizData?.type || bizData?.business_type?.name || "").toLowerCase();
+      if (rawType.includes("salon")) {
+        bizType = "salon";
+      } else if (rawType.includes("restaurant")) {
+        bizType = "restaurant";
+      } else if (bizName.toLowerCase().includes("salon")) {
+        bizType = "salon";
+      }
     }
   } catch (e) {
     console.warn("[AUTH] Failed to prefetch business info during login:", e);
@@ -162,8 +171,8 @@ export async function loginApi(emailOrLoginId: string, password: string): Promis
     name: user.name,
     clientId: user.business_id,
     businessName: bizName,
-    businessType: "restaurant",
-    businessSlug: slugify(bizName || "restaurant"),
+    businessType: bizType,
+    businessSlug: slugify(bizName || bizType),
     permissions: user.permissions || [],
     token: token,
   };
