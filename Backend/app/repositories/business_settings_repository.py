@@ -19,11 +19,12 @@ class BusinessSettingsRepository(BaseRepository):
 
     def create(self, settings: BusinessSettings) -> BusinessSettings:
         self.db.add(settings)
-        self.db.flush()
+        self.db.commit()
         self.db.refresh(settings)
         return settings
 
     def update(self, settings: BusinessSettings) -> BusinessSettings:
-        self.db.flush()
+        self.db.add(settings)
+        self.db.commit()
         self.db.refresh(settings)
         return settings

@@ -299,6 +299,7 @@ def qr_bootstrap(
             "tax_percentage": float(biz_settings.tax_percentage) if (biz_settings and biz_settings.tax_percentage is not None) else 0.0,
             "review_link": biz_settings.review_link if biz_settings else None,
             "booking_link": biz_settings.booking_link if biz_settings else None,
+            "allow_guest_checkout": bool(biz_settings.allow_guest_checkout) if (biz_settings and hasattr(biz_settings, "allow_guest_checkout") and biz_settings.allow_guest_checkout is not None) else True,
             "is_active": target_business.is_active,
         },
         "table": {

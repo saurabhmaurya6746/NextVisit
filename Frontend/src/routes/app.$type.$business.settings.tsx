@@ -73,9 +73,10 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<BusinessSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("general");
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (isInitial = false) => {
+    if (isInitial) setLoading(true);
     setError(null);
     try {
       const [profData, settsData] = await Promise.all([
@@ -88,12 +89,12 @@ export default function SettingsPage() {
       console.error("[SETTINGS] Load error:", err);
       setError(err.message || "Failed to load settings from server");
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadData();
+    loadData(true);
   }, [loadData]);
 
   if (loading) {
@@ -116,7 +117,7 @@ export default function SettingsPage() {
           description={error || "Could not retrieve settings from server."}
           icon={<AlertTriangle className="h-8 w-8 text-destructive" />}
           action={
-            <Button variant="outline" className="rounded-full" onClick={loadData}>
+            <Button variant="outline" className="rounded-full" onClick={() => loadData(true)}>
               Retry
             </Button>
           }
@@ -145,7 +146,7 @@ export default function SettingsPage() {
         }
       />
 
-      <Tabs defaultValue="general" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="flex flex-wrap gap-1 rounded-2xl bg-muted/50 p-1.5 h-auto">
           <TabsTrigger value="general" className="rounded-xl gap-1.5 text-xs">
             <Store className="h-3.5 w-3.5" /> General
@@ -431,6 +432,9 @@ function GoogleTab({ settings, onSaved }: { settings: BusinessSettings; onSaved:
 /* ─────────────────────────────────────────────────────────────────────────────
  * 4. INVOICE TAB
  * ────────────────────────────────────────────────────────────────────────────*/
+/* ─────────────────────────────────────────────────────────────────────────────
+ * 4. INVOICE TAB (PERFECTLY FIXED)
+ * ────────────────────────────────────────────────────────────────────────────*/
 function InvoiceTab({
   settings,
   onSaved,
@@ -441,14 +445,32 @@ function InvoiceTab({
   isSalon: boolean;
 }) {
   const defaultFooter = isSalon ? "Thank you for visiting our salon!" : "Thank you for dining with us!";
+
+  // 1. Local States initialized directly from props
   const [prefix, setPrefix] = useState(settings.invoice_prefix || "INV-");
   const [footer, setFooter] = useState(settings.invoice_footer || defaultFooter);
-  const [showGst, setShowGst] = useState(settings.show_gst_on_invoice);
-  const [showQr, setShowQr] = useState(settings.show_qr_on_invoice);
+  const [showGst, setShowGst] = useState<boolean>(settings.show_gst_on_invoice !== false);
+  const [showQr, setShowQr] = useState<boolean>(settings.show_qr_on_invoice !== false);
+  const [allowGuestCheckout, setAllowGuestCheckout] = useState<boolean>(
+    settings.allow_guest_checkout !== false
+  );
   const [payeeName, setPayeeName] = useState(settings.payment_payee_name || (settings as any).payment_payee_name || "");
   const [upiId, setUpiId] = useState(settings.payment_upi_id || "");
   const [saving, setSaving] = useState(false);
   const [testModalOpen, setTestModalOpen] = useState(false);
+
+  // 2. React to fresh settings from parent on mount, refresh or save
+  useEffect(() => {
+    if (settings) {
+      setAllowGuestCheckout(settings.allow_guest_checkout !== false);
+      setShowGst(settings.show_gst_on_invoice !== false);
+      setShowQr(settings.show_qr_on_invoice !== false);
+      setPrefix(settings.invoice_prefix || "INV-");
+      setFooter(settings.invoice_footer || defaultFooter);
+      setPayeeName(settings.payment_payee_name || (settings as any).payment_payee_name || "");
+      setUpiId(settings.payment_upi_id || "");
+    }
+  }, [settings]);
 
   async function handleSave() {
     const trimmedPayee = payeeName.trim();
@@ -472,11 +494,13 @@ function InvoiceTab({
       await updateBusinessSettingsApi({
         invoice_prefix: prefix.trim(),
         invoice_footer: footer.trim() || undefined,
-        show_gst_on_invoice: showGst,
-        show_qr_on_invoice: showQr,
+        show_gst_on_invoice: Boolean(showGst),
+        show_qr_on_invoice: Boolean(showQr),
+        allow_guest_checkout: Boolean(allowGuestCheckout),
         payment_payee_name: trimmedPayee,
         payment_upi_id: trimmedUpi,
       } as any);
+
       toast.success("Invoice & payment settings updated!");
       onSaved();
     } catch (e: any) {
@@ -507,8 +531,24 @@ function InvoiceTab({
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <ToggleCard title="Show GST Breakup" desc="Display itemized tax details on printed bills" checked={showGst} onChange={setShowGst} />
-          <ToggleCard title="Show UPI QR Code" desc="Print dynamic payment QR code on invoice" checked={showQr} onChange={setShowQr} />
+          <ToggleCard
+            title="Show GST Breakup"
+            desc="Display itemized tax details on printed bills"
+            checked={showGst}
+            onChange={setShowGst}
+          />
+          <ToggleCard
+            title="Show UPI QR Code"
+            desc="Print dynamic payment QR code on invoice"
+            checked={showQr}
+            onChange={setShowQr}
+          />
+          <ToggleCard
+            title="Allow Guest Checkout"
+            desc="Allow customers to place orders without providing their phone number. Guest orders will not receive loyalty points."
+            checked={allowGuestCheckout}
+            onChange={setAllowGuestCheckout}
+          />
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2.5 pt-2 border-t">
@@ -537,8 +577,8 @@ function InvoiceTab({
 
         <TestPaymentDialog
           open={testModalOpen}
-          onOpenChange={setTestModalOpen}
-          payeeName={payeeName}
+        onOpenChange={setTestModalOpen}
+        payeeName={payeeName}
           upiId={upiId}
         />
       </CardContent>
@@ -1228,18 +1268,33 @@ function Fld({ label, value, onChange, placeholder, type = "text" }: { label: st
   );
 }
 
-function ToggleCard({ title, desc, checked, onChange }: { title: string; desc: string; checked: boolean; onChange: (val: boolean) => void }) {
+function ToggleCard({
+  title,
+  desc,
+  checked,
+  onChange,
+  id,
+}: {
+  title: string;
+  desc: string;
+  checked: boolean;
+  onChange: (val: boolean) => void;
+  id?: string;
+}) {
+  const switchId = id || `toggle-${title.toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
   return (
-    <label className="flex items-center justify-between rounded-xl border p-3 bg-muted/20 cursor-pointer hover:bg-muted/40 transition-colors">
-      <div className="pr-3">
+    <label
+      htmlFor={switchId}
+      className="flex items-center justify-between rounded-xl border p-3 bg-muted/20 cursor-pointer hover:bg-muted/40 transition-colors select-none"
+    >
+      <div className="pr-3 flex-1">
         <p className="text-xs font-semibold text-foreground">{title}</p>
         <p className="text-[10px] text-muted-foreground">{desc}</p>
       </div>
-      <Switch checked={checked} onCheckedChange={onChange} />
+      <Switch id={switchId} checked={Boolean(checked)} onCheckedChange={(val) => onChange(Boolean(val))} />
     </label>
   );
 }
-
 function CleanExportCard({ title, desc, loading, onClick }: { title: string; desc: string; loading: boolean; onClick: () => void }) {
   return (
     <div className="rounded-xl border p-4 flex flex-col justify-between space-y-3 bg-card shadow-sm hover:border-primary/50 transition-all">

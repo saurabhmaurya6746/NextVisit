@@ -81,6 +81,7 @@ class BusinessSettings(BaseModel):
     pos_auto_complete_order: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     pos_auto_free_table: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     pos_default_payment_method: Mapped[str] = mapped_column(String(20), default="CASH", nullable=False)
+    allow_guest_checkout: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
 
     # Payment QR & Branding
     payment_qr_image: Mapped[str | None] = mapped_column(String(500), nullable=True)

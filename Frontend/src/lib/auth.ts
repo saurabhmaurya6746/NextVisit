@@ -22,9 +22,24 @@ const KEY_SESSION = "growthos:session";
 const KEY_TOKEN = "growthos:token";
 const EVT = "growthos:session-changed";
 
-export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  "https://nextvisit-backend.onrender.com";
+function getApiBaseUrl(): string {
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  if (typeof window !== "undefined") {
+    const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+    if (isLocalhost) {
+      return envUrl || "http://localhost:8000";
+    }
+    // On remote/production domains (e.g. *.onrender.com), strictly disallow localhost/127.0.0.1 URLs
+    // to prevent Android/Chrome Private Network Access (Local Network) permission dialogs
+    if (envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1")) {
+      return envUrl;
+    }
+    return "https://nextvisit-backend.onrender.com";
+  }
+  return envUrl || "https://nextvisit-backend.onrender.com";
+}
+
+export const API_BASE_URL = getApiBaseUrl();
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;

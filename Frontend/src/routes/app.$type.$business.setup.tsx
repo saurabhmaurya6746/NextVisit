@@ -275,6 +275,7 @@ const defaultSetupSettings: RestaurantSetupSettings = {
   enable_staff_ordering: true,
   enable_parcel: true,
   enable_takeaway: true,
+  allow_guest_checkout: true,
   tax_percentage: 18,
   invoice_prefix: "INV-",
   is_saved: false,
@@ -548,6 +549,19 @@ function BusinessSettingsStep({
                 <Switch
                   checked={formData.enable_takeaway}
                   onCheckedChange={(val) => setFormData({ ...formData, enable_takeaway: val })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border p-3">
+                <div>
+                  <p className="text-sm font-medium">Allow Guest Checkout</p>
+                  <p className="text-xs text-muted-foreground">
+                    Allow customers to place orders without providing their phone number. Guest orders will not receive loyalty points.
+                  </p>
+                </div>
+                <Switch
+                  checked={formData.allow_guest_checkout !== false}
+                  onCheckedChange={(val) => setFormData({ ...formData, allow_guest_checkout: val })}
                 />
               </div>
             </div>

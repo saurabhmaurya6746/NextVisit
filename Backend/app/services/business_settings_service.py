@@ -87,23 +87,27 @@ class BusinessSettingsService:
             current_user.business_id,
             current_user.id,
         )
+        
+        # 1. Fetch existing settings row (loaded directly in ORM session)
         settings = self.get_settings(current_user)
 
-        update_data = data.model_dump(exclude_none=True)
+        # 2. Extract clean dictionary of only provided fields
+        update_data = data.model_dump(exclude_unset=True)
 
-        # Update BusinessSettings columns
-        for field, value in update_data.items():
-            if hasattr(settings, field):
-                setattr(settings, field, value)
+        # 3. Direct ORM attribute update (guarantees dirty tracking in session)
+        for key, value in update_data.items():
+            if hasattr(settings, key):
+                setattr(settings, key, value)
 
-        self.repo.update(settings)
+        # 4. Save and commit to DB
+        self.db.add(settings)
         self.db.commit()
         self.db.refresh(settings)
 
         logger.info(
-            "Business settings updated successfully | business_id=%s fields=%s",
+            "Business settings updated successfully in DB | business_id=%s allow_guest_checkout=%s",
             current_user.business_id,
-            list(update_data.keys()),
+            settings.allow_guest_checkout,
         )
         return settings
 
@@ -132,6 +136,7 @@ class BusinessSettingsService:
             "enable_staff_ordering": settings.enable_staff_ordering,
             "enable_parcel": settings.enable_parcel,
             "enable_takeaway": settings.enable_takeaway,
+            "allow_guest_checkout": settings.allow_guest_checkout,
             "tax_percentage": settings.tax_percentage,
             "invoice_prefix": settings.invoice_prefix or "INV-",
             "is_saved": is_saved,
@@ -166,6 +171,7 @@ class BusinessSettingsService:
         settings.enable_staff_ordering = data.enable_staff_ordering
         settings.enable_parcel = data.enable_parcel
         settings.enable_takeaway = data.enable_takeaway
+        settings.allow_guest_checkout = data.allow_guest_checkout
         settings.tax_percentage = data.tax_percentage
         settings.invoice_prefix = data.invoice_prefix.strip() if data.invoice_prefix else "INV-"
 

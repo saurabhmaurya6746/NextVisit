@@ -150,6 +150,7 @@ export default function SignupPage() {
                     value={form.business}
                     onChange={(e) => handleChange("business", e.target.value)}
                     onBlur={() => handleBlur("business")}
+                    autoComplete="organization"
                     placeholder="Aroma Bistro"
                   />
                 </ValidatedField>
@@ -159,6 +160,7 @@ export default function SignupPage() {
                     value={form.owner}
                     onChange={(e) => handleChange("owner", e.target.value)}
                     onBlur={() => handleBlur("owner")}
+                    autoComplete="name"
                     placeholder="Priya Sharma"
                   />
                 </ValidatedField>
@@ -198,6 +200,8 @@ export default function SignupPage() {
                     onChange={(e) => handleChange("phone", e.target.value)}
                     onBlur={() => handleBlur("phone")}
                     maxLength={10}
+                    type="tel"
+                    autoComplete="tel"
                     placeholder="10-digit mobile number"
                   />
                 </ValidatedField>
@@ -209,6 +213,7 @@ export default function SignupPage() {
                   value={form.email}
                   onChange={(e) => handleChange("email", e.target.value)}
                   onBlur={() => handleBlur("email")}
+                  autoComplete="email"
                   placeholder="you@business.com"
                 />
               </ValidatedField>
@@ -219,6 +224,7 @@ export default function SignupPage() {
                     value={form.password}
                     onChange={(e) => handleChange("password", e.target.value)}
                     onBlur={() => handleBlur("password")}
+                    autoComplete="new-password"
                   />
                 </ValidatedField>
                 <ValidatedField label="Confirm password" required error={errors.confirm} touched={touched.confirm}>
@@ -227,6 +233,7 @@ export default function SignupPage() {
                     value={form.confirm}
                     onChange={(e) => handleChange("confirm", e.target.value)}
                     onBlur={() => handleBlur("confirm")}
+                    autoComplete="new-password"
                   />
                 </ValidatedField>
               </div>
@@ -237,6 +244,7 @@ export default function SignupPage() {
                     value={form.country}
                     onChange={(e) => handleChange("country", e.target.value)}
                     onBlur={() => handleBlur("country")}
+                    autoComplete="country-name"
                     placeholder="India"
                   />
                 </ValidatedField>
@@ -246,6 +254,7 @@ export default function SignupPage() {
                     value={form.city}
                     onChange={(e) => handleChange("city", e.target.value)}
                     onBlur={() => handleBlur("city")}
+                    autoComplete="address-level2"
                     placeholder="Mumbai"
                   />
                 </ValidatedField>

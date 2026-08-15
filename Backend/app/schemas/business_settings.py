@@ -73,6 +73,7 @@ class BusinessSettingsResponse(BaseModel):
     pos_auto_complete_order: bool = False
     pos_auto_free_table: bool = True
     pos_default_payment_method: str = "CASH"
+    allow_guest_checkout: bool = True
 
     # Branding & Payments
     payment_qr_image: str | None = None
@@ -147,6 +148,7 @@ class BusinessSettingsUpdate(BaseModel):
     pos_auto_complete_order: bool | None = None
     pos_auto_free_table: bool | None = None
     pos_default_payment_method: str | None = Field(default=None, max_length=20)
+    allow_guest_checkout: bool | None = None
 
     # Branding & Payments
     payment_qr_image: str | None = Field(default=None, max_length=500)
@@ -195,6 +197,7 @@ class RestaurantSetupSettingsResponse(BaseModel):
     enable_staff_ordering: bool = True
     enable_parcel: bool = True
     enable_takeaway: bool = True
+    allow_guest_checkout: bool = True
     tax_percentage: float = 5.0
     invoice_prefix: str = "INV-"
     is_saved: bool = True
@@ -217,6 +220,7 @@ class RestaurantSetupSettingsUpdate(BaseModel):
     enable_staff_ordering: bool = True
     enable_parcel: bool = True
     enable_takeaway: bool = True
+    allow_guest_checkout: bool = True
     tax_percentage: float = Field(default=5.0, ge=0.0)
     invoice_prefix: str = Field(default="INV-", max_length=20)
 

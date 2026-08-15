@@ -76,6 +76,7 @@ export interface BusinessSettings {
   pos_auto_complete_order: boolean;
   pos_auto_free_table: boolean;
   pos_default_payment_method: string;
+  allow_guest_checkout?: boolean;
 
   // Branding & Payments
   payment_qr_image: string | null;
@@ -128,6 +129,7 @@ export interface RestaurantSetupSettings {
   enable_staff_ordering: boolean;
   enable_parcel: boolean;
   enable_takeaway: boolean;
+  allow_guest_checkout?: boolean;
   tax_percentage: number;
   invoice_prefix: string;
   is_saved: boolean;
@@ -153,9 +155,18 @@ export async function getBusinessSettingsApi(): Promise<BusinessSettings> {
 export async function updateBusinessSettingsApi(
   payload: BusinessSettingsUpdatePayload
 ): Promise<BusinessSettings> {
+  const sanitizedPayload: BusinessSettingsUpdatePayload = {
+    ...payload,
+    allow_guest_checkout:
+      typeof payload.allow_guest_checkout === "boolean"
+        ? payload.allow_guest_checkout
+        : payload.allow_guest_checkout !== undefined
+        ? Boolean(payload.allow_guest_checkout)
+        : undefined,
+  };
   const res = await apiFetch("/api/v1/business-settings", {
     method: "PUT",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(sanitizedPayload),
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));

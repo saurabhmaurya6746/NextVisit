@@ -94,11 +94,6 @@ export function RestaurantDashboard({
       <PageHeader
         title={`Welcome back, ${displayName} 👋`}
         description={`Here's what's happening at ${displayBizName} today.`}
-        actions={
-          <Badge variant="secondary" className="rounded-full px-3 py-1 text-xs">
-            <Sparkles className="mr-1.5 h-3.5 w-3.5 text-primary" /> 100% Database Driven
-          </Badge>
-        }
       />
 
       {isError ? (

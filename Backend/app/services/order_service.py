@@ -157,6 +157,17 @@ class OrderService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Customer '{customer_id}' not found for business.",
                 )
+        else:
+            # Guest checkout (no customer_id and no customer_details provided)
+            # Enforce backend security rule: Check if business allows guest checkout
+            from app.models.business_settings import BusinessSettings
+            b_chk_stmt = select(BusinessSettings).where(BusinessSettings.business_id == target_business_id)
+            chk_settings = self.db.scalar(b_chk_stmt)
+            if chk_settings and chk_settings.allow_guest_checkout is False:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Guest checkout is disabled for this restaurant. A valid customer phone number is required to place an order.",
+                )
 
         # Generate atomic per-business 6-digit sequential order number with row locking
         import re

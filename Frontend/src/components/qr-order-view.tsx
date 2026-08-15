@@ -157,6 +157,7 @@ export function QrOrderView({ table, business }: { table: string; business?: str
   const coverImageUrl = bizProfile?.cover_image || null;
   const mapsUrl = bizProfile?.review_link || bizProfile?.booking_link || null;
   const taxPercentage = bizProfile?.tax_percentage ?? 0;
+  const allowGuestCheckout = bizProfile?.allow_guest_checkout ?? true;
 
   const isOpenNow = isRestaurantOpenNow(openingTime, closingTime);
 
@@ -312,7 +313,7 @@ export function QrOrderView({ table, business }: { table: string; business?: str
   // ---------------------------------------------------------------------------
   async function handleDetectCustomer(inputPhone?: string) {
     const targetPhone = (inputPhone || phone).trim();
-    const cleanPhone = targetPhone.replace(/\D/g, "");
+    const cleanPhone = targetPhone.replace(/\D/g, "").slice(0, 10);
     if (cleanPhone.length !== 10) {
       toast.error("Please enter a valid 10-digit mobile number.");
       return;
@@ -320,7 +321,7 @@ export function QrOrderView({ table, business }: { table: string; business?: str
 
     setSearchingPhone(true);
     try {
-      const res = await autoDetectCustomerApi(targetPhone, totalAmount);
+      const res = await autoDetectCustomerApi(cleanPhone, totalAmount);
       setAutoDetectData(res);
 
       if (res.exists && res.customer_id) {
@@ -1238,7 +1239,7 @@ export function QrOrderView({ table, business }: { table: string; business?: str
           {/* STEP 2: PHONE NUMBER LOOKUP / AUTO DETECT */}
           {checkoutStep === "PHONE" && (
             <div className="space-y-4 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center justify-between border-b pb-3 pr-12">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -1267,10 +1268,14 @@ export function QrOrderView({ table, business }: { table: string; business?: str
                     <Input
                       placeholder="Enter 10-digit mobile number"
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
+                      onChange={(e) => {
+                        const sanitized = e.target.value.replace(/\D/g, "").slice(0, 10);
+                        setPhone(sanitized);
+                      }}
                       className="rounded-2xl text-base h-12 tracking-wide font-mono"
                       type="tel"
-                      maxLength={15}
+                      inputMode="numeric"
+                      maxLength={10}
                     />
                   </div>
                 </div>
@@ -1289,20 +1294,24 @@ export function QrOrderView({ table, business }: { table: string; business?: str
                   )}
                 </Button>
 
-                <div className="relative py-2 flex items-center justify-center">
-                  <div className="border-t w-full absolute" />
-                  <span className="bg-background px-3 text-[11px] text-muted-foreground relative uppercase font-semibold">
-                    Or
-                  </span>
-                </div>
+                {allowGuestCheckout && (
+                  <>
+                    <div className="relative py-2 flex items-center justify-center">
+                      <div className="border-t w-full absolute" />
+                      <span className="bg-background px-3 text-[11px] text-muted-foreground relative uppercase font-semibold">
+                        Or
+                      </span>
+                    </div>
 
-                <Button
-                  variant="outline"
-                  className="w-full rounded-full border-dashed text-xs py-5"
-                  onClick={handleContinueAsGuest}
-                >
-                  Continue as Guest (No Loyalty Points)
-                </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full rounded-full border-dashed text-xs py-5"
+                      onClick={handleContinueAsGuest}
+                    >
+                      Continue as Guest (No Loyalty Points)
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -1310,7 +1319,7 @@ export function QrOrderView({ table, business }: { table: string; business?: str
           {/* STEP 3A: EXISTING CUSTOMER CARD */}
           {checkoutStep === "CONFIRM" && custType === "EXISTING" && autoDetectData?.customer_id && (
             <div className="space-y-4 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center justify-between border-b pb-3 pr-12">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -1387,7 +1396,7 @@ export function QrOrderView({ table, business }: { table: string; business?: str
           {/* STEP 3B: NEW CUSTOMER REGISTRATION */}
           {checkoutStep === "CONFIRM" && custType === "NEW" && (
             <div className="space-y-4 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center justify-between border-b pb-3 pr-12">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -1424,8 +1433,14 @@ export function QrOrderView({ table, business }: { table: string; business?: str
                     <Label className="text-xs font-semibold">Phone Number *</Label>
                     <Input
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
+                      onChange={(e) => {
+                        const sanitized = e.target.value.replace(/\D/g, "").slice(0, 10);
+                        setPhone(sanitized);
+                      }}
                       className="rounded-2xl text-xs bg-muted/40 font-mono"
+                      type="tel"
+                      inputMode="numeric"
+                      maxLength={10}
                       required
                     />
                   </div>
@@ -1483,7 +1498,7 @@ export function QrOrderView({ table, business }: { table: string; business?: str
           {/* STEP 3C: GUEST ORDER CONFIRMATION */}
           {checkoutStep === "CONFIRM" && custType === "GUEST" && (
             <div className="space-y-4 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center justify-between border-b pb-3 pr-12">
                 <Button
                   variant="ghost"
                   size="sm"

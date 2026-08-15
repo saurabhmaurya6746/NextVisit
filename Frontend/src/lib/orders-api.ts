@@ -221,6 +221,7 @@ export interface QrBootstrapResponse {
     review_link: string | null;
     booking_link: string | null;
     is_active: boolean;
+    allow_guest_checkout?: boolean;
   };
   table: {
     id: string;
