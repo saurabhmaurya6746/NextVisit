@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowRight, Github, Crown, Store, Eye, EyeOff } from "lucide-react";
+import { ArrowRight, Github, Crown, Store, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import { PasswordInput } from "@/components/ui/password-input";
 
 export function LoginShell({ role, target, tagline, quote, author }: { role: "Business Owner" | "Super Admin"; target: string; tagline: string; quote: string; author: string }) {
   const [loading, setLoading] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
   const isAdmin = role === "Super Admin";
   const demoEmail = isAdmin ? "admin@nextvisit.com" : "demo@restaurant.com";
   const demoPass = isAdmin ? "Admin@123456" : "Demo@123";
@@ -24,6 +25,7 @@ export function LoginShell({ role, target, tagline, quote, author }: { role: "Bu
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (loading || transitioning) return;
     const cleanEmail = email.trim();
     console.log("[LOGIN] Form submit triggered with:", { cleanEmail, password });
     setLoading(true);
@@ -33,6 +35,7 @@ export function LoginShell({ role, target, tagline, quote, author }: { role: "Bu
         try {
           console.log("[LOGIN] Invoking adminLoginApi() for super admin...");
           const session = await adminLoginApi(cleanEmail, password);
+          setTransitioning(true);
           toast.success(`Welcome back — signing you into Super Admin`);
           window.location.href = "/admin";
           return;
@@ -45,6 +48,7 @@ export function LoginShell({ role, target, tagline, quote, author }: { role: "Bu
       console.log("[LOGIN] Invoking loginApi() for business user...");
       const session = await loginApi(cleanEmail, password);
       console.log("[LOGIN] loginApi() returned session successfully:", session);
+      setTransitioning(true);
       const type: "restaurant" | "salon" = session.businessType || "restaurant";
       setBusinessType(type);
       const slug = session.businessSlug || slugify(session.businessName || type);
@@ -53,10 +57,12 @@ export function LoginShell({ role, target, tagline, quote, author }: { role: "Bu
     } catch (err: any) {
       console.error("[LOGIN] submit error caught:", err);
       toast.error(err.message || "Login failed. Please check your credentials.");
-    } finally {
       setLoading(false);
+      setTransitioning(false);
     }
   };
+
+  const isBusy = loading || transitioning;
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
@@ -86,71 +92,125 @@ export function LoginShell({ role, target, tagline, quote, author }: { role: "Bu
             Demo credentials pre-filled — <span className="font-medium text-foreground">{demoEmail}</span> / <span className="font-medium text-foreground">{demoPass}</span>
           </p>
 
-          <form onSubmit={submit} className="mt-8 space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="email">Email or Staff Login ID</Label>
-              <Input id="email" type="text" placeholder="owner@restaurant.com or ST001" value={email} onChange={(e) => setEmail(e.target.value)} required />
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
-                <a href="#" className="text-xs text-primary hover:underline">Forgot?</a>
+          {transitioning ? (
+            <div className="mt-8 rounded-2xl border bg-card/60 backdrop-blur-sm p-8 text-center space-y-3 shadow-sm animate-in fade-in-50 duration-200">
+              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Loader2 className="h-5 w-5 animate-spin" />
               </div>
-              <PasswordInput
-                id="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-foreground">Signing you in…</p>
+                <p className="text-xs text-muted-foreground">Preparing your dashboard</p>
+              </div>
             </div>
-            <Button type="submit" disabled={loading} className="w-full rounded-full gradient-brand text-primary-foreground shadow-glow">
-              {loading ? "Signing in…" : (<>Continue <ArrowRight className="ml-1.5 h-4 w-4" /></>)}
-            </Button>
-          </form>
+          ) : (
+            <form onSubmit={submit} className="mt-8 space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="email">Email or Staff Login ID</Label>
+                <Input
+                  id="email"
+                  type="text"
+                  placeholder="owner@restaurant.com or ST001"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={isBusy}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Password</Label>
+                  <a href="#" className="text-xs text-primary hover:underline">Forgot?</a>
+                </div>
+                <PasswordInput
+                  id="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={isBusy}
+                  required
+                />
+              </div>
+              <Button
+                type="submit"
+                disabled={isBusy}
+                className="w-full rounded-full gradient-brand text-primary-foreground shadow-glow"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Signing in…
+                  </>
+                ) : (
+                  <>
+                    Continue <ArrowRight className="ml-1.5 h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </form>
+          )}
 
           <div className="my-6 flex items-center gap-3 text-xs uppercase tracking-wider text-muted-foreground">
             <div className="h-px flex-1 bg-border" /> Or continue with demo <div className="h-px flex-1 bg-border" />
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <Button variant="outline" className="rounded-full" onClick={async () => {
-              console.log("[LOGIN] Super Admin demo button clicked!");
-              setEmail("admin@nextvisit.com");
-              setPassword("Admin@123456");
-              try {
-                await adminLoginApi("admin@nextvisit.com", "Admin@123456");
-                toast.success("Signed in as Super Admin");
-                window.location.href = "/admin";
-              } catch (err: any) {
-                toast.error(err.message || "Super Admin demo login failed");
-              }
-            }}>
+            <Button
+              variant="outline"
+              className="rounded-full"
+              disabled={isBusy}
+              onClick={async () => {
+                if (isBusy) return;
+                console.log("[LOGIN] Super Admin demo button clicked!");
+                setEmail("admin@nextvisit.com");
+                setPassword("Admin@123456");
+                setLoading(true);
+                try {
+                  await adminLoginApi("admin@nextvisit.com", "Admin@123456");
+                  setTransitioning(true);
+                  toast.success("Signed in as Super Admin");
+                  window.location.href = "/admin";
+                } catch (err: any) {
+                  toast.error(err.message || "Super Admin demo login failed");
+                  setLoading(false);
+                  setTransitioning(false);
+                }
+              }}
+            >
               <Crown className="mr-1.5 h-4 w-4" /> Super Admin
             </Button>
-            <Button variant="outline" className="rounded-full" onClick={async () => {
-              console.log("[LOGIN] Demo Restaurant Owner button clicked!");
-              setEmail("demo@restaurant.com");
-              setPassword("Demo@123");
-              try {
-                const session = await loginApi("demo@restaurant.com", "Demo@123");
-                const type = "restaurant";
-                const slug = slugify(session.businessName || type);
-                setBusinessType(type);
-                setSession({
-                  ...session,
-                  businessType: type,
-                  businessSlug: slug,
-                });
-                window.location.href = `/app/${type}/${slug}/dashboard`;
-              } catch (err: any) {
-                toast.error(err.message || "Demo login failed");
-              }
-            }}>
+            <Button
+              variant="outline"
+              className="rounded-full"
+              disabled={isBusy}
+              onClick={async () => {
+                if (isBusy) return;
+                console.log("[LOGIN] Demo Restaurant Owner button clicked!");
+                setEmail("demo@restaurant.com");
+                setPassword("Demo@123");
+                setLoading(true);
+                try {
+                  const session = await loginApi("demo@restaurant.com", "Demo@123");
+                  const type = "restaurant";
+                  const slug = slugify(session.businessName || type);
+                  setBusinessType(type);
+                  setSession({
+                    ...session,
+                    businessType: type,
+                    businessSlug: slug,
+                  });
+                  setTransitioning(true);
+                  window.location.href = `/app/${type}/${slug}/dashboard`;
+                } catch (err: any) {
+                  toast.error(err.message || "Demo login failed");
+                  setLoading(false);
+                  setTransitioning(false);
+                }
+              }}
+            >
               <Store className="mr-1.5 h-4 w-4" /> Restaurant Owner
             </Button>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-2">
-            <Button variant="ghost" size="sm" className="rounded-full text-xs" onClick={() => toast("SSO connected (demo)")}>Google</Button>
-            <Button variant="ghost" size="sm" className="rounded-full text-xs" onClick={() => toast("SSO connected (demo)")}><Github className="mr-1.5 h-3.5 w-3.5" /> GitHub</Button>
+            <Button variant="ghost" size="sm" className="rounded-full text-xs" disabled={isBusy} onClick={() => toast("SSO connected (demo)")}>Google</Button>
+            <Button variant="ghost" size="sm" className="rounded-full text-xs" disabled={isBusy} onClick={() => toast("SSO connected (demo)")}><Github className="mr-1.5 h-3.5 w-3.5" /> GitHub</Button>
           </div>
 
           <p className="mt-8 text-center text-xs text-muted-foreground">

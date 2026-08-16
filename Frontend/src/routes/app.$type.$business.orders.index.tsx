@@ -176,18 +176,18 @@ export default function OrdersPage() {
         title="Orders"
         description={`${totalItems} orders found · Server-side paginated (${pageSize}/page)`}
         actions={
-          <>
-            <Button size="sm" variant="outline" className="rounded-full" onClick={() => setQrOpen(true)}>
-              <QrCode className="mr-1.5 h-4 w-4" /> QR self-order links
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            <Button size="sm" variant="outline" className="rounded-full text-xs h-8 px-3" onClick={() => setQrOpen(true)}>
+              <QrCode className="mr-1.5 h-3.5 w-3.5" /> QR self-order links
             </Button>
             <Button
               size="sm"
-              className="rounded-full gradient-brand text-primary-foreground transition-transform hover:scale-105 active:scale-95"
+              className="rounded-full gradient-brand text-primary-foreground text-xs h-8 px-3 transition-transform hover:scale-105 active:scale-95"
               onClick={() => setOpen(true)}
             >
-              <Plus className="mr-1.5 h-4 w-4" /> New staff order
+              <Plus className="mr-1.5 h-3.5 w-3.5" /> New staff order
             </Button>
-          </>
+          </div>
         }
       />
 
@@ -216,36 +216,36 @@ export default function OrdersPage() {
 
         {(["POS", "QR"] as const).map((t) => (
           <TabsContent key={t} value={t} className="mt-0">
-            <div className="mb-3 flex flex-wrap gap-1.5 items-center">
+            <div className="mb-4 flex items-center gap-1.5 overflow-x-auto pb-1.5 no-scrollbar max-w-full">
               {(["all", "OPEN", "PREPARING", "READY", "SERVED", "CANCELLED"] as const).map((s) => (
                 <button
                   key={s}
                   onClick={() => handleFilterChange(s)}
-                  className={`rounded-full border px-3 py-1 text-xs transition-all ${
+                  className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-xs transition-all cursor-pointer font-medium ${
                     filter === s
-                      ? "gradient-brand text-primary-foreground border-transparent"
-                      : "hover:border-primary"
+                      ? "gradient-brand text-primary-foreground border-transparent shadow-2xs"
+                      : "hover:border-primary bg-background text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {s === "all" ? "All Statuses" : s}
                 </button>
               ))}
-              <span className="mx-1 h-5 w-px bg-border" />
+              <span className="mx-1 h-5 w-px bg-border shrink-0" />
               {(["today", "yesterday", "week", "month", "all", "custom"] as const).map((d) => (
                 <button
                   key={d}
                   onClick={() => handleDateFilterChange(d)}
-                  className={`rounded-full border px-3 py-1 text-xs capitalize transition-all ${
+                  className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-xs capitalize transition-all cursor-pointer font-medium ${
                     dateFilter === d
-                      ? "gradient-brand text-primary-foreground border-transparent"
-                      : "hover:border-primary"
+                      ? "gradient-brand text-primary-foreground border-transparent shadow-2xs"
+                      : "hover:border-primary bg-background text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {d === "week" ? "This week" : d === "month" ? "This month" : d}
                 </button>
               ))}
               {dateFilter === "custom" && (
-                <div className="ml-2 flex items-center gap-1">
+                <div className="ml-1 flex items-center gap-1 shrink-0">
                   <input
                     type="date"
                     value={customFrom}
@@ -298,7 +298,69 @@ export default function OrdersPage() {
               />
             ) : (
               <div className="space-y-4">
-                <Card className="rounded-2xl p-2 sm:p-4 border shadow-sm">
+                {/* Mobile Order Cards View (< md) */}
+                <div className="space-y-3 md:hidden">
+                  {ordersList.map((o) => {
+                    const tableName = tableMap.get(o.table_id) || "Table";
+                    const itemCount = o.items.reduce((s, i) => s + i.quantity, 0);
+
+                    return (
+                      <Card
+                        key={o.id}
+                        className="rounded-2xl p-3.5 border bg-card shadow-xs hover:border-primary/40 transition-all cursor-pointer space-y-2.5 active:scale-[0.99]"
+                        onClick={() => setOpenId(o.id)}
+                      >
+                        {/* Header: Order Number & Status Badge */}
+                        <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-2">
+                          <span className="font-mono text-sm font-bold text-foreground truncate">
+                            {o.order_number}
+                          </span>
+                          <Badge className={`rounded-full text-[10px] font-semibold uppercase tracking-wider shrink-0 ${STATUS_TONE[o.status] || "bg-muted"}`}>
+                            {o.status}
+                          </Badge>
+                        </div>
+
+                        {/* Main Body: Table & Customer */}
+                        <div className="space-y-1">
+                          <div className="text-sm font-semibold text-foreground">
+                            {tableName}
+                          </div>
+                          <div className="text-xs text-muted-foreground break-words leading-snug">
+                            {o.customer ? (
+                              <span>
+                                {o.customer.name} {o.customer.phone ? `(${o.customer.phone})` : ""}
+                              </span>
+                            ) : o.customer_id ? (
+                              <span>Customer #{o.customer_id.slice(-6)}</span>
+                            ) : (
+                              <span className="text-muted-foreground/80">Guest Customer</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Summary Row: Items & Total Amount */}
+                        <div className="flex items-center justify-between pt-1 border-t border-border/40 text-xs">
+                          <div className="flex items-center gap-1.5 text-muted-foreground">
+                            <span>{itemCount} {itemCount === 1 ? "item" : "items"}</span>
+                            <span>·</span>
+                            <span className="text-[11px]">
+                              {new Date(o.created_at).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          </div>
+                          <span className="font-mono text-base font-bold text-foreground">
+                            {fmt(o.total_amount)}
+                          </span>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+
+                {/* Desktop Order Table View (>= md) */}
+                <Card className="hidden md:block rounded-2xl p-2 sm:p-4 border shadow-sm">
                   <div className="-mx-2 overflow-x-auto sm:mx-0">
                     <Table>
                       <TableHeader>

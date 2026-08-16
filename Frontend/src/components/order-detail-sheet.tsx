@@ -24,6 +24,7 @@ import {
   Download,
   XCircle,
   Tag,
+  RefreshCw,
 } from "lucide-react";
 
 export function formatOrderNumber(orderNumber: string | undefined | null): string {
@@ -94,6 +95,8 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
   const [autoDetectResult, setAutoDetectResult] = useState<CustomerAutoDetectResult | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "UPI">("UPI");
+  const [qrImageLoaded, setQrImageLoaded] = useState(false);
+  const [qrImageError, setQrImageError] = useState(false);
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancellingOrder, setCancellingOrder] = useState(false);
@@ -140,7 +143,12 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
     enabled: open,
   });
 
-  const { data: bizSettings } = useQuery({
+  const {
+    data: bizSettings,
+    isLoading: isBizSettingsLoading,
+    isError: isBizSettingsError,
+    refetch: refetchBizSettings,
+  } = useQuery({
     queryKey: ["business-settings"],
     queryFn: getBusinessSettingsApi,
     enabled: open,
@@ -151,6 +159,19 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
     queryFn: getRestaurantSetupSettingsApi,
     enabled: open,
   });
+
+  // Dynamic order total calculation after promo discount
+  const discountAmount = appliedCoupon?.valid ? (appliedCoupon.calculated_discount || 0) : 0;
+  const baseOrderTotal = order?.total_amount ?? order?.subtotal ?? 0;
+  const finalOrderTotal = Math.max(0, baseOrderTotal - discountAmount);
+
+  // Reset QR loaded & error states when Collect Payment opens or payment method switches
+  useEffect(() => {
+    if (payDialogOpen && paymentMethod === "UPI") {
+      setQrImageLoaded(false);
+      setQrImageError(false);
+    }
+  }, [payDialogOpen, paymentMethod, finalOrderTotal]);
 
   // Calculate GST Percentage dynamically
   const calculatedGstPct =
@@ -1091,7 +1112,7 @@ const handleDownloadInvoice = async (autoPrint: boolean = false) => {
             code: activeCouponCode,
             order_id: order?.id,
             customer_id: (order as any)?.customer_id || (order as any)?.customer?.id || res?.customer_id || autoDetectResult?.customer?.id || undefined,
-            order_amount: order?.subtotal || order?.total_amount || 0,
+            order_amount: order?.total_amount ?? order?.subtotal ?? 0,
           });
         } catch (couponErr) {
           console.error("Coupon redemption error:", couponErr);
@@ -1116,11 +1137,6 @@ const handleDownloadInvoice = async (autoPrint: boolean = false) => {
     },
     onError: (err: Error) => toast.error(err.message || "Failed to settle payment."),
   });
-
-  // Dynamic order total calculation after promo discount
-  const discountAmount = appliedCoupon?.valid ? (appliedCoupon.calculated_discount || 0) : 0;
-  const baseOrderTotal = order?.subtotal || order?.total_amount || 0;
-  const finalOrderTotal = Math.max(0, baseOrderTotal - discountAmount);
 
   const handleValidateCoupon = async () => {
     if (!couponCode.trim()) {
@@ -1242,62 +1258,80 @@ const handleDownloadInvoice = async (autoPrint: boolean = false) => {
                     </div>
 
                     <div className="space-y-2">
-                      {(order.items || []).map((i) => (
-                        <div
-                          key={i.id}
-                          className="flex items-center justify-between gap-2 rounded-xl border p-3 text-sm"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <p className="font-medium truncate">{i.item_name}</p>
-                            <p className="text-xs text-muted-foreground">{fmt(i.unit_price)} each</p>
-                            {i.notes && <p className="text-[11px] text-muted-foreground">Note: {i.notes}</p>}
-                          </div>
+                      {(order.items || []).map((i) => {
+                        const isUpdatingThisItem = updateItemQtyMut.isPending && updateItemQtyMut.variables?.itemId === i.id;
+                        const isDeletingThisItem = deleteItemMut.isPending && deleteItemMut.variables === i.id;
 
-                          <div className="flex items-center gap-2 shrink-0">
-                            {order.status !== "SERVED" && order.status !== "CANCELLED" ? (
-                              <div className="flex items-center gap-1 rounded-lg border bg-muted/40 p-0.5">
+                        return (
+                          <div
+                            key={i.id}
+                            className="flex items-center justify-between gap-2 rounded-xl border p-3 text-sm"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="font-medium truncate">{i.item_name}</p>
+                              <p className="text-xs text-muted-foreground">{fmt(i.unit_price)} each</p>
+                              {i.notes && <p className="text-[11px] text-muted-foreground">Note: {i.notes}</p>}
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              {order.status !== "SERVED" && order.status !== "CANCELLED" ? (
+                                <div className="flex items-center gap-1 rounded-lg border bg-muted/40 p-0.5">
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-6 w-6"
+                                    onClick={() => updateItemQtyMut.mutate({ itemId: i.id, quantity: i.quantity - 1 })}
+                                    disabled={isUpdatingThisItem || isDeletingThisItem}
+                                    aria-label={`Decrease ${i.item_name} quantity`}
+                                  >
+                                    <Minus className="h-3 w-3" />
+                                  </Button>
+                                  {isUpdatingThisItem ? (
+                                    <span className="w-5 flex items-center justify-center">
+                                      <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                                    </span>
+                                  ) : (
+                                    <span className="w-5 text-center text-xs font-semibold">{i.quantity}</span>
+                                  )}
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-6 w-6"
+                                    onClick={() => updateItemQtyMut.mutate({ itemId: i.id, quantity: i.quantity + 1 })}
+                                    disabled={isUpdatingThisItem || isDeletingThisItem}
+                                    aria-label={`Increase ${i.item_name} quantity`}
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">× {i.quantity}</span>
+                              )}
+
+                              <span className="font-semibold tabular-nums text-right min-w-[50px]">
+                                {fmt(i.unit_price * i.quantity - (i.discount || 0))}
+                              </span>
+
+                              {order.status !== "SERVED" && order.status !== "CANCELLED" && (
                                 <Button
                                   size="icon"
                                   variant="ghost"
-                                  className="h-6 w-6"
-                                  onClick={() => updateItemQtyMut.mutate({ itemId: i.id, quantity: i.quantity - 1 })}
-                                  disabled={updateItemQtyMut.isPending}
+                                  className="h-7 w-7 rounded-lg text-muted-foreground hover:text-rose-500"
+                                  onClick={() => deleteItemMut.mutate(i.id)}
+                                  disabled={isDeletingThisItem || isUpdatingThisItem}
+                                  aria-label={`Delete ${i.item_name}`}
                                 >
-                                  <Minus className="h-3 w-3" />
+                                  {isDeletingThisItem ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin text-destructive" />
+                                  ) : (
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  )}
                                 </Button>
-                                <span className="w-5 text-center text-xs font-semibold">{i.quantity}</span>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-6 w-6"
-                                  onClick={() => updateItemQtyMut.mutate({ itemId: i.id, quantity: i.quantity + 1 })}
-                                  disabled={updateItemQtyMut.isPending}
-                                >
-                                  <Plus className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">× {i.quantity}</span>
-                            )}
-
-                            <span className="font-semibold tabular-nums text-right min-w-[50px]">
-                              {fmt(i.unit_price * i.quantity - (i.discount || 0))}
-                            </span>
-
-                            {order.status !== "SERVED" && order.status !== "CANCELLED" && (
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="h-7 w-7 rounded-lg text-muted-foreground hover:text-rose-500"
-                                onClick={() => deleteItemMut.mutate(i.id)}
-                                disabled={deleteItemMut.isPending}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
                     <div className="mt-3 space-y-1 rounded-xl bg-muted/40 p-3 text-sm">
@@ -2119,13 +2153,73 @@ const handleDownloadInvoice = async (autoPrint: boolean = false) => {
                     const payableTotal = Number(finalOrderTotal ?? 0);
                     const formattedPayable = payableTotal.toFixed(2);
 
+                    if (isBizSettingsLoading) {
+                      return (
+                        <div className="rounded-xl border p-3 bg-muted/20 text-center space-y-2">
+                          <p className="text-[11px] font-semibold text-muted-foreground">Scan Store Payment QR</p>
+                          <div className="h-36 w-36 mx-auto rounded-lg border bg-muted/40 flex flex-col items-center justify-center p-3 text-center animate-pulse">
+                            <Loader2 className="h-6 w-6 animate-spin text-primary mb-2" />
+                            <span className="text-[11px] font-medium text-muted-foreground">Generating payment QR...</span>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-center gap-1">
+                            <div className="h-5 w-24 rounded-full bg-muted/60 animate-pulse" />
+                            <div className="h-5 w-16 rounded-full bg-muted/60 animate-pulse" />
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (isBizSettingsError || qrImageError) {
+                      return (
+                        <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-center space-y-2">
+                          <p className="text-[11px] font-semibold text-rose-600 dark:text-rose-400">Failed to Generate Payment QR</p>
+                          <p className="text-[10px] text-muted-foreground">Could not generate the UPI QR code. Please check your connection.</p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs rounded-full gap-1 mx-auto"
+                            onClick={() => {
+                              setQrImageError(false);
+                              setQrImageLoaded(false);
+                              refetchBizSettings();
+                            }}
+                          >
+                            <RefreshCw className="h-3 w-3" /> Retry QR Generation
+                          </Button>
+                        </div>
+                      );
+                    }
+
                     if (upiId && payeeName) {
                       const rawUpiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(payeeName)}&am=${formattedPayable}&cu=INR`;
                       const dynamicQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&margin=8&data=${encodeURIComponent(rawUpiUri)}`;
                       return (
                         <div className="rounded-xl border p-3 bg-muted/20 text-center space-y-2">
                           <p className="text-[11px] font-semibold text-muted-foreground">Scan Store Payment QR</p>
-                          <img src={dynamicQrUrl} alt="Store Payment QR" className="h-36 w-36 object-contain mx-auto rounded-lg border bg-white p-1.5 shadow-sm" />
+                          <div className="relative mx-auto h-36 w-36">
+                            {!qrImageLoaded && (
+                              <div className="absolute inset-0 rounded-lg border bg-muted/40 flex flex-col items-center justify-center p-3 text-center animate-pulse">
+                                <Loader2 className="h-6 w-6 animate-spin text-primary mb-2" />
+                                <span className="text-[11px] font-medium text-muted-foreground">Generating payment QR...</span>
+                              </div>
+                            )}
+                            <img
+                              src={dynamicQrUrl}
+                              alt="Store Payment QR"
+                              className={`h-36 w-36 object-contain mx-auto rounded-lg border bg-white p-1.5 shadow-sm transition-opacity duration-200 ${
+                                qrImageLoaded ? "opacity-100" : "opacity-0"
+                              }`}
+                              onLoad={() => {
+                                setQrImageLoaded(true);
+                                setQrImageError(false);
+                              }}
+                              onError={() => {
+                                setQrImageError(true);
+                                setQrImageLoaded(false);
+                              }}
+                            />
+                          </div>
                           <div className="flex flex-wrap items-center justify-center gap-1">
                             <span className="text-[10px] font-mono font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
                               UPI: {upiId}
@@ -2169,21 +2263,36 @@ const handleDownloadInvoice = async (autoPrint: boolean = false) => {
                 <Button variant="outline" className="rounded-full text-xs" onClick={() => setPayDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button
-                  onClick={handleSettleSubmit}
-                  disabled={settleMut.isPending || !phoneInput.trim()}
-                  className="rounded-full gradient-brand text-primary-foreground text-xs px-6"
-                >
-                  {settleMut.isPending ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Confirming…
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="mr-2 h-4 w-4" /> Confirm Payment & Complete
-                    </>
-                  )}
-                </Button>
+                {(() => {
+                  const upiId = (bizSettings?.payment_upi_id || "").trim();
+                  const payeeName = (bizSettings?.payment_payee_name || (bizSettings as any)?.payment_payee_name || "").trim();
+                  const isUpiIncompleteOrLoading =
+                    paymentMethod === "UPI" &&
+                    (isBizSettingsLoading ||
+                      !upiId ||
+                      !payeeName ||
+                      !qrImageLoaded ||
+                      qrImageError ||
+                      isBizSettingsError);
+
+                  return (
+                    <Button
+                      onClick={handleSettleSubmit}
+                      disabled={settleMut.isPending || !phoneInput.trim() || isUpiIncompleteOrLoading}
+                      className="rounded-full gradient-brand text-primary-foreground text-xs px-6"
+                    >
+                      {settleMut.isPending ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Confirming…
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="mr-2 h-4 w-4" /> Confirm Payment & Complete
+                        </>
+                      )}
+                    </Button>
+                  );
+                })()}
               </>
             )}
           </DialogFooter>

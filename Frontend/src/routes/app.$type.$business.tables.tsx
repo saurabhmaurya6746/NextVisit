@@ -83,14 +83,20 @@ export default function TablesPage() {
     refetchInterval: 10000, // Refresh every 10s for live table updates
   });
 
-  const activeBizName = authBiz?.name || authBizName || session?.businessName || (profile?.name !== "Aroma Bistro" ? profile?.name : null) || "restaurant";
+  const activeBizName =
+    (authBiz?.name && authBiz.name !== "null" && authBiz.name !== "undefined" && authBiz.name !== "Unknown" ? authBiz.name : null) ||
+    (authBizName && authBizName !== "NextVisit" && authBizName !== "null" && authBizName !== "undefined" && authBizName !== "Unknown" ? authBizName : null) ||
+    (session?.businessName && session.businessName !== "null" && session.businessName !== "undefined" && session.businessName !== "Unknown" ? session.businessName : null) ||
+    (profile?.name && profile.name !== "Aroma Bistro" && profile.name !== "null" && profile.name !== "undefined" ? profile.name : null) ||
+    (authBiz?.name || authBizName || session?.businessName || profile?.name || "Restaurant");
+
   const activeSlug = (scope?.business && scope.business !== "business" && scope.business !== "restaurant")
     ? scope.business
     : (session?.businessSlug || slugify(activeBizName));
 
   const bizSlug = activeSlug || "restaurant";
 
-  const restaurantName = profile.name || "Restaurant";
+  const restaurantName = activeBizName;
 
   const allTables = diningAreas.flatMap((area) => area.tables);
 
@@ -297,73 +303,105 @@ export default function TablesPage() {
         </div>
       )}
 
-      {/* QR Self-Order Links Section */}
-      <section className="mt-8">
-        <div className="mb-3 flex items-center gap-2">
-          <QrCode className="h-4 w-4 text-primary" />
-          <h2 className="font-display text-base font-semibold">QR Self-Order Links</h2>
-          <span className="text-xs text-muted-foreground">Print a QR of each URL and place it on the table.</span>
+      {/* QR Self-Order Links Section (Grouped by Dining Area) */}
+      <section className="mt-10 space-y-4">
+        <div className="flex items-center gap-2">
+          <div className="grid h-8 w-8 place-items-center rounded-lg gradient-brand text-primary-foreground shadow-2xs">
+            <QrCode className="h-4 w-4" />
+          </div>
+          <div>
+            <h2 className="font-display text-base font-semibold">QR Self-Order Links</h2>
+            <p className="text-xs text-muted-foreground">Grouped by Dining Area. Print or copy the direct QR link for each table.</p>
+          </div>
         </div>
-        <Card className="rounded-2xl p-3">
-          <TooltipProvider>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {allTables.map((t) => {
-                // Use the table UUID directly in the QR URL — guarantees exact backend lookup
-                const path = `/restaurant/qr/${bizSlug}/${t.id}`;
-                const url = typeof window !== "undefined" ? `${window.location.origin}${path}` : path;
-                return (
-                  <div key={t.id} className="flex items-center justify-between gap-2 rounded-xl border p-2.5 bg-card">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">{t.table_name}</p>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            size="sm"
-                            variant="default"
-                            className="rounded-full text-xs font-medium"
-                            onClick={() => {
-                              setQrStatus("loading");
-                              setSelectedQrTable({
-                                tableName: t.table_name,
-                                url,
-                                path,
-                              });
-                            }}
-                          >
-                            <QrCode className="mr-1.5 h-3.5 w-3.5" /> QR
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">
-                          <p>Show QR Code</p>
-                        </TooltipContent>
-                      </Tooltip>
 
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="rounded-full text-xs font-medium"
-                        onClick={() => {
-                          navigator.clipboard.writeText(url);
-                          toast.success("Link copied");
-                        }}
-                      >
-                        <Copy className="mr-1.5 h-3.5 w-3.5" /> Copy Link
-                      </Button>
-
-                      <a href={path} target="_blank" rel="noreferrer">
-                        <Button size="sm" variant="ghost" className="rounded-full text-xs font-medium">
-                          <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Open
-                        </Button>
-                      </a>
+        {diningAreas.filter((area) => area.tables && area.tables.length > 0).length === 0 ? (
+          <Card className="rounded-2xl p-6 text-center text-muted-foreground text-sm">
+            No tables available to generate QR links.
+          </Card>
+        ) : (
+          <div className="space-y-4">
+            {diningAreas
+              .filter((area) => area.tables && area.tables.length > 0)
+              .map((area) => (
+                <Card key={area.id} className="rounded-2xl p-4 border bg-card shadow-xs space-y-3">
+                  <div className="flex items-center justify-between border-b pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-foreground">
+                        {area.name}
+                      </h3>
+                      <Badge variant="secondary" className="rounded-full text-[10px] font-medium px-2 py-0.5">
+                        {area.tables.length} {area.tables.length === 1 ? "table" : "tables"}
+                      </Badge>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </TooltipProvider>
-        </Card>
+
+                  <TooltipProvider>
+                    <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                      {area.tables.map((t) => {
+                        // Use the table UUID directly in the QR URL — guarantees exact backend lookup
+                        const path = `/restaurant/qr/${bizSlug}/${t.id}`;
+                        const url = typeof window !== "undefined" ? `${window.location.origin}${path}` : path;
+                        return (
+                          <div
+                            key={t.id}
+                            className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5 rounded-xl border bg-muted/20 p-2.5 hover:border-primary/40 hover:bg-muted/40 transition-all"
+                          >
+                            <div className="min-w-0 flex items-center gap-2">
+                              <div className="h-2 w-2 rounded-full bg-primary shrink-0" />
+                              <p className="text-sm font-semibold truncate text-foreground">{t.table_name}</p>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    size="sm"
+                                    variant="default"
+                                    className="rounded-full text-xs font-medium h-7 px-2.5 cursor-pointer"
+                                    onClick={() => {
+                                      setQrStatus("loading");
+                                      setSelectedQrTable({
+                                        tableName: t.table_name,
+                                        url,
+                                        path,
+                                      });
+                                    }}
+                                  >
+                                    <QrCode className="mr-1 h-3 w-3" /> QR
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  <p>Show QR Code</p>
+                                </TooltipContent>
+                              </Tooltip>
+
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="rounded-full text-xs font-medium h-7 px-2.5 cursor-pointer"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(url);
+                                  toast.success("Link copied");
+                                }}
+                              >
+                                <Copy className="mr-1 h-3 w-3" /> Copy Link
+                              </Button>
+
+                              <a href={path} target="_blank" rel="noreferrer">
+                                <Button size="sm" variant="ghost" className="rounded-full text-xs font-medium h-7 px-2 cursor-pointer">
+                                  <ExternalLink className="mr-1 h-3 w-3" /> Open
+                                </Button>
+                              </a>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </TooltipProvider>
+                </Card>
+              ))}
+          </div>
+        )}
       </section>
 
       {/* Dynamic Client-Side QR Modal */}

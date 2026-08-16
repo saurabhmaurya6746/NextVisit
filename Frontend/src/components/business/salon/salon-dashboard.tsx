@@ -254,8 +254,8 @@ export function SalonDashboard({
           )}
 
           {/* SALON TOP CARDS GRID */}
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4">
-            <AppLink path="appointments">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 items-stretch">
+            <AppLink path="appointments" className="h-full block">
               <StatCard
                 label="Today's Appointments"
                 value={todaysAppointments}
@@ -265,7 +265,7 @@ export function SalonDashboard({
                 index={0}
               />
             </AppLink>
-            <AppLink path="revenue">
+            <AppLink path="revenue" className="h-full block">
               <StatCard
                 label="Today's Revenue"
                 value={fmt(todaysRevenue)}
@@ -274,7 +274,7 @@ export function SalonDashboard({
                 index={1}
               />
             </AppLink>
-            <AppLink path="appointments">
+            <AppLink path="appointments" className="h-full block">
               <StatCard
                 label="Ongoing Services"
                 value={ongoingServices}
@@ -283,7 +283,7 @@ export function SalonDashboard({
                 index={2}
               />
             </AppLink>
-            <AppLink path="appointments">
+            <AppLink path="appointments" className="h-full block">
               <StatCard
                 label="Completed Services"
                 value={completedServices}
@@ -292,7 +292,7 @@ export function SalonDashboard({
                 index={3}
               />
             </AppLink>
-            <AppLink path="customers">
+            <AppLink path="customers" className="h-full block">
               <StatCard
                 label="Total Clients"
                 value={totalCustomers}
@@ -301,7 +301,7 @@ export function SalonDashboard({
                 index={4}
               />
             </AppLink>
-            <AppLink path="revenue">
+            <AppLink path="revenue" className="h-full block">
               <StatCard
                 label="Average Service Value"
                 value={fmt(averageServiceValue)}
@@ -310,20 +310,22 @@ export function SalonDashboard({
                 index={5}
               />
             </AppLink>
-            <AppLink path="revenue">
+            <AppLink path="appointments" className="h-full block">
               <StatCard
-                label="Avg Daily Revenue"
-                value={fmt(avgDailyRevenue)}
-                icon={DollarSign}
+                label="Staff Utilization"
+                value={`${staffUtilization}%`}
+                icon={Star}
                 accent="info"
                 index={6}
               />
             </AppLink>
-            <AppLink path="revenue">
+            <AppLink path="revenue" className="h-full block">
               <StatCard
                 label="Total Revenue"
                 value={fmt(totalRevenue)}
-                icon={Sparkles}
+                delta={`${growthMetrics.revenue_growth_pct >= 0 ? "+" : ""}${growthMetrics.revenue_growth_pct}% MoM`}
+                trend={growthMetrics.revenue_growth_pct >= 0 ? "up" : "down"}
+                icon={Ticket}
                 accent="accent"
                 index={7}
               />

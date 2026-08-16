@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, User, Banknote, Smartphone, CreditCard, QrCode, Check, Printer, FileText } from "lucide-react";
+import { Search, User, Banknote, Smartphone, CreditCard, QrCode, Check, Printer, FileText, Loader2, RefreshCw } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +32,12 @@ interface Props {
 
 export function CompletePaymentDialog({ order, open, onOpenChange, onCompleted }: Props) {
   const profile = useProfile("restaurant");
-  const { data: bizSettings } = useQuery({
+  const {
+    data: bizSettings,
+    isLoading: isBizSettingsLoading,
+    isError: isBizSettingsError,
+    refetch: refetchBizSettings,
+  } = useQuery({
     queryKey: ["business-settings"],
     queryFn: getBusinessSettingsApi,
     staleTime: 5000,
@@ -47,8 +52,17 @@ export function CompletePaymentDialog({ order, open, onOpenChange, onCompleted }
   const [anni, setAnni] = useState("");
   const [gender, setGender] = useState("");
   const [payment, setPayment] = useState<Payment>("cash");
+  const [qrImageLoaded, setQrImageLoaded] = useState(false);
+  const [qrImageError, setQrImageError] = useState(false);
   const [appliedCoupon, setAppliedCoupon] = useState<CouponValidateResponse | null>(null);
   const [success, setSuccess] = useState<{ customerId?: string; customerName: string; customerPhone: string; earned: number; balance: number } | null>(null);
+
+  useEffect(() => {
+    if (open && payment === "upi") {
+      setQrImageLoaded(false);
+      setQrImageError(false);
+    }
+  }, [open, payment, step]);
 
   const [downloadingInvoice, setDownloadingInvoice] = useState(false);
 
@@ -435,6 +449,44 @@ export function CompletePaymentDialog({ order, open, onOpenChange, onCompleted }
                   const payableTotal = finalTotal || order.total || 0;
                   const formattedPayable = payableTotal.toFixed(2);
 
+                  if (isBizSettingsLoading) {
+                    return (
+                      <div className="space-y-2 text-center">
+                        <p className="text-xs font-bold text-foreground">Scan QR Code to Pay</p>
+                        <div className="mx-auto h-48 w-48 rounded-xl border bg-muted/40 flex flex-col items-center justify-center p-3 text-center animate-pulse">
+                          <Loader2 className="h-6 w-6 animate-spin text-primary mb-2" />
+                          <span className="text-xs font-medium text-muted-foreground">Generating payment QR...</span>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-center gap-1.5 pt-1">
+                          <div className="h-5 w-24 rounded-full bg-muted/60 animate-pulse" />
+                          <div className="h-5 w-16 rounded-full bg-muted/60 animate-pulse" />
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (isBizSettingsError || qrImageError) {
+                    return (
+                      <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-center space-y-2">
+                        <p className="font-semibold text-xs text-rose-600 dark:text-rose-400">Failed to Generate Payment QR</p>
+                        <p className="text-[11px] text-muted-foreground">Could not generate the UPI QR code. Please check your connection.</p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs rounded-full gap-1 mx-auto"
+                          onClick={() => {
+                            setQrImageError(false);
+                            setQrImageLoaded(false);
+                            refetchBizSettings();
+                          }}
+                        >
+                          <RefreshCw className="h-3 w-3" /> Retry QR Generation
+                        </Button>
+                      </div>
+                    );
+                  }
+
                   if (upiId && payeeName) {
                     const rawUpiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(payeeName)}&am=${formattedPayable}&cu=INR`;
                     const dynamicQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&margin=8&data=${encodeURIComponent(rawUpiUri)}`;
@@ -442,7 +494,29 @@ export function CompletePaymentDialog({ order, open, onOpenChange, onCompleted }
                       <div className="space-y-2 text-center">
                         <p className="text-xs font-bold text-foreground">Scan QR Code to Pay</p>
                         <p className="text-[11px] text-muted-foreground font-semibold">{payeeName}</p>
-                        <img src={dynamicQrUrl} alt={`Dynamic Payment QR for ${payeeName}`} className="mx-auto h-48 w-48 rounded-xl border bg-white p-2 shadow-sm object-contain" />
+                        <div className="relative mx-auto h-48 w-48">
+                          {!qrImageLoaded && (
+                            <div className="absolute inset-0 rounded-xl border bg-muted/40 flex flex-col items-center justify-center p-3 text-center animate-pulse">
+                              <Loader2 className="h-6 w-6 animate-spin text-primary mb-2" />
+                              <span className="text-xs font-medium text-muted-foreground">Generating payment QR...</span>
+                            </div>
+                          )}
+                          <img
+                            src={dynamicQrUrl}
+                            alt={`Dynamic Payment QR for ${payeeName}`}
+                            className={`mx-auto h-48 w-48 rounded-xl border bg-white p-2 shadow-sm object-contain transition-opacity duration-200 ${
+                              qrImageLoaded ? "opacity-100" : "opacity-0"
+                            }`}
+                            onLoad={() => {
+                              setQrImageLoaded(true);
+                              setQrImageError(false);
+                            }}
+                            onError={() => {
+                              setQrImageError(true);
+                              setQrImageLoaded(false);
+                            }}
+                          />
+                        </div>
                         <div className="flex flex-wrap items-center justify-center gap-1.5 pt-1">
                           <span className="text-[11px] font-mono font-semibold text-primary bg-primary/10 px-2.5 py-0.5 rounded-full">
                             UPI: {upiId}
@@ -472,9 +546,28 @@ export function CompletePaymentDialog({ order, open, onOpenChange, onCompleted }
               </div>
               <div className="md:col-span-2 flex items-center justify-between">
                 <Button variant="ghost" onClick={() => setStep(0)}>Back</Button>
-                <Button className="rounded-full gradient-brand text-primary-foreground" onClick={complete}>
-                  <Check className="mr-1.5 h-4 w-4" /> Mark as paid
-                </Button>
+                {(() => {
+                  const upiId = (bizSettings?.payment_upi_id || "").trim();
+                  const payeeName = (bizSettings?.payment_payee_name || (bizSettings as any)?.payment_payee_name || "").trim();
+                  const isUpiIncompleteOrLoading =
+                    payment === "upi" &&
+                    (isBizSettingsLoading ||
+                      !upiId ||
+                      !payeeName ||
+                      !qrImageLoaded ||
+                      qrImageError ||
+                      isBizSettingsError);
+
+                  return (
+                    <Button
+                      className="rounded-full gradient-brand text-primary-foreground"
+                      onClick={complete}
+                      disabled={isUpiIncompleteOrLoading}
+                    >
+                      <Check className="mr-1.5 h-4 w-4" /> Mark as paid
+                    </Button>
+                  );
+                })()}
               </div>
             </motion.div>
           )}

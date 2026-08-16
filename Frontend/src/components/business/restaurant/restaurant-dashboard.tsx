@@ -112,8 +112,8 @@ export function RestaurantDashboard({
       ) : (
         <div className="space-y-6">
           {/* STAT CARDS GRID */}
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4">
-            <AppLink path="orders">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 items-stretch">
+            <AppLink path="orders" className="h-full block">
               <StatCard
                 label="Today's Orders"
                 value={todaysOrders}
@@ -122,7 +122,7 @@ export function RestaurantDashboard({
                 index={0}
               />
             </AppLink>
-            <AppLink path="revenue">
+            <AppLink path="revenue" className="h-full block">
               <StatCard
                 label="Today's Revenue"
                 value={fmt(todaysRevenue)}
@@ -133,7 +133,7 @@ export function RestaurantDashboard({
                 index={1}
               />
             </AppLink>
-            <AppLink path="tables">
+            <AppLink path="tables" className="h-full block">
               <StatCard
                 label="Open Visits"
                 value={openVisits}
@@ -143,7 +143,7 @@ export function RestaurantDashboard({
                 index={2}
               />
             </AppLink>
-            <AppLink path="orders">
+            <AppLink path="orders" className="h-full block">
               <StatCard
                 label="Completed Visits"
                 value={completedVisits}
@@ -152,7 +152,7 @@ export function RestaurantDashboard({
                 index={3}
               />
             </AppLink>
-            <AppLink path="customers">
+            <AppLink path="customers" className="h-full block">
               <StatCard
                 label="Total Customers"
                 value={totalCustomers}
@@ -162,7 +162,7 @@ export function RestaurantDashboard({
                 index={4}
               />
             </AppLink>
-            <AppLink path="revenue">
+            <AppLink path="revenue" className="h-full block">
               <StatCard
                 label="Average Order Value"
                 value={fmt(averageBill)}
@@ -172,7 +172,7 @@ export function RestaurantDashboard({
                 index={5}
               />
             </AppLink>
-            <AppLink path="revenue">
+            <AppLink path="revenue" className="h-full block">
               <StatCard
                 label="Avg Daily Revenue"
                 value={fmt(avgDailyRevenue)}
@@ -182,7 +182,7 @@ export function RestaurantDashboard({
                 index={6}
               />
             </AppLink>
-            <AppLink path="revenue">
+            <AppLink path="revenue" className="h-full block">
               <StatCard
                 label="Total Revenue"
                 value={fmt(totalRevenue)}

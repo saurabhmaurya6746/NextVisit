@@ -617,25 +617,31 @@ export default function TeamPage() {
 
       {/* Staff Account Form & Grouped Permissions Modal */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="font-display text-base flex items-center gap-2">
-              <Users className="h-5 w-5 text-primary" />
-              {editMember ? `Edit Staff — ${editMember.name}` : "Create Staff Account & Assign Permissions"}
+        <DialogContent className="w-[calc(100vw-24px)] max-w-3xl max-h-[calc(100dvh-24px)] p-4 sm:p-6 overflow-y-auto overflow-x-hidden rounded-2xl">
+          <DialogHeader className="pr-8 sm:pr-0">
+            <DialogTitle className="font-display text-base sm:text-lg flex items-center gap-2 leading-snug">
+              <Users className="h-5 w-5 text-primary shrink-0" />
+              <span>{editMember ? `Edit Staff — ${editMember.name}` : "Create Staff Account & Assign Permissions"}</span>
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-xs text-muted-foreground break-words leading-relaxed">
               Auto-generated login ID, status, and module permissions for this staff member.
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSubmitForm} className="space-y-6 pt-2">
+          <form onSubmit={handleSubmitForm} className="space-y-5 pt-2 max-w-full overflow-x-hidden">
             {/* Account Details Fields */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
+            <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2">
+              <div className="space-y-1.5 min-w-0">
                 <Label className="text-xs font-semibold">Full Name *</Label>
-                <Input placeholder="e.g. Vikram Singh" value={name} onChange={(e) => setName(e.target.value)} required />
+                <Input
+                  placeholder="e.g. Vikram Singh"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  className="w-full text-xs h-9 rounded-xl"
+                />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 min-w-0">
                 <Label className="text-xs font-semibold">Phone Number *</Label>
                 <Input
                   placeholder="10-digit mobile number"
@@ -643,21 +649,33 @@ export default function TeamPage() {
                   onChange={(e) => setPhone(sanitizePhoneInput(e.target.value))}
                   maxLength={10}
                   required
+                  className="w-full text-xs h-9 rounded-xl"
                 />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 min-w-0">
                 <Label className="text-xs font-semibold">Email Address (Optional)</Label>
-                <Input type="email" placeholder="vikram@restaurant.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+                <Input
+                  type="email"
+                  placeholder="vikram@restaurant.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full text-xs h-9 rounded-xl"
+                />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 min-w-0">
                 <Label className="text-xs font-semibold">Designation</Label>
-                <Input placeholder="e.g. Cashier, Head Waiter, Manager" value={designation} onChange={(e) => setDesignation(e.target.value)} />
+                <Input
+                  placeholder="e.g. Cashier, Head Waiter, Manager"
+                  value={designation}
+                  onChange={(e) => setDesignation(e.target.value)}
+                  className="w-full text-xs h-9 rounded-xl"
+                />
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-3">
               {/* Auto-Generated Login ID (Read-Only Live Preview) */}
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 min-w-0">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs font-semibold flex items-center gap-1">
                     <Lock className="h-3 w-3 text-muted-foreground" /> Staff Login ID
@@ -669,13 +687,15 @@ export default function TeamPage() {
                 <Input
                   readOnly
                   tabIndex={-1}
-                  className="bg-muted/40 font-mono font-bold text-primary cursor-not-allowed select-all"
+                  className="w-full bg-muted/40 font-mono font-bold text-primary cursor-not-allowed select-all text-xs h-9 rounded-xl"
                   value={loginId}
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Password {editMember && "(Leave blank to keep current)"}</Label>
+              <div className="space-y-1.5 min-w-0">
+                <Label className="text-xs font-semibold truncate block">
+                  Password {editMember && "(Leave blank to keep current)"}
+                </Label>
                 <div className="relative">
                   <Input
                     type={showPassword ? "text" : "password"}
@@ -683,20 +703,22 @@ export default function TeamPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required={!editMember}
+                    className="w-full pr-9 text-xs h-9 rounded-xl"
                   />
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full text-muted-foreground hover:text-foreground cursor-pointer"
                     onClick={() => setShowPassword(!showPassword)}
+                    aria-label="Toggle password visibility"
                   >
                     {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                   </Button>
                 </div>
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 min-w-0">
                 <Label className="text-xs font-semibold">Confirm Password</Label>
                 <Input
                   type={showPassword ? "text" : "password"}
@@ -704,27 +726,32 @@ export default function TeamPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required={!editMember && Boolean(password)}
+                  className="w-full text-xs h-9 rounded-xl"
                 />
               </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-xl border p-3 bg-muted/20">
-              <div>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-xl border p-3 bg-muted/20">
+              <div className="min-w-0">
                 <Label className="text-xs font-semibold">Account Status</Label>
-                <p className="text-[10px] text-muted-foreground">Inactive staff cannot log in or hold active permissions.</p>
+                <p className="text-[10px] text-muted-foreground break-words leading-tight">
+                  Inactive staff cannot log in or hold active permissions.
+                </p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0">
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="rounded-full text-xs gap-1"
+                  className="rounded-full text-xs gap-1 h-8 px-2.5 flex-1 sm:flex-none justify-center cursor-pointer"
                   onClick={generateSecurePassword}
                 >
                   <Key className="h-3.5 w-3.5 text-primary" /> Generate Secure Password
                 </Button>
                 <Select value={status} onValueChange={(val: "ACTIVE" | "INACTIVE") => setStatus(val)}>
-                  <SelectTrigger className="w-32 rounded-lg text-xs"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-28 sm:w-32 rounded-full text-xs h-8">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ACTIVE">Active</SelectItem>
                     <SelectItem value="INACTIVE">Inactive</SelectItem>
@@ -734,31 +761,33 @@ export default function TeamPage() {
             </div>
 
             {/* GROUPED PERMISSIONS SECTION */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b pb-2">
+            <div className="space-y-3.5">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1.5 border-b pb-2">
                 <div>
-                  <h3 className="font-display font-semibold text-sm text-foreground flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-primary" /> Module Access Permissions
+                  <h3 className="font-display font-semibold text-sm text-foreground flex items-center gap-1.5">
+                    <Shield className="h-4 w-4 text-primary shrink-0" /> Module Access Permissions
                   </h3>
-                  <p className="text-xs text-muted-foreground">Check the modules this staff member is allowed to see and manage.</p>
+                  <p className="text-xs text-muted-foreground break-words">
+                    Check the modules this staff member is allowed to see and manage.
+                  </p>
                 </div>
-                <Badge variant="outline" className="rounded-full text-xs">
+                <Badge variant="outline" className="rounded-full text-[11px] shrink-0">
                   {selectedPermissions.length} Modules Granted
                 </Badge>
               </div>
 
               {PERMISSION_GROUPS.map((group) => (
-                <Card key={group.name} className="rounded-xl border bg-card shadow-none">
-                  <CardHeader className="py-2 px-4 flex flex-row items-center justify-between border-b bg-muted/30">
-                    <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <Card key={group.name} className="rounded-xl border bg-card shadow-none overflow-hidden">
+                  <CardHeader className="py-2 px-3 sm:px-4 flex flex-row items-center justify-between border-b bg-muted/30 gap-2">
+                    <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground truncate">
                       {group.name}
                     </CardTitle>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 shrink-0">
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="h-6 text-[10px] rounded-full px-2"
+                        className="h-6 text-[10px] rounded-full px-2 cursor-pointer"
                         onClick={() => selectAllGroup(group.modules)}
                       >
                         Select All
@@ -767,28 +796,29 @@ export default function TeamPage() {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="h-6 text-[10px] rounded-full px-2 text-destructive hover:bg-destructive/10"
+                        className="h-6 text-[10px] rounded-full px-2 text-destructive hover:bg-destructive/10 cursor-pointer"
                         onClick={() => clearGroup(group.modules)}
                       >
                         Clear All
                       </Button>
                     </div>
                   </CardHeader>
-                  <CardContent className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <CardContent className="p-3 sm:p-4 grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-2.5">
                     {group.modules.map((m) => {
                       const isChecked = selectedPermissions.includes(m.key);
                       return (
                         <label
                           key={m.key}
                           className={cn(
-                            "flex items-center gap-2.5 rounded-lg border p-2.5 cursor-pointer transition-all text-xs",
-                            isChecked ? "border-primary bg-primary/5 font-semibold text-foreground" : "bg-muted/10 text-muted-foreground"
+                            "flex items-center gap-2 rounded-lg border p-2 sm:p-2.5 cursor-pointer transition-all text-xs select-none min-w-0",
+                            isChecked ? "border-primary bg-primary/5 font-semibold text-foreground" : "bg-muted/10 text-muted-foreground hover:bg-muted/20"
                           )}
                         >
                           <Checkbox
                             checked={isChecked}
                             disabled={status === "INACTIVE"}
                             onCheckedChange={() => togglePermission(m.key)}
+                            className="shrink-0"
                           />
                           <span className="truncate">{m.label}</span>
                         </label>
@@ -799,12 +829,22 @@ export default function TeamPage() {
               ))}
             </div>
 
-            <DialogFooter>
-              <Button type="button" variant="outline" className="rounded-full" onClick={() => setCreateOpen(false)}>
+            <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 pt-2 border-t">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto rounded-full text-xs h-9 cursor-pointer"
+                onClick={() => setCreateOpen(false)}
+              >
                 Cancel
               </Button>
-              <Button type="submit" disabled={submitting} className="rounded-full gradient-brand text-primary-foreground font-semibold">
-                {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : editMember ? "Save Changes" : "Create Staff Account"}
+              <Button
+                type="submit"
+                disabled={submitting}
+                className="w-full sm:w-auto rounded-full gradient-brand text-primary-foreground font-semibold text-xs h-9 cursor-pointer transition-transform hover:scale-105 active:scale-95"
+              >
+                {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
+                {editMember ? "Save Changes" : "Create Staff Account"}
               </Button>
             </DialogFooter>
           </form>
@@ -813,12 +853,14 @@ export default function TeamPage() {
 
       {/* Reset Password Modal */}
       <Dialog open={!!resetMember} onOpenChange={(o) => !o && setResetMember(null)}>
-        <DialogContent className="sm:max-w-md rounded-2xl">
-          <DialogHeader>
+        <DialogContent className="w-[calc(100vw-24px)] sm:max-w-md rounded-2xl p-4 sm:p-6">
+          <DialogHeader className="pr-8 sm:pr-0">
             <DialogTitle className="font-display flex items-center gap-2">
-              <Key className="h-5 w-5 text-primary" /> Reset Password — {resetMember?.name}
+              <Key className="h-5 w-5 text-primary shrink-0" /> Reset Password — {resetMember?.name}
             </DialogTitle>
-            <DialogDescription>Set a new password for staff login ID <strong className="font-mono text-primary">{resetMember?.login_id}</strong>.</DialogDescription>
+            <DialogDescription className="break-words">
+              Set a new password for staff login ID <strong className="font-mono text-primary">{resetMember?.login_id}</strong>.
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleResetPassword} className="space-y-4 py-2">
             <div className="space-y-1.5">
@@ -829,11 +871,11 @@ export default function TeamPage() {
               <Label className="text-xs font-semibold">Confirm New Password *</Label>
               <PasswordInput placeholder="••••••••" value={resetConfirmPass} onChange={(e) => setResetConfirmPass(e.target.value)} required />
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" className="rounded-full" onClick={() => setResetMember(null)}>
+            <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 pt-2">
+              <Button type="button" variant="outline" className="w-full sm:w-auto rounded-full text-xs h-9 cursor-pointer" onClick={() => setResetMember(null)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={resetting} className="rounded-full gradient-brand text-primary-foreground font-semibold">
+              <Button type="submit" disabled={resetting} className="w-full sm:w-auto rounded-full gradient-brand text-primary-foreground font-semibold text-xs h-9 cursor-pointer transition-transform hover:scale-105 active:scale-95">
                 {resetting ? "Resetting..." : "Reset Password"}
               </Button>
             </DialogFooter>
@@ -843,20 +885,20 @@ export default function TeamPage() {
 
       {/* Delete Staff Confirmation Modal */}
       <Dialog open={!!deleteMember} onOpenChange={(o) => !o && setDeleteMember(null)}>
-        <DialogContent className="sm:max-w-md rounded-2xl">
-          <DialogHeader>
+        <DialogContent className="w-[calc(100vw-24px)] sm:max-w-md rounded-2xl p-4 sm:p-6">
+          <DialogHeader className="pr-8 sm:pr-0">
             <DialogTitle className="font-display flex items-center gap-2 text-destructive">
-              <AlertTriangle className="h-5 w-5" /> Delete Staff Account
+              <AlertTriangle className="h-5 w-5 shrink-0" /> Delete Staff Account
             </DialogTitle>
           </DialogHeader>
-          <div className="py-2 text-sm text-muted-foreground">
+          <div className="py-2 text-sm text-muted-foreground break-words">
             Are you sure you want to permanently delete staff account <strong className="text-foreground">{deleteMember?.name}</strong> (Login ID: {deleteMember?.login_id})?
           </div>
-          <DialogFooter className="mt-4 flex gap-2">
-            <Button variant="outline" className="rounded-full" onClick={() => setDeleteMember(null)}>
+          <DialogFooter className="mt-4 flex flex-col-reverse sm:flex-row gap-2">
+            <Button variant="outline" className="w-full sm:w-auto rounded-full text-xs h-9 cursor-pointer" onClick={() => setDeleteMember(null)}>
               Cancel
             </Button>
-            <Button variant="destructive" className="rounded-full" onClick={handleDeleteStaff}>
+            <Button variant="destructive" className="w-full sm:w-auto rounded-full text-xs h-9 cursor-pointer" onClick={handleDeleteStaff}>
               Confirm Delete
             </Button>
           </DialogFooter>

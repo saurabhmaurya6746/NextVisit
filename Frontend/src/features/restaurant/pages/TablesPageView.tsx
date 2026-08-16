@@ -80,7 +80,12 @@ export function TablesPageView() {
     refetchInterval: 10000, // Refresh every 10s for live table updates
   });
 
-  const activeBizName = authBiz?.name || authBizName || session?.businessName || (profile?.name !== "Aroma Bistro" ? profile?.name : null) || "restaurant";
+  const activeBizName =
+    (authBiz?.name && authBiz.name !== "null" && authBiz.name !== "undefined" && authBiz.name !== "Unknown" ? authBiz.name : null) ||
+    (authBizName && authBizName !== "NextVisit" && authBizName !== "null" && authBizName !== "undefined" && authBizName !== "Unknown" ? authBizName : null) ||
+    (session?.businessName && session.businessName !== "null" && session.businessName !== "undefined" && session.businessName !== "Unknown" ? session.businessName : null) ||
+    (profile?.name && profile.name !== "Aroma Bistro" && profile.name !== "null" && profile.name !== "undefined" ? profile.name : null) ||
+    (authBiz?.name || authBizName || session?.businessName || profile?.name || "Restaurant");
   const activeSlug = (scope?.business && scope.business !== "business" && scope.business !== "restaurant")
     ? scope.business
     : (session?.businessSlug || slugify(activeBizName));

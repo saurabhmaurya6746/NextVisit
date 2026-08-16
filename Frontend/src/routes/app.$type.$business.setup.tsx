@@ -162,53 +162,82 @@ export default function RestaurantSetupPage() {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid grid-cols-2 sm:grid-cols-5 rounded-full p-1 bg-muted/60">
-          <TabsTrigger value="settings" className="rounded-full text-xs flex items-center gap-1.5">
-            <Store className="h-3.5 w-3.5" /> 1. Business Settings
-          </TabsTrigger>
-          <TabsTrigger
-            value="areas"
-            disabled={!isSettingsSaved}
-            className="rounded-full text-xs flex items-center gap-1.5 disabled:opacity-50"
-          >
-            {!isSettingsSaved ? <Lock className="h-3 w-3" /> : <Layers className="h-3.5 w-3.5" />}{" "}
-            {isSalon ? "2. Service Areas" : "2. Dining Areas"}
-          </TabsTrigger>
-          <TabsTrigger
-            value="tables"
-            disabled={!isSettingsSaved}
-            className="rounded-full text-xs flex items-center gap-1.5 disabled:opacity-50"
-          >
-            {!isSettingsSaved ? <Lock className="h-3 w-3" /> : isSalon ? <Scissors className="h-3.5 w-3.5" /> : <Utensils className="h-3.5 w-3.5" />}{" "}
-            {isSalon ? "3. Workstations" : "3. Tables"}
-          </TabsTrigger>
-          {isSalon ? (
+        <div className="w-full min-w-0 max-w-full overflow-x-auto no-scrollbar pb-1 [-webkit-overflow-scrolling:touch]">
+          <TabsList className="inline-flex h-auto w-max min-w-full sm:w-full sm:grid sm:grid-cols-5 items-center justify-start gap-1 sm:gap-1.5 rounded-xl sm:rounded-full bg-muted/60 p-1 sm:p-1.5 border border-border/40 shadow-2xs">
             <TabsTrigger
-              value="categories"
-              disabled={!isSettingsSaved}
-              className="rounded-full text-xs flex items-center gap-1.5 disabled:opacity-50"
+              value="settings"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg sm:rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-xs data-[state=active]:font-semibold"
             >
-              {!isSettingsSaved ? <Lock className="h-3 w-3" /> : <Layers className="h-3.5 w-3.5" />}{" "}
-              4. Service Categories
+              <Store className="h-3.5 w-3.5 shrink-0 text-primary" />
+              <span>1. Business Settings</span>
             </TabsTrigger>
-          ) : (
             <TabsTrigger
-              value="menu"
+              value="areas"
               disabled={!isSettingsSaved}
-              className="rounded-full text-xs flex items-center gap-1.5 disabled:opacity-50"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg sm:rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-xs data-[state=active]:font-semibold"
             >
-              {!isSettingsSaved ? <Lock className="h-3 w-3" /> : <BookOpen className="h-3.5 w-3.5" />}{" "}
-              4. Menu
+              {!isSettingsSaved ? (
+                <Lock className="h-3 w-3 shrink-0" />
+              ) : (
+                <Layers className="h-3.5 w-3.5 shrink-0 text-primary" />
+              )}{" "}
+              <span>{isSalon ? "2. Service Areas" : "2. Dining Areas"}</span>
             </TabsTrigger>
-          )}
-          <TabsTrigger
-            value="payment"
-            disabled={!isSettingsSaved}
-            className="rounded-full text-xs flex items-center gap-1.5 disabled:opacity-50"
-          >
-            {!isSettingsSaved ? <Lock className="h-3 w-3" /> : <QrCode className="h-3.5 w-3.5" />} 5. Payment QR
-          </TabsTrigger>
-        </TabsList>
+            <TabsTrigger
+              value="tables"
+              disabled={!isSettingsSaved}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg sm:rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-xs data-[state=active]:font-semibold"
+            >
+              {!isSettingsSaved ? (
+                <Lock className="h-3 w-3 shrink-0" />
+              ) : isSalon ? (
+                <Scissors className="h-3.5 w-3.5 shrink-0 text-primary" />
+              ) : (
+                <Utensils className="h-3.5 w-3.5 shrink-0 text-primary" />
+              )}{" "}
+              <span>{isSalon ? "3. Workstations" : "3. Tables"}</span>
+            </TabsTrigger>
+            {isSalon ? (
+              <TabsTrigger
+                value="categories"
+                disabled={!isSettingsSaved}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg sm:rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-xs data-[state=active]:font-semibold"
+              >
+                {!isSettingsSaved ? (
+                  <Lock className="h-3 w-3 shrink-0" />
+                ) : (
+                  <Layers className="h-3.5 w-3.5 shrink-0 text-primary" />
+                )}
+                <span>4. Service Categories</span>
+              </TabsTrigger>
+            ) : (
+              <TabsTrigger
+                value="menu"
+                disabled={!isSettingsSaved}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg sm:rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-xs data-[state=active]:font-semibold"
+              >
+                {!isSettingsSaved ? (
+                  <Lock className="h-3 w-3 shrink-0" />
+                ) : (
+                  <BookOpen className="h-3.5 w-3.5 shrink-0 text-primary" />
+                )}
+                <span>4. Menu</span>
+              </TabsTrigger>
+            )}
+            <TabsTrigger
+              value="payment"
+              disabled={!isSettingsSaved}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg sm:rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-xs data-[state=active]:font-semibold"
+            >
+              {!isSettingsSaved ? (
+                <Lock className="h-3 w-3 shrink-0" />
+              ) : (
+                <QrCode className="h-3.5 w-3.5 shrink-0 text-primary" />
+              )}{" "}
+              <span>5. Payment QR</span>
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* STEP 1: BUSINESS SETTINGS */}
         <TabsContent value="settings">

@@ -328,14 +328,14 @@ export default function CustomersPage() {
         title="Customers"
         description={`Showing ${fromItem}–${toItem} of ${total} customers · Server-side Paginated`}
         actions={
-          <>
-            <div className="inline-flex rounded-full border p-0.5">
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto">
+            <div className="inline-flex rounded-full border p-0.5 bg-muted/30 shrink-0">
               <button
                 type="button"
                 onClick={() => setView("card")}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all",
-                  view === "card" ? "gradient-brand text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer",
+                  view === "card" ? "gradient-brand text-primary-foreground shadow-2xs" : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <LayoutGrid className="h-3.5 w-3.5" /> Card
@@ -344,75 +344,81 @@ export default function CustomersPage() {
                 type="button"
                 onClick={() => setView("list")}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all",
-                  view === "list" ? "gradient-brand text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer",
+                  view === "list" ? "gradient-brand text-primary-foreground shadow-2xs" : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <ListIcon className="h-3.5 w-3.5" /> List
               </button>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="rounded-full transition-transform hover:scale-105 active:scale-95"
-              onClick={() => {
-                setImportFile(null);
-                setImportSummary(null);
-                setIsImportOpen(true);
-              }}
-            >
-              <Upload className="mr-1.5 h-4 w-4" /> Import
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!!exportingFormat || loading}
-                  className="rounded-full transition-transform hover:scale-105 active:scale-95"
-                >
-                  {exportingFormat ? (
-                    <>
-                      <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> Exporting...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="mr-1.5 h-4 w-4" /> Export <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-60" />
-                    </>
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52 rounded-xl p-1.5 shadow-lg">
-                <DropdownMenuItem
-                  className="rounded-lg cursor-pointer py-2 text-xs font-medium"
-                  onClick={() => handleExport("pdf")}
-                >
-                  <FileText className="mr-2 h-4 w-4 text-rose-500" />
-                  <span>PDF Report (.pdf)</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="rounded-lg cursor-pointer py-2 text-xs font-medium"
-                  onClick={() => handleExport("xlsx")}
-                >
-                  <FileSpreadsheet className="mr-2 h-4 w-4 text-emerald-500" />
-                  <span>Excel Sheet (.xlsx)</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="rounded-lg cursor-pointer py-2 text-xs font-medium"
-                  onClick={() => handleExport("csv")}
-                >
-                  <FileCode className="mr-2 h-4 w-4 text-blue-500" />
-                  <span>CSV File (.csv)</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button size="sm" className="rounded-full gradient-brand text-primary-foreground transition-transform hover:scale-105 active:scale-95" onClick={() => setIsAddOpen(true)}>
-              <Plus className="mr-1.5 h-4 w-4" /> Add customer
-            </Button>
-          </>
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap flex-1 sm:flex-none justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full text-xs h-8 px-3 cursor-pointer"
+                onClick={() => {
+                  setImportFile(null);
+                  setImportSummary(null);
+                  setIsImportOpen(true);
+                }}
+              >
+                <Upload className="mr-1.5 h-3.5 w-3.5" /> Import
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!!exportingFormat || loading}
+                    className="rounded-full text-xs h-8 px-3 cursor-pointer"
+                  >
+                    {exportingFormat ? (
+                      <>
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Exporting...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="mr-1.5 h-3.5 w-3.5" /> Export <ChevronDown className="ml-1 h-3 w-3 opacity-60" />
+                      </>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52 rounded-xl p-1.5 shadow-lg">
+                  <DropdownMenuItem
+                    className="rounded-lg cursor-pointer py-2 text-xs font-medium"
+                    onClick={() => handleExport("pdf")}
+                  >
+                    <FileText className="mr-2 h-4 w-4 text-rose-500" />
+                    <span>PDF Report (.pdf)</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="rounded-lg cursor-pointer py-2 text-xs font-medium"
+                    onClick={() => handleExport("xlsx")}
+                  >
+                    <FileSpreadsheet className="mr-2 h-4 w-4 text-emerald-500" />
+                    <span>Excel Sheet (.xlsx)</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="rounded-lg cursor-pointer py-2 text-xs font-medium"
+                    onClick={() => handleExport("csv")}
+                  >
+                    <FileCode className="mr-2 h-4 w-4 text-blue-500" />
+                    <span>CSV File (.csv)</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                size="sm"
+                className="rounded-full gradient-brand text-primary-foreground text-xs h-8 px-3 cursor-pointer transition-transform hover:scale-105 active:scale-95"
+                onClick={() => setIsAddOpen(true)}
+              >
+                <Plus className="mr-1.5 h-3.5 w-3.5" /> Add customer
+              </Button>
+            </div>
+          </div>
         }
       />
-      <div className="mb-4 grid gap-2 sm:flex sm:items-center">
+      <div className="mb-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -422,42 +428,50 @@ export default function CustomersPage() {
               setQ(e.target.value);
               setPage(1);
             }}
-            className="pl-9"
+            className="pl-9 h-9 text-xs rounded-full"
           />
         </div>
-        <Select
-          value={status}
-          onValueChange={(val) => {
-            setStatus(val);
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-full sm:w-40"><Filter className="mr-1.5 h-3.5 w-3.5" /><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All customers</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="inactive">Inactive</SelectItem>
-            <SelectItem value="VIP">VIP</SelectItem>
-            <SelectItem value="New">New</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select
-          value={sortBy}
-          onValueChange={(val) => {
-            setSortBy(val);
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-full sm:w-44"><ArrowUpDown className="mr-1.5 h-3.5 w-3.5" /><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="newest">Newest First</SelectItem>
-            <SelectItem value="oldest">Oldest First</SelectItem>
-            <SelectItem value="highest_spend">Highest Spend</SelectItem>
-            <SelectItem value="most_visits">Most Visits</SelectItem>
-            <SelectItem value="name_asc">Name (A-Z)</SelectItem>
-            <SelectItem value="name_desc">Name (Z-A)</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select
+            value={status}
+            onValueChange={(val) => {
+              setStatus(val);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="flex-1 sm:w-36 h-9 rounded-full text-xs">
+              <Filter className="mr-1.5 h-3.5 w-3.5 shrink-0" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All customers</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+              <SelectItem value="VIP">VIP</SelectItem>
+              <SelectItem value="New">New</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={sortBy}
+            onValueChange={(val) => {
+              setSortBy(val);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="flex-1 sm:w-40 h-9 rounded-full text-xs">
+              <ArrowUpDown className="mr-1.5 h-3.5 w-3.5 shrink-0" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="newest">Newest First</SelectItem>
+              <SelectItem value="oldest">Oldest First</SelectItem>
+              <SelectItem value="highest_spend">Highest Spend</SelectItem>
+              <SelectItem value="most_visits">Most Visits</SelectItem>
+              <SelectItem value="name_asc">Name (A-Z)</SelectItem>
+              <SelectItem value="name_desc">Name (Z-A)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {loading ? (
@@ -542,53 +556,53 @@ export default function CustomersPage() {
 
       {/* SERVER-SIDE PAGINATION CONTROLS */}
       {!loading && !error && total > 0 && (
-        <div className="mt-4 flex flex-col items-center justify-between gap-3 rounded-2xl border bg-card p-4 shadow-xs sm:flex-row">
-          <p className="text-xs text-muted-foreground font-medium">
+        <div className="mt-4 flex flex-col items-center justify-between gap-3 rounded-2xl border bg-card p-3.5 shadow-xs sm:flex-row">
+          <p className="text-xs text-muted-foreground font-medium text-center sm:text-left">
             Showing <strong className="text-foreground">{fromItem}–{toItem}</strong> of <strong className="text-foreground">{total}</strong> customers
           </p>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap justify-center">
             <Button
               variant="outline"
               size="sm"
-              className="h-8 rounded-lg px-2 text-xs"
+              className="h-8 rounded-full px-2.5 text-xs cursor-pointer"
               onClick={() => setPage(1)}
               disabled={page === 1}
               title="First Page"
             >
-              <ChevronsLeft className="h-3.5 w-3.5 mr-1" /> First
+              <ChevronsLeft className="h-3.5 w-3.5 mr-0.5" /> <span className="hidden xs:inline">First</span>
             </Button>
             <Button
               variant="outline"
               size="sm"
-              className="h-8 rounded-lg px-2.5 text-xs"
+              className="h-8 rounded-full px-2.5 text-xs cursor-pointer"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={!hasPrevious}
               title="Previous Page"
             >
-              <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Previous
+              <ChevronLeft className="h-3.5 w-3.5 mr-0.5" /> <span className="hidden xs:inline">Prev</span>
             </Button>
-            <span className="px-3 text-xs font-semibold text-foreground">
-              Page {page} of {totalPages}
+            <span className="px-2 text-xs font-semibold text-foreground shrink-0">
+              {page} / {totalPages}
             </span>
             <Button
               variant="outline"
               size="sm"
-              className="h-8 rounded-lg px-2.5 text-xs"
+              className="h-8 rounded-full px-2.5 text-xs cursor-pointer"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={!hasNext}
               title="Next Page"
             >
-              Next <ChevronRight className="h-3.5 w-3.5 ml-1" />
+              <span className="hidden xs:inline">Next</span> <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
             </Button>
             <Button
               variant="outline"
               size="sm"
-              className="h-8 rounded-lg px-2 text-xs"
+              className="h-8 rounded-full px-2.5 text-xs cursor-pointer"
               onClick={() => setPage(totalPages)}
               disabled={page === totalPages}
               title="Last Page"
             >
-              Last <ChevronsRight className="h-3.5 w-3.5 ml-1" />
+              <span className="hidden xs:inline">Last</span> <ChevronsRight className="h-3.5 w-3.5 ml-0.5" />
             </Button>
           </div>
         </div>
