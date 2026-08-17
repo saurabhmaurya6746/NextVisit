@@ -27,3 +27,4 @@ openpyxl
 
 # AI / Integrations
 google-generativeai
+resend

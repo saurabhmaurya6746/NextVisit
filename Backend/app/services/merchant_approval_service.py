@@ -87,7 +87,28 @@ class MerchantApprovalService:
 
             self.db.commit()
             self.db.refresh(business)
+
+            # Non-blocking User Approval Email Notification
+            try:
+                from app.services.email_service import EmailService
+                owner_user = self.db.query(User).filter(User.business_id == business_id, User.role == "OWNER").first()
+                recipient_email = owner_user.email if (owner_user and owner_user.email) else business.email
+                recipient_name = owner_user.name if (owner_user and owner_user.name) else business.owner_name
+                if recipient_email:
+                    EmailService.send_account_approved_email(
+                        owner_email=recipient_email,
+                        owner_name=recipient_name,
+                        business_name=business.name,
+                    )
+            except Exception as email_err:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Non-blocking approval email notification error: %s", str(email_err)
+                )
+
             return business
+        except HTTPException:
+            raise
         except Exception as e:
             self.db.rollback()
             raise HTTPException(
@@ -131,10 +152,33 @@ class MerchantApprovalService:
 
             self.db.commit()
             self.db.refresh(business)
+
+            # Non-blocking User Rejection Email Notification
+            try:
+                from app.services.email_service import EmailService
+                owner_user = self.db.query(User).filter(User.business_id == business_id, User.role == "OWNER").first()
+                recipient_email = owner_user.email if (owner_user and owner_user.email) else business.email
+                recipient_name = owner_user.name if (owner_user and owner_user.name) else business.owner_name
+                if recipient_email:
+                    EmailService.send_account_rejected_email(
+                        owner_email=recipient_email,
+                        owner_name=recipient_name,
+                        business_name=business.name,
+                        reason=business.rejection_reason,
+                    )
+            except Exception as email_err:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Non-blocking rejection email notification error: %s", str(email_err)
+                )
+
             return business
+        except HTTPException:
+            raise
         except Exception as e:
             self.db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to reject business due to an internal error.",
             ) from e
+

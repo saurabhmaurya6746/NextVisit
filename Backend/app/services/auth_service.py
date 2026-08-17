@@ -127,6 +127,21 @@ class AuthService:
             self.db.refresh(user)
             self.db.refresh(business)
 
+            # 7. Non-blocking Admin Email Notification
+            try:
+                from app.services.email_service import EmailService
+                business_type_name = getattr(business_type, "name", "") if business_type else ""
+                EmailService.send_new_signup_notification(
+                    business_name=business.name,
+                    owner_name=user.name,
+                    owner_email=user.email,
+                    business_type=business_type_name,
+                    signup_time=business.created_at or datetime.now(timezone.utc),
+                    business_id=str(business.id),
+                )
+            except Exception as email_err:
+                logger.warning("Non-blocking signup admin email notification error: %s", str(email_err))
+
             token = create_access_token(
                 {
                     "sub": str(user.id),
