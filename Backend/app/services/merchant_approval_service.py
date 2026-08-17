@@ -1,8 +1,10 @@
+import logging
 import math
 from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.business import Business, BusinessStatus
@@ -10,6 +12,8 @@ from app.models.user import User
 from app.repositories.business_repository import BusinessRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.approval import PaginatedApprovalResponse
+
+logger = logging.getLogger(__name__)
 
 
 class MerchantApprovalService:
@@ -68,7 +72,7 @@ class MerchantApprovalService:
         elif business.status == BusinessStatus.REJECTED.value:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Business is already rejected.",
+                detail="Business was previously rejected. Please review manually.",
             )
         elif business.status == BusinessStatus.SUSPENDED.value:
             raise HTTPException(
@@ -91,19 +95,58 @@ class MerchantApprovalService:
             # Non-blocking User Approval Email Notification
             try:
                 from app.services.email_service import EmailService
-                owner_user = self.db.query(User).filter(User.business_id == business_id, User.role == "OWNER").first()
-                recipient_email = owner_user.email if (owner_user and owner_user.email) else business.email
-                recipient_name = owner_user.name if (owner_user and owner_user.name) else business.owner_name
+
+                owner_user = (
+                    self.db.query(User)
+                    .filter(User.business_id == business_id)
+                    .filter(func.lower(User.role) == "owner")
+                    .first()
+                )
+                if not owner_user:
+                    owner_user = (
+                        self.db.query(User)
+                        .filter(User.business_id == business_id)
+                        .first()
+                    )
+
+                recipient_email = (
+                    owner_user.email.strip()
+                    if (owner_user and owner_user.email)
+                    else (business.email.strip() if business.email else None)
+                )
+                recipient_name = (
+                    owner_user.name.strip()
+                    if (owner_user and owner_user.name)
+                    else (business.owner_name.strip() if business.owner_name else "Merchant")
+                )
+                user_id_str = str(owner_user.id) if owner_user else str(business.id)
+
                 if recipient_email:
-                    EmailService.send_account_approved_email(
+                    sent = EmailService.send_account_approved_email(
                         owner_email=recipient_email,
                         owner_name=recipient_name,
                         business_name=business.name,
                     )
+                    if sent:
+                        logger.info(
+                            "Approval email sent successfully for user ID %s (recipient: %s)",
+                            user_id_str,
+                            recipient_email,
+                        )
+                    else:
+                        logger.warning(
+                            "Failed to send approval email: Resend dispatch returned False for user ID %s (recipient: %s)",
+                            user_id_str,
+                            recipient_email,
+                        )
+                else:
+                    logger.warning(
+                        "Approval email skipped: No recipient email found for business ID %s",
+                        str(business_id),
+                    )
             except Exception as email_err:
-                import logging
-                logging.getLogger(__name__).warning(
-                    "Non-blocking approval email notification error: %s", str(email_err)
+                logger.warning(
+                    "Failed to send approval email: %s", str(email_err)
                 )
 
             return business
@@ -156,20 +199,59 @@ class MerchantApprovalService:
             # Non-blocking User Rejection Email Notification
             try:
                 from app.services.email_service import EmailService
-                owner_user = self.db.query(User).filter(User.business_id == business_id, User.role == "OWNER").first()
-                recipient_email = owner_user.email if (owner_user and owner_user.email) else business.email
-                recipient_name = owner_user.name if (owner_user and owner_user.name) else business.owner_name
+
+                owner_user = (
+                    self.db.query(User)
+                    .filter(User.business_id == business_id)
+                    .filter(func.lower(User.role) == "owner")
+                    .first()
+                )
+                if not owner_user:
+                    owner_user = (
+                        self.db.query(User)
+                        .filter(User.business_id == business_id)
+                        .first()
+                    )
+
+                recipient_email = (
+                    owner_user.email.strip()
+                    if (owner_user and owner_user.email)
+                    else (business.email.strip() if business.email else None)
+                )
+                recipient_name = (
+                    owner_user.name.strip()
+                    if (owner_user and owner_user.name)
+                    else (business.owner_name.strip() if business.owner_name else "Merchant")
+                )
+                user_id_str = str(owner_user.id) if owner_user else str(business.id)
+
                 if recipient_email:
-                    EmailService.send_account_rejected_email(
+                    sent = EmailService.send_account_rejected_email(
                         owner_email=recipient_email,
                         owner_name=recipient_name,
                         business_name=business.name,
                         reason=business.rejection_reason,
                     )
+                    if sent:
+                        logger.info(
+                            "Rejection email sent successfully for user ID %s (recipient: %s)",
+                            user_id_str,
+                            recipient_email,
+                        )
+                    else:
+                        logger.warning(
+                            "Failed to send rejection email: Resend dispatch returned False for user ID %s (recipient: %s)",
+                            user_id_str,
+                            recipient_email,
+                        )
+                else:
+                    logger.warning(
+                        "Rejection email skipped: No recipient email found for business ID %s",
+                        str(business_id),
+                    )
             except Exception as email_err:
-                import logging
-                logging.getLogger(__name__).warning(
-                    "Non-blocking rejection email notification error: %s", str(email_err)
+                logger.warning(
+                    "Failed to send rejection email: %s", str(email_err)
                 )
 
             return business
@@ -181,4 +263,3 @@ class MerchantApprovalService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to reject business due to an internal error.",
             ) from e
-

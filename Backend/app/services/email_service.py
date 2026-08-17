@@ -68,12 +68,13 @@ class EmailService:
         except Exception as exc:
             # Safe logging: never print or expose the API key or internal credentials
             logger.error(
-                "Resend email dispatch failed | subject='%s' to=%s error=%s",
-                subject,
-                to,
+                "Failed to send email notification: %s | subject='%s' to=%s",
                 str(exc),
+                subject,
+                clean_recipients if 'clean_recipients' in locals() else to,
             )
             return False
+
 
     @classmethod
     def send_new_signup_notification(
