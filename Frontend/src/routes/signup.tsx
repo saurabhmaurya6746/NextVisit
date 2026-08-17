@@ -129,13 +129,13 @@ export default function SignupPage() {
             </div>
             <h1 className="font-display text-2xl font-semibold">Account Created Successfully</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Your account is currently under review. We'll notify you at <span className="font-medium text-foreground">{form.email}</span> after approval.
+              Your account is currently under review. Our team will review your application and contact you within 12 hours at <span className="font-medium text-foreground">{form.email}</span>.
             </p>
             <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-warning/15 px-3 py-1 text-xs font-medium text-warning">
               <Clock className="h-3.5 w-3.5" /> Pending Approval
             </div>
-            <Button className="mt-6 w-full rounded-full gradient-brand text-primary-foreground" onClick={() => navigate({ to: "/login" })}>
-              Back to sign in
+            <Button className="mt-6 w-full rounded-full gradient-brand text-primary-foreground" onClick={() => navigate("/login")}>
+              Back to Sign In
             </Button>
           </div>
         ) : (
