@@ -11,7 +11,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models.business import Business
+from app.models.business import Business, BusinessStatus
 from app.models.user import User
 from app.repositories.business_repository import BusinessRepository
 from app.repositories.business_type_repository import BusinessTypeRepository
@@ -49,24 +49,7 @@ class AuthService:
 
             clean_email = data.owner.owner_email.strip().lower()
 
-            # 2. Guard: duplicate email (ignore soft-deleted users/businesses)
-            existing_user = self.db.scalar(
-                select(User)
-                .join(Business, User.business_id == Business.id)
-                .where(
-                    func.lower(User.email) == clean_email,
-                    Business.is_deleted.is_(False),
-                    User.is_active.is_(True),
-                    User.status != "DELETED",
-                )
-            )
-            if existing_user:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="An account with this email already exists.",
-                )
-
-            # Cleanup legacy soft-deleted business/user rows that have clean_email to avoid SQL UNIQUE constraint failure
+            # Clean up soft-deleted businesses/users with this email to prevent unique constraint conflict
             legacy_deleted_bizs = list(self.db.scalars(
                 select(Business).where(
                     func.lower(Business.email) == clean_email,
@@ -78,23 +61,180 @@ class AuthService:
                 b.email = f"deleted_{uuid_lib.uuid4().hex[:8]}_{b.email}"
 
             legacy_deleted_users = list(self.db.scalars(
-                select(User).where(
+                select(User)
+                .join(Business, User.business_id == Business.id)
+                .where(
                     func.lower(User.email) == clean_email,
-                    (User.is_active.is_(False) | (User.status == "DELETED")),
+                    (Business.is_deleted.is_(True) | (User.status == "DELETED")),
                 )
             ).all())
             for u in legacy_deleted_users:
                 import uuid as uuid_lib
                 u.email = f"deleted_{uuid_lib.uuid4().hex[:8]}_{u.email}"
 
-            # 3. Create Business
+            # 2. Check for existing non-deleted business with this email
+            existing_biz = self.db.scalar(
+                select(Business).where(
+                    func.lower(Business.email) == clean_email,
+                    Business.is_deleted.is_(False),
+                )
+            )
+
+            # If not found by business.email, also check by user.email
+            if not existing_biz:
+                existing_user = self.db.scalar(
+                    select(User)
+                    .join(Business, User.business_id == Business.id)
+                    .where(
+                        func.lower(User.email) == clean_email,
+                        Business.is_deleted.is_(False),
+                        User.status != "DELETED",
+                    )
+                )
+                if existing_user:
+                    existing_biz = existing_user.business
+
             from app.models.subscription_plan import SubscriptionPlan
-            starter_plan = self.db.scalar(select(SubscriptionPlan).where(SubscriptionPlan.name == "STARTER"))
+            starter_plan = self.db.scalar(
+                select(SubscriptionPlan).where(SubscriptionPlan.name == "STARTER")
+            )
+
+            from app.services.automation_service import AutomationService
+            from app.services.business_settings_service import BusinessSettingsService
+            from app.services.message_template_service import MessageTemplateService
+
+            if existing_biz:
+                # Check status of existing business
+                if existing_biz.status == BusinessStatus.PENDING.value:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="An account with this email is already pending approval.",
+                    )
+                elif existing_biz.status in [
+                    BusinessStatus.ACTIVE.value,
+                    BusinessStatus.SUSPENDED.value,
+                ]:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="An account with this email already exists.",
+                    )
+                elif existing_biz.status == BusinessStatus.REJECTED.value:
+                    # ALLOW REAPPLICATION: Update and reset rejected business to PENDING
+                    logger.info(
+                        "Reapplying rejected business registration | business_id=%s email=%s",
+                        existing_biz.id,
+                        clean_email,
+                    )
+                    existing_biz.business_type_id = data.business.business_type_id
+                    existing_biz.name = data.business.business_name
+                    existing_biz.owner_name = data.owner.owner_name
+                    existing_biz.email = data.owner.owner_email.strip()
+                    existing_biz.phone = data.business.phone
+                    existing_biz.country = data.business.country
+                    existing_biz.currency = data.business.currency
+                    existing_biz.timezone = data.business.timezone
+                    existing_biz.address = data.business.address
+                    existing_biz.status = BusinessStatus.PENDING.value
+                    existing_biz.rejection_reason = None
+                    existing_biz.approved_at = None
+                    existing_biz.is_active = True
+                    existing_biz.is_deleted = False
+                    existing_biz.created_at = datetime.now(timezone.utc)
+                    if not existing_biz.subscription_plan_id and starter_plan:
+                        existing_biz.subscription_plan_id = starter_plan.id
+
+                    # Update or create owner user
+                    owner_user = self.db.scalar(
+                        select(User).where(
+                            User.business_id == existing_biz.id,
+                            func.lower(User.role) == "owner",
+                        )
+                    )
+                    if not owner_user:
+                        owner_user = self.db.scalar(
+                            select(User).where(User.business_id == existing_biz.id)
+                        )
+
+                    if owner_user:
+                        owner_user.name = data.owner.owner_name
+                        owner_user.email = data.owner.owner_email.strip()
+                        owner_user.hashed_password = hash_password(data.owner.password)
+                        owner_user.role = "OWNER"
+                        owner_user.status = "ACTIVE"
+                        owner_user.is_active = True
+                    else:
+                        owner_user = User(
+                            business_id=existing_biz.id,
+                            name=data.owner.owner_name,
+                            email=data.owner.owner_email.strip(),
+                            hashed_password=hash_password(data.owner.password),
+                            role="OWNER",
+                            status="ACTIVE",
+                            is_active=True,
+                        )
+                        owner_user = self.user_repo.create(owner_user)
+
+                    # Initialize or ensure defaults
+                    AutomationService(self.db).init_default_rules_for_business(existing_biz.id)
+                    MessageTemplateService(self.db).init_default_templates_for_business(existing_biz.id)
+                    BusinessSettingsService(self.db).init_default_settings_for_business(existing_biz.id)
+
+                    self.db.commit()
+                    self.db.refresh(owner_user)
+                    self.db.refresh(existing_biz)
+
+                    # Non-blocking Admin Email Notification for resubmitted signup
+                    try:
+                        from app.services.email_service import EmailService
+                        business_type_name = getattr(business_type, "name", "") if business_type else ""
+                        sent = EmailService.send_new_signup_notification(
+                            business_name=existing_biz.name,
+                            owner_name=owner_user.name,
+                            owner_email=owner_user.email,
+                            business_type=business_type_name,
+                            signup_time=datetime.now(timezone.utc),
+                            business_id=str(existing_biz.id),
+                        )
+                        if sent:
+                            logger.info(
+                                "Admin signup notification email sent successfully for resubmitted business ID %s (%s)",
+                                str(existing_biz.id),
+                                owner_user.email,
+                            )
+                        else:
+                            logger.warning(
+                                "Failed to send admin signup notification email for resubmitted business ID %s",
+                                str(existing_biz.id),
+                            )
+                    except Exception as email_err:
+                        logger.warning(
+                            "Non-blocking signup admin email notification error: %s",
+                            str(email_err),
+                        )
+
+                    token = create_access_token(
+                        {
+                            "sub": str(owner_user.id),
+                            "business_id": str(existing_biz.id),
+                            "role": owner_user.role,
+                        }
+                    )
+                    return {
+                        "access_token": token,
+                        "token_type": "bearer",
+                    }
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="An account with this email already exists.",
+                    )
+
+            # 3. Create Brand New Business
             business = Business(
                 business_type_id=data.business.business_type_id,
                 name=data.business.business_name,
                 owner_name=data.owner.owner_name,
-                email=data.owner.owner_email,
+                email=data.owner.owner_email.strip(),
                 phone=data.business.phone,
                 country=data.business.country,
                 currency=data.business.currency,
@@ -108,16 +248,15 @@ class AuthService:
             user = User(
                 business_id=business.id,
                 name=data.owner.owner_name,
-                email=data.owner.owner_email,
+                email=data.owner.owner_email.strip(),
                 hashed_password=hash_password(data.owner.password),
                 role="OWNER",
+                status="ACTIVE",
+                is_active=True,
             )
             user = self.user_repo.create(user)
 
             # 5. Initialize defaults
-            from app.services.automation_service import AutomationService
-            from app.services.business_settings_service import BusinessSettingsService
-            from app.services.message_template_service import MessageTemplateService
             AutomationService(self.db).init_default_rules_for_business(business.id)
             MessageTemplateService(self.db).init_default_templates_for_business(business.id)
             BusinessSettingsService(self.db).init_default_settings_for_business(business.id)
@@ -145,7 +284,6 @@ class AuthService:
                     logger.warning("Failed to send admin signup notification email for user ID %s (business ID: %s)", str(user.id), str(business.id))
             except Exception as email_err:
                 logger.warning("Non-blocking signup admin email notification error: %s", str(email_err))
-
 
             token = create_access_token(
                 {
@@ -177,6 +315,7 @@ class AuthService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Registration failed due to an internal error. Please try again.",
             ) from exc
+
 
     # ------------------------------------------------------------------
     # Login (Supports Owner Email OR Staff Auto-Generated Login ID)
