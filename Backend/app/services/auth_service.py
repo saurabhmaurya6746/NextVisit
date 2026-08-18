@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
@@ -22,6 +23,34 @@ from app.schemas.business import BusinessCreate
 logger = logging.getLogger(__name__)
 
 
+def validate_password_complexity(password: str) -> None:
+    if len(password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters long.",
+        )
+    if not re.search(r"[A-Z]", password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must contain at least one uppercase letter (A-Z).",
+        )
+    if not re.search(r"[a-z]", password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must contain at least one lowercase letter (a-z).",
+        )
+    if not re.search(r"[0-9]", password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must contain at least one number (0-9).",
+        )
+    if not re.search(r"[^a-zA-Z0-9]", password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must contain at least one special character (e.g. !@#$%^&*()_+-=).",
+        )
+
+
 class AuthService:
 
     def __init__(self, db: Session):
@@ -37,10 +66,14 @@ class AuthService:
         )
 
         try:
+            # 0. Validate password complexity
+            validate_password_complexity(data.owner.password)
+
             # 1. Validate business_type_id exists
             business_type = self.business_type_repo.get_by_id(
                 data.business.business_type_id
             )
+
             if not business_type:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,

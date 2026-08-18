@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { createFileRoute } from "@/lib/route-compat";
 import { useState, useEffect, type FormEvent } from "react";
-import { CheckCircle2, Clock, Loader2 } from "lucide-react";
+import { Check, CheckCircle2, Clock, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,10 +29,13 @@ export default function SignupPage() {
   const {
     values: form,
     errors,
+    setErrors,
     touched,
+    setTouched,
     handleChange,
     handleBlur,
     validateAll,
+    validateField,
     registerRef,
   } = useFormValidation(
     {
@@ -52,16 +55,39 @@ export default function SignupPage() {
       owner: { required: true, requiredMessage: "Owner name is required" },
       phone: { required: true, isPhone: true, requiredMessage: "10-digit mobile number required" },
       email: { required: true, isEmail: true, requiredMessage: "Valid email is required" },
-      password: { required: true, minLength: 6, requiredMessage: "Password (min 6 characters) required" },
+      password: {
+        required: true,
+        requiredMessage: "Password is required",
+        custom: (val) => {
+          if (!val) return "Password is required";
+          if (val.length < 8) return "Password must be at least 8 characters";
+          if (!/[A-Z]/.test(val)) return "Password must contain at least one uppercase letter";
+          if (!/[a-z]/.test(val)) return "Password must contain at least one lowercase letter";
+          if (!/[0-9]/.test(val)) return "Password must contain at least one number";
+          if (!/[^A-Za-z0-9]/.test(val)) return "Password must contain at least one special character";
+          return null;
+        },
+      },
       confirm: {
         required: true,
-        custom: (val) => (val !== form.password ? "Passwords don't match" : null),
+        requiredMessage: "Confirm password is required",
+        custom: (val) => (val !== form.password ? "Passwords do not match." : null),
       },
       country: { required: true, requiredMessage: "Country is required" },
       city: { required: true, requiredMessage: "City is required" },
       terms: { required: true, requiredMessage: "You must accept the terms" },
     }
   );
+
+  const passwordRequirements = [
+    { label: "At least 8 characters", met: form.password.length >= 8 },
+    { label: "One uppercase letter", met: /[A-Z]/.test(form.password) },
+    { label: "One lowercase letter", met: /[a-z]/.test(form.password) },
+    { label: "One number", met: /[0-9]/.test(form.password) },
+    { label: "One special character", met: /[^A-Za-z0-9]/.test(form.password) },
+  ];
+
+  const isPasswordValid = passwordRequirements.every((r) => r.met);
 
   useEffect(() => {
     getBusinessTypesApi().then((types) => {
@@ -72,10 +98,38 @@ export default function SignupPage() {
     }).catch(() => {});
   }, []);
 
+  const handlePasswordChange = (val: string) => {
+    handleChange("password", val);
+    setTouched((prev) => ({ ...prev, password: true }));
+    if (touched.confirm || form.confirm) {
+      if (form.confirm && val !== form.confirm) {
+        setErrors((prev) => ({ ...prev, confirm: "Passwords do not match." }));
+      } else if (form.confirm && val === form.confirm) {
+        setErrors((prev) => ({ ...prev, confirm: undefined }));
+      }
+    }
+  };
+
+  const handleConfirmChange = (val: string) => {
+    handleChange("confirm", val);
+    setTouched((prev) => ({ ...prev, confirm: true }));
+    if (val !== form.password) {
+      setErrors((prev) => ({ ...prev, confirm: "Passwords do not match." }));
+    } else {
+      setErrors((prev) => ({ ...prev, confirm: undefined }));
+    }
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!validateAll()) {
-      toast.error("Please correct the highlighted fields before submitting.");
+    if (!validateAll() || !isPasswordValid || form.password !== form.confirm) {
+      if (form.password !== form.confirm) {
+        toast.error("Passwords do not match.");
+      } else if (!isPasswordValid) {
+        toast.error("Please satisfy all password requirements.");
+      } else {
+        toast.error("Please correct the highlighted fields before submitting.");
+      }
       return;
     }
 
@@ -217,25 +271,47 @@ export default function SignupPage() {
                   placeholder="you@business.com"
                 />
               </ValidatedField>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <ValidatedField label="Password" required error={errors.password} touched={touched.password}>
-                  <PasswordInput
-                    ref={registerRef("password")}
-                    value={form.password}
-                    onChange={(e) => handleChange("password", e.target.value)}
-                    onBlur={() => handleBlur("password")}
-                    autoComplete="new-password"
-                  />
-                </ValidatedField>
-                <ValidatedField label="Confirm password" required error={errors.confirm} touched={touched.confirm}>
-                  <PasswordInput
-                    ref={registerRef("confirm")}
-                    value={form.confirm}
-                    onChange={(e) => handleChange("confirm", e.target.value)}
-                    onBlur={() => handleBlur("confirm")}
-                    autoComplete="new-password"
-                  />
-                </ValidatedField>
+              <div className="space-y-2">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <ValidatedField label="Password" required error={errors.password} touched={touched.password}>
+                    <PasswordInput
+                      ref={registerRef("password")}
+                      value={form.password}
+                      onChange={(e) => handlePasswordChange(e.target.value)}
+                      onBlur={() => handleBlur("password")}
+                      autoComplete="new-password"
+                    />
+                  </ValidatedField>
+                  <ValidatedField label="Confirm password" required error={errors.confirm} touched={touched.confirm}>
+                    <PasswordInput
+                      ref={registerRef("confirm")}
+                      value={form.confirm}
+                      onChange={(e) => handleConfirmChange(e.target.value)}
+                      onBlur={() => handleBlur("confirm")}
+                      autoComplete="new-password"
+                    />
+                  </ValidatedField>
+                </div>
+                <div className="rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground">
+                  <p className="font-medium text-foreground mb-1.5">Password must contain:</p>
+                  <ul className="grid gap-1.5 sm:grid-cols-2">
+                    {passwordRequirements.map((req, i) => (
+                      <li
+                        key={i}
+                        className={`flex items-center gap-1.5 transition-colors ${
+                          req.met ? "text-success font-medium" : "text-muted-foreground"
+                        }`}
+                      >
+                        {req.met ? (
+                          <Check className="h-3.5 w-3.5 text-success shrink-0 stroke-[2.5]" />
+                        ) : (
+                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/40 mx-1 shrink-0" />
+                        )}
+                        <span>{req.label}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <ValidatedField label="Country" required error={errors.country} touched={touched.country}>
