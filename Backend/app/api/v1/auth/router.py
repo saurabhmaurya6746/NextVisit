@@ -1,12 +1,19 @@
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user
 from app.db.database import get_db
 from app.models.user import User
-from app.schemas.auth import LoginRequest, TokenResponse
+from app.schemas.auth import (
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    LoginRequest,
+    ResetPasswordRequest,
+    ResetPasswordResponse,
+    TokenResponse,
+)
 from app.schemas.business import BusinessCreate
 from app.schemas.user import UserResponse
 from app.services.auth_service import AuthService
@@ -46,6 +53,49 @@ def login(
     Returns HTTP 401 for invalid credentials.
     """
     return AuthService(db).login(data)
+
+
+@router.post(
+    "/forgot-password",
+    response_model=ForgotPasswordResponse,
+    summary="Request a password reset link",
+)
+def forgot_password(
+    data: ForgotPasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Generate a secure single-use password reset token and dispatch a reset link email.
+    Always returns a generic message to prevent account enumeration.
+    """
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+    return AuthService(db).forgot_password(
+        email=data.email,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
+
+@router.post(
+    "/reset-password",
+    response_model=ResetPasswordResponse,
+    summary="Reset password using a valid reset token",
+)
+def reset_password(
+    data: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Validate the token, verify expiration and single-use status,
+    and update the user's password.
+    """
+    return AuthService(db).reset_password(
+        token=data.token,
+        password=data.password,
+        confirm_password=data.confirm_password,
+    )
 
 
 @router.get(

@@ -107,14 +107,12 @@ export default function UnifiedLogin() {
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="password">Password</Label>
-                  <button
-                    type="button"
-                    disabled={isBusy}
-                    onClick={() => toast("Password reset link sent if the email exists.")}
-                    className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  <Link
+                    to="/forgot-password"
+                    className="text-xs text-muted-foreground hover:text-foreground"
                   >
                     Forgot password?
-                  </button>
+                  </Link>
                 </div>
                 <PasswordInput
                   id="password"

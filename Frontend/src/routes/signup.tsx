@@ -19,7 +19,28 @@ export const Route = createFileRoute("/signup")({
   component: SignupPage,
 });
 
-const getInitialForm = () => {
+interface SignupDraft {
+  business: string;
+  owner: string;
+  type: string;
+  phone: string;
+  email: string;
+  password?: string;
+  confirm?: string;
+  country: string;
+  city: string;
+  terms: boolean;
+  selectedTypeId?: string;
+}
+
+// In-memory module store: preserves sensitive password fields during active in-app navigation (e.g. viewing Terms)
+// without writing passwords to persistent browser storage.
+let inMemorySignupDraft: SignupDraft | null = null;
+
+export const getInitialSignupDraft = (): SignupDraft => {
+  if (inMemorySignupDraft) {
+    return { ...inMemorySignupDraft };
+  }
   try {
     const saved = sessionStorage.getItem("nextvisit_signup_draft");
     if (saved) {
@@ -30,11 +51,12 @@ const getInitialForm = () => {
         type: parsed.type || "Restaurant",
         phone: parsed.phone || "",
         email: parsed.email || "",
-        password: parsed.password || "",
-        confirm: parsed.confirm || "",
+        password: "", // Passwords are never read from storage
+        confirm: "",
         country: parsed.country || "India",
         city: parsed.city || "",
         terms: !!parsed.terms,
+        selectedTypeId: parsed.selectedTypeId || "",
       };
     }
   } catch {}
@@ -49,7 +71,15 @@ const getInitialForm = () => {
     country: "India",
     city: "",
     terms: false,
+    selectedTypeId: "",
   };
+};
+
+export const clearSignupDraft = () => {
+  inMemorySignupDraft = null;
+  try {
+    sessionStorage.removeItem("nextvisit_signup_draft");
+  } catch {}
 };
 
 export default function SignupPage() {
@@ -57,7 +87,9 @@ export default function SignupPage() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [businessTypes, setBusinessTypes] = useState<Array<{ id: string; name: string }>>([]);
-  const [selectedTypeId, setSelectedTypeId] = useState<string>("");
+
+  const initialDraft = getInitialSignupDraft();
+  const [selectedTypeId, setSelectedTypeId] = useState<string>(initialDraft.selectedTypeId || "");
 
   const {
     values: form,
@@ -71,7 +103,18 @@ export default function SignupPage() {
     validateField,
     registerRef,
   } = useFormValidation(
-    getInitialForm(),
+    {
+      business: initialDraft.business,
+      owner: initialDraft.owner,
+      type: initialDraft.type,
+      phone: initialDraft.phone,
+      email: initialDraft.email,
+      password: initialDraft.password || "",
+      confirm: initialDraft.confirm || "",
+      country: initialDraft.country,
+      city: initialDraft.city,
+      terms: initialDraft.terms,
+    },
     {
       business: { required: true, requiredMessage: "Business name is required" },
       owner: { required: true, requiredMessage: "Owner name is required" },
@@ -115,16 +158,38 @@ export default function SignupPage() {
     getBusinessTypesApi().then((types) => {
       if (Array.isArray(types) && types.length > 0) {
         setBusinessTypes(types);
-        setSelectedTypeId(types[0].id);
+        const draft = getInitialSignupDraft();
+        if (draft.selectedTypeId && types.some((t) => t.id === draft.selectedTypeId)) {
+          setSelectedTypeId(draft.selectedTypeId);
+        } else {
+          const matched = types.find((t) => t.name.toLowerCase() === form.type.toLowerCase());
+          setSelectedTypeId(matched?.id || types[0].id);
+        }
       }
     }).catch(() => {});
   }, []);
 
+  // Update in-memory state for client-side routing, and non-sensitive fields to sessionStorage
   useEffect(() => {
+    inMemorySignupDraft = {
+      ...form,
+      selectedTypeId,
+    };
     try {
-      sessionStorage.setItem("nextvisit_signup_draft", JSON.stringify(form));
+      const nonSensitive = {
+        business: form.business,
+        owner: form.owner,
+        type: form.type,
+        phone: form.phone,
+        email: form.email,
+        country: form.country,
+        city: form.city,
+        terms: form.terms,
+        selectedTypeId,
+      };
+      sessionStorage.setItem("nextvisit_signup_draft", JSON.stringify(nonSensitive));
     } catch {}
-  }, [form]);
+  }, [form, selectedTypeId]);
 
   const handlePasswordChange = (val: string) => {
     handleChange("password", val);
@@ -146,6 +211,10 @@ export default function SignupPage() {
     } else {
       setErrors((prev) => ({ ...prev, confirm: undefined }));
     }
+  };
+
+  const handleLeaveSignup = () => {
+    clearSignupDraft();
   };
 
   const submit = async (e: FormEvent) => {
@@ -189,9 +258,7 @@ export default function SignupPage() {
       });
 
       toast.success("Account created successfully!");
-      try {
-        sessionStorage.removeItem("nextvisit_signup_draft");
-      } catch {}
+      clearSignupDraft();
       setSubmitted(true);
     } catch (err: any) {
       toast.error(err.message || "Registration failed. Please try again.");
@@ -204,8 +271,8 @@ export default function SignupPage() {
     <div className="grid min-h-screen place-items-center bg-background p-6">
       <div className="w-full max-w-xl">
         <div className="mb-8 flex items-center justify-between">
-          <Link to="/"><BrandLogo /></Link>
-          <Link to="/login" className="text-xs text-muted-foreground hover:text-foreground">← Back to sign in</Link>
+          <Link to="/" onClick={handleLeaveSignup}><BrandLogo /></Link>
+          <Link to="/login" onClick={handleLeaveSignup} className="text-xs text-muted-foreground hover:text-foreground">← Back to sign in</Link>
         </div>
         {submitted ? (
           <div className="rounded-2xl border bg-card p-8 text-center shadow-elegant">
@@ -394,7 +461,7 @@ export default function SignupPage() {
                 {loading ? "Creating account..." : "Create account"}
               </Button>
               <p className="text-center text-xs text-muted-foreground">
-                Already have an account? <Link to="/login" className="text-primary hover:underline">Sign in</Link>
+                Already have an account? <Link to="/login" onClick={handleLeaveSignup} className="text-primary hover:underline">Sign in</Link>
               </p>
             </form>
           </>

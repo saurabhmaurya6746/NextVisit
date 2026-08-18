@@ -511,3 +511,209 @@ class AuthService:
         from app.repositories.user_session_repository import UserSessionRepository
         uid = UUID(user_id) if isinstance(user_id, str) else user_id
         return UserSessionRepository(self.db).count_active_sessions(uid)
+
+    def forgot_password(
+        self,
+        email: str,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> dict[str, str]:
+        """
+        Initiate password reset flow for a user.
+        Always returns a generic message to prevent account enumeration attacks.
+        """
+        import hashlib
+        import secrets
+        from datetime import timedelta
+        from app.core.config import settings
+        from app.models.password_reset_token import PasswordResetToken
+        from app.services.email_service import EmailService
+
+        clean_email = email.strip().lower()
+        logger.info("Forgot password requested | email=%s", clean_email)
+
+        generic_response = {
+            "message": (
+                "If an account exists with this email, we've sent you a password reset link. "
+                "Please check your inbox."
+            )
+        }
+
+        try:
+            # 1. Look up active user by email
+            user = self.db.scalar(
+                select(User)
+                .join(Business, User.business_id == Business.id)
+                .where(
+                    func.lower(User.email) == clean_email,
+                    Business.is_deleted.is_(False),
+                    User.status != "DELETED",
+                )
+            )
+
+            # If not found by user.email, check business.email for the primary owner
+            if not user:
+                biz = self.db.scalar(
+                    select(Business).where(
+                        func.lower(Business.email) == clean_email,
+                        Business.is_deleted.is_(False),
+                    )
+                )
+                if biz:
+                    user = self.db.scalar(
+                        select(User).where(
+                            User.business_id == biz.id,
+                            User.role == "OWNER",
+                            User.status != "DELETED",
+                        )
+                    )
+
+            if not user:
+                logger.info(
+                    "Forgot password: no user found for email=%s (returning generic response)",
+                    clean_email,
+                )
+                return generic_response
+
+            # If business is deleted, do not issue reset token
+            if user.business and user.business.is_deleted:
+                return generic_response
+
+            # 2. Invalidate any existing unused reset tokens for this user
+            existing_tokens = list(self.db.scalars(
+                select(PasswordResetToken).where(
+                    PasswordResetToken.user_id == user.id,
+                    PasswordResetToken.is_used.is_(False),
+                )
+            ).all())
+            now_utc = datetime.now(timezone.utc)
+            for old_tok in existing_tokens:
+                old_tok.is_used = True
+                old_tok.used_at = now_utc
+
+            # 3. Generate cryptographically secure random token (32 bytes urlsafe)
+            raw_token = secrets.token_urlsafe(32)
+            token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+            expires_at = now_utc + timedelta(minutes=45)
+
+            reset_entry = PasswordResetToken(
+                user_id=user.id,
+                email=clean_email,
+                token_hash=token_hash,
+                expires_at=expires_at,
+                is_used=False,
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            self.db.add(reset_entry)
+            self.db.commit()
+
+            # 4. Dispatch password reset email
+            frontend_base = settings.FRONTEND_URL.rstrip("/")
+            reset_url = f"{frontend_base}/reset-password?token={raw_token}"
+
+            user_display_name = user.name or (user.business.owner_name if user.business else "User")
+
+            EmailService.send_password_reset_email(
+                to_email=clean_email,
+                user_name=user_display_name,
+                reset_url=reset_url,
+                expires_in_minutes=45,
+            )
+
+        except Exception as exc:
+            logger.error("Error during forgot_password processing: %s", str(exc))
+            # Always return generic message to caller
+            return generic_response
+
+        return generic_response
+
+    def reset_password(
+        self,
+        token: str,
+        password: str,
+        confirm_password: str,
+    ) -> dict[str, str]:
+        """
+        Reset user password using a verified, unexpired, single-use token.
+        """
+        import hashlib
+        from app.models.password_reset_token import PasswordResetToken
+
+        if password != confirm_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Passwords do not match.",
+            )
+
+        # Validate password complexity rules
+        validate_password_complexity(password)
+
+        clean_token = token.strip()
+        if not clean_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This password reset link is invalid or has expired.",
+            )
+
+        token_hash = hashlib.sha256(clean_token.encode("utf-8")).hexdigest()
+
+        # Look up token in database
+        reset_entry = self.db.scalar(
+            select(PasswordResetToken).where(
+                PasswordResetToken.token_hash == token_hash,
+            )
+        )
+
+        now_utc = datetime.now(timezone.utc)
+
+        if not reset_entry or reset_entry.is_used or reset_entry.expires_at < now_utc:
+            logger.warning(
+                "Password reset rejected | token_found=%s is_used=%s expired=%s",
+                bool(reset_entry),
+                reset_entry.is_used if reset_entry else None,
+                (reset_entry.expires_at < now_utc) if reset_entry else None,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This password reset link is invalid or has expired.",
+            )
+
+        # Look up associated user
+        user = self.db.scalar(
+            select(User).where(
+                User.id == reset_entry.user_id,
+                User.status != "DELETED",
+            )
+        )
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This password reset link is invalid or has expired.",
+            )
+
+        # Update password hash
+        user.hashed_password = hash_password(password)
+
+        # Invalidate current reset token
+        reset_entry.is_used = True
+        reset_entry.used_at = now_utc
+
+        # Invalidate any other active tokens for this user
+        other_tokens = list(self.db.scalars(
+            select(PasswordResetToken).where(
+                PasswordResetToken.user_id == user.id,
+                PasswordResetToken.is_used.is_(False),
+            )
+        ).all())
+        for tok in other_tokens:
+            tok.is_used = True
+            tok.used_at = now_utc
+
+        self.db.commit()
+        logger.info("Password reset successfully completed | user_id=%s email=%s", user.id, user.email)
+
+        return {
+            "message": "Your password has been updated successfully. You can now sign in with your new password."
+        }

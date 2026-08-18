@@ -285,3 +285,36 @@ export async function registerApi(payload: any) {
   }
   return data;
 }
+
+export async function forgotPasswordApi(email: string): Promise<{ message: string }> {
+  const res = await apiFetch("/api/v1/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email: email.trim() }),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to request password reset. Please try again.");
+  }
+
+  return await res.json();
+}
+
+export async function resetPasswordApi(payload: {
+  token: string;
+  password: string;
+  confirm_password: string;
+}): Promise<{ message: string }> {
+  const res = await apiFetch("/api/v1/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    const msg = typeof errData.detail === "string" ? errData.detail : "This password reset link is invalid or has expired.";
+    throw new Error(msg);
+  }
+
+  return await res.json();
+}

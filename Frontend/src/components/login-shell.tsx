@@ -119,7 +119,7 @@ export function LoginShell({ role, target, tagline, quote, author }: { role: "Bu
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="password">Password</Label>
-                  <a href="#" className="text-xs text-primary hover:underline">Forgot?</a>
+                  <Link to="/forgot-password" className="text-xs text-primary hover:underline">Forgot?</Link>
                 </div>
                 <PasswordInput
                   id="password"

@@ -352,5 +352,107 @@ NextVisit Team
             text=text_content,
         )
 
+    @classmethod
+    def send_password_reset_email(
+        cls,
+        to_email: str,
+        user_name: str,
+        reset_url: str,
+        expires_in_minutes: int = 45,
+    ) -> tuple[bool, str | None]:
+        """
+        Send a secure password reset email with action link and token expiration.
+        """
+        subject = "Reset Your NextVisit Password"
+        safe_name = user_name.strip() if user_name else "NextVisit User"
+
+        text_content = f"""Reset Your NextVisit Password
+
+Hello {safe_name},
+
+We received a request to reset the password for your NextVisit account.
+
+To choose a new password, click the link below or copy and paste it into your browser:
+{reset_url}
+
+This link is valid for {expires_in_minutes} minutes.
+
+If you did not request a password reset, you can safely ignore this email. Your password will not change.
+
+Best regards,
+The NextVisit Team
+"""
+
+        html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset Your NextVisit Password</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; background-color: #f8fafc; margin: 0; padding: 24px; }}
+    .container {{ max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }}
+    .header {{ background: linear-gradient(135deg, #0ea5e9 0%, #3b82f6 100%); color: #ffffff; padding: 28px 24px; text-align: center; }}
+    .header h1 {{ margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.025em; }}
+    .header p {{ margin: 6px 0 0 0; font-size: 13px; opacity: 0.9; }}
+    .content {{ padding: 28px 24px; }}
+    .greeting {{ font-size: 16px; font-weight: 600; color: #0f172a; margin-bottom: 12px; }}
+    .paragraph {{ font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 16px 0; }}
+    .btn-container {{ text-align: center; margin: 28px 0; }}
+    .btn {{ display: inline-block; background: linear-gradient(135deg, #0ea5e9 0%, #3b82f6 100%); color: #ffffff !important; text-decoration: none; padding: 14px 32px; border-radius: 9999px; font-size: 14px; font-weight: 600; letter-spacing: 0.025em; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25); }}
+    .fallback-box {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin: 20px 0; font-size: 12px; word-break: break-all; color: #64748b; }}
+    .fallback-link {{ color: #2563eb; text-decoration: underline; }}
+    .security-note {{ background: #f0fdf4; border-left: 4px solid #22c55e; padding: 12px 16px; border-radius: 6px; margin-top: 24px; font-size: 12px; color: #166534; line-height: 1.5; }}
+    .footer {{ background: #f8fafc; padding: 18px 24px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.5; }}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>NextVisit Security</h1>
+      <p>Password Reset Request</p>
+    </div>
+    <div class="content">
+      <div class="greeting">Hello {safe_name},</div>
+      <p class="paragraph">
+        We received a request to reset your password for your NextVisit account. Click the button below to choose a new password:
+      </p>
+      
+      <div class="btn-container">
+        <a href="{reset_url}" class="btn" target="_blank">Reset Password</a>
+      </div>
+
+      <p class="paragraph" style="font-size: 12px; color: #64748b;">
+        If the button above does not work, copy and paste this link into your web browser:
+      </p>
+      <div class="fallback-box">
+        <a href="{reset_url}" class="fallback-link" target="_blank">{reset_url}</a>
+      </div>
+
+      <div class="security-note">
+        <strong>Security Notice:</strong> This reset link will expire in <strong>{expires_in_minutes} minutes</strong> and can only be used once. If you did not request this password reset, you can safely ignore this email — your account remains secure.
+      </div>
+
+      <p class="paragraph" style="margin-top: 24px;">
+        Best regards,<br>
+        <strong>The NextVisit Team</strong>
+      </p>
+    </div>
+    <div class="footer">
+      © NextVisit SaaS Platform · Customer Growth & Automation<br>
+      This is an automated security notification.
+    </div>
+  </div>
+</body>
+</html>"""
+
+        return cls.send_resend_email(
+            to=to_email,
+            subject=subject,
+            html=html_content,
+            text=text_content,
+        )
+
 
 email_service = EmailService()
+

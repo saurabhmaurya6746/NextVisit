@@ -23,6 +23,7 @@ from .menu_category import MenuCategory
 from .menu_item import MenuItem
 from .message_template import MessageTemplate
 from .order import Order, OrderItem, OrderSource, OrderStatus
+from .password_reset_token import PasswordResetToken
 from .platform_settings import PlatformSettings
 from .restaurant_table import RestaurantTable
 from .salon_service_area import SalonServiceArea
