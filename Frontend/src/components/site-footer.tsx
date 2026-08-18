@@ -65,12 +65,12 @@ export function SiteFooter() {
           <p className="text-xs font-semibold uppercase tracking-widest text-foreground">Resources</p>
           <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
             <li>
-              <Link to="/docs" className="hover:text-foreground transition-colors">
+              <Link to="/docs#faqs" className="hover:text-foreground transition-colors">
                 FAQ
               </Link>
             </li>
             <li>
-              <Link to="/docs" className="hover:text-foreground transition-colors">
+              <Link to="/docs#getting-started" className="hover:text-foreground transition-colors">
                 Getting Started
               </Link>
             </li>

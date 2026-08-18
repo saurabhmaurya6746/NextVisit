@@ -20,8 +20,6 @@ import {
   Building2,
   Mail,
   Phone,
-  AlertCircle,
-  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -32,7 +30,7 @@ export const Route = createFileRoute("/terms")({
       {
         name: "description",
         content:
-          "Comprehensive platform service agreement, user responsibilities, acceptable use, subscription policies, and legal terms for NextVisit SaaS.",
+          "Official Terms & Conditions and service agreement governing account registration, approval, acceptable use, data responsibilities, subscriptions, and limitations of liability for the NextVisit SaaS platform.",
       },
     ],
   }),
@@ -78,40 +76,23 @@ export default function TermsPage() {
       {
         id: "section-1",
         number: 1,
-        title: "Introduction and Acceptance of Terms",
+        title: "Introduction",
         category: "General",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              <strong>1.1 What NextVisit Is:</strong> NextVisit (referred to herein as{" "}
+              Welcome to <span className="font-semibold text-foreground">NextVisit</span> (referred to as{" "}
               <span className="font-semibold text-foreground">"NextVisit"</span>,{" "}
               <span className="font-semibold text-foreground">"we"</span>,{" "}
               <span className="font-semibold text-foreground">"us"</span>, or{" "}
-              <span className="font-semibold text-foreground">"our"</span>) is a cloud-based Software-as-a-Service
-              (SaaS) business automation and customer retention platform. NextVisit provides tools including digital QR
-              ordering, visit management, automated marketing communications, customer loyalty rewards, analytics, and
-              merchant operational workflows for restaurants, salons, cafes, spas, and service businesses.
+              <span className="font-semibold text-foreground">"our"</span>). NextVisit is a proprietary cloud-based
+              Software-as-a-Service (SaaS) platform designed for local businesses, including restaurants, salons, cafes,
+              and retail service establishments.
             </p>
             <p>
-              <strong>1.2 Agreement Between Parties:</strong> These Terms &amp; Conditions (
-              <span className="font-semibold text-foreground">"Terms"</span>) constitute a legally binding agreement
-              between NextVisit and the commercial entity or authorized individual (
-              <span className="font-semibold text-foreground">"Business"</span>,{" "}
-              <span className="font-semibold text-foreground">"Merchant"</span>,{" "}
-              <span className="font-semibold text-foreground">"User"</span>, or{" "}
-              <span className="font-semibold text-foreground">"you"</span>) accessing or subscribing to the Platform.
-            </p>
-            <p>
-              <strong>1.3 Acceptance of Terms:</strong> By creating an account, clicking any checkbox or button
-              indicating acceptance (such as during registration), accessing our websites, or using any part of the
-              NextVisit software, you acknowledge that you have read, understood, and agreed to be bound by these Terms
-              in their entirety. If you do not agree to these Terms, you must immediately cease all access and use of the
-              Platform.
-            </p>
-            <p>
-              <strong>1.4 Authority to Bind:</strong> If you are registering or acting on behalf of a company, partnership,
-              or other legal entity, you represent and warrant that you possess full legal authority to bind such entity to
-              these Terms.
+              The NextVisit platform provides digital point-of-sale (POS) order management, table QR code ordering,
+              customer relationship management (CRM), automated marketing communications, loyalty reward points, and
+              operational business reporting tools.
             </p>
           </div>
         ),
@@ -119,89 +100,42 @@ export default function TermsPage() {
       {
         id: "section-2",
         number: 2,
-        title: "Definitions and Interpretation",
+        title: "Acceptance of Terms",
         category: "General",
         content: (
-          <div className="space-y-3 text-sm leading-relaxed text-muted-foreground">
-            <p>Throughout these Terms, capitalized terms shall have the specific meanings assigned below:</p>
-            <ul className="list-disc space-y-2 pl-5">
-              <li>
-                <strong className="text-foreground">"Account"</strong> means the digital merchant profile, credentials,
-                and associated records provisioned for a Business upon registration and approval.
-              </li>
-              <li>
-                <strong className="text-foreground">"Administrator" or "Super Admin"</strong> means authorized NextVisit
-                system personnel responsible for platform management, verification, and governance.
-              </li>
-              <li>
-                <strong className="text-foreground">"Automated Communications"</strong> means automated WhatsApp messages,
-                transactional emails, SMS alerts, review requests, customer recovery triggers, and promotional campaign
-                deliveries executed through or integrated with the Platform.
-              </li>
-              <li>
-                <strong className="text-foreground">"Business" or "Merchant"</strong> means the enterprise, sole
-                proprietorship, partnership, or corporate entity on whose behalf the Platform is licensed and utilized.
-              </li>
-              <li>
-                <strong className="text-foreground">"Content"</strong> means text, menus, pricing, graphics, images, logos,
-                trademarks, promotional templates, and operational information uploaded or configured by the Business.
-              </li>
-              <li>
-                <strong className="text-foreground">"Customer" or "End-User"</strong> means the retail client, patron, or
-                diner of the Business who interacts with QR codes, receives campaigns, or visits the merchant's establishment.
-              </li>
-              <li>
-                <strong className="text-foreground">"Owner"</strong> means the primary authorized account holder and legal
-                representative associated with the Business Account.
-              </li>
-              <li>
-                <strong className="text-foreground">"Platform"</strong> means the NextVisit cloud software, web
-                applications, QR interfaces, APIs, databases, algorithms, and documentation.
-              </li>
-              <li>
-                <strong className="text-foreground">"Services"</strong> means all software features, tools, hosted
-                infrastructure, and customer support made available by NextVisit under an active Subscription or trial.
-              </li>
-              <li>
-                <strong className="text-foreground">"Subscription"</strong> means the paid or promotional licensing tier
-                granting access to specific features, quotas, and service capabilities.
-              </li>
-            </ul>
+          <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
+            <p>
+              These Terms &amp; Conditions (referred to as <span className="font-semibold text-foreground">"Terms"</span>)
+              constitute a legally binding contract between NextVisit and the commercial enterprise or authorized
+              individual (referred to as <span className="font-semibold text-foreground">"Business"</span>,{" "}
+              <span className="font-semibold text-foreground">"Merchant"</span>,{" "}
+              <span className="font-semibold text-foreground">"User"</span>, or{" "}
+              <span className="font-semibold text-foreground">"you"</span>) accessing, registering for, or using the Platform.
+            </p>
+            <p>
+              By registering an account, clicking an "I accept" checkbox, accessing our web application, or using any of
+              our Services, you confirm that you have read, understood, and agreed to be bound by these Terms in full. If
+              you do not agree to these Terms, you must not create an account or use the Platform.
+            </p>
           </div>
         ),
       },
       {
         id: "section-3",
         number: 3,
-        title: "Eligibility and Account Registration",
+        title: "Account Registration and Eligibility",
         category: "Account & Security",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              <strong>3.1 Eligibility Requirements:</strong> To register for NextVisit, you must be at least eighteen (18)
-              years of age, operate a legitimate commercial enterprise, and possess full legal capacity to enter into
-              commercial contracts.
+              To register for a NextVisit account, you must be at least eighteen (18) years of age, operate a bona fide
+              commercial business, and possess the legal authority to bind your business entity to this agreement.
             </p>
             <p>
-              <strong>3.2 Accurate Registration Information:</strong> You agree to provide true, accurate, current, and
-              complete information during registration, including your legal business name, owner contact information,
-              valid business phone number, and commercial email address.
-            </p>
-            <p>
-              <strong>3.3 One Account Per Business Establishment:</strong> Unless expressly authorized in writing by
-              NextVisit for multi-location enterprise subscriptions, each business establishment shall maintain one primary
-              account.
-            </p>
-            <p>
-              <strong>3.4 Super Admin Review and Approval Process:</strong> New account submissions undergo manual or
-              algorithmic review by NextVisit Administrators. Registration alone does not grant immediate platform
-              activation. NextVisit reserves the absolute right to approve, request additional verification documents, or
-              reject any application at its sole discretion.
-            </p>
-            <p>
-              <strong>3.5 Reapplication Rights:</strong> In the event that an application is rejected due to incomplete or
-              unverified details, the applicant may submit updated information for reconsideration in accordance with
-              NextVisit's merchant onboarding protocols.
+              You agree to provide true, accurate, current, and complete business information during registration, including
+              your legal business name, registered owner name, valid 10-digit mobile phone number, operating address, and
+              contact email address. Providing false, misleading, or deceptive information is strictly prohibited and
+              constitutes grounds for immediate rejection or account termination.
             </p>
           </div>
         ),
@@ -209,32 +143,23 @@ export default function TermsPage() {
       {
         id: "section-4",
         number: 4,
-        title: "Account Security and Credentials",
+        title: "Business Account Approval",
         category: "Account & Security",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              <strong>4.1 Password Confidentiality &amp; Complexity:</strong> You are responsible for safeguarding your
-              login credentials. NextVisit enforces rigorous password complexity rules (including length, character
-              diversity, and hashing). You agree never to disclose your master password to unauthorized parties.
+              <strong>No Automatic Approval Guarantee:</strong> Submitting a registration form does not automatically grant
+              or guarantee platform access or activation.
             </p>
             <p>
-              <strong>4.2 Responsibility for Account Activity:</strong> The Business Owner is fully responsible for all
-              actions, communications, orders, modifications, and financial transactions executed through their account,
-              whether authorized by the Owner or performed by designated staff members.
+              All newly registered accounts are placed in a <span className="font-semibold text-foreground">PENDING</span> review
+              queue and are subject to verification and approval by NextVisit Super Administrators. NextVisit reserves the
+              sole discretion to approve, request supplemental verification documentation, or reject any registration
+              application to maintain platform integrity, security, and compliance.
             </p>
             <p>
-              <strong>4.3 Duty to Report Breaches:</strong> You must immediately notify NextVisit at{" "}
-              <a href="mailto:hello@growthos.app" className="text-primary hover:underline font-medium">
-                hello@growthos.app
-              </a>{" "}
-              upon discovering or suspecting any unauthorized access, security incident, credential compromise, or
-              suspected breach of your account.
-            </p>
-            <p>
-              <strong>4.4 Staff Accounts and Role-Based Permissions:</strong> If you provision sub-accounts or staff
-              credentials, you must ensure that each staff member adheres strictly to these Terms. You remain solely liable
-              for any misconduct or unauthorized activity performed via staff credentials.
+              Upon successful administrative review, an approval confirmation email is dispatched to the registered owner
+              email address, enabling immediate merchant login.
             </p>
           </div>
         ),
@@ -242,30 +167,19 @@ export default function TermsPage() {
       {
         id: "section-5",
         number: 5,
-        title: "Business Information and Customer Data",
-        category: "Data & Usage",
+        title: "Account Rejection and Re-application",
+        category: "Account & Security",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              <strong>5.1 Accuracy of Uploaded Business Data:</strong> The Business represents and warrants that all
-              operating hours, menu items, service catalogs, prices, tax percentages, UPI details, and contact details
-              provided on the Platform are accurate, truthful, and up-to-date.
+              If a merchant application is rejected by an Administrator (for reasons such as unverified business details,
+              incomplete address, or unsupported business category), an explanatory status update email is sent to the
+              applicant's email address.
             </p>
             <p>
-              <strong>5.2 Lawful Collection of Customer Data:</strong> The Business is solely responsible for ensuring that
-              all end-customer phone numbers, names, birthdates, anniversaries, visit history, and related personal
-              information imported into or collected via NextVisit are acquired lawfully and transparently.
-            </p>
-            <p>
-              <strong>5.3 Express Consent Requirement:</strong> The Business guarantees that it has obtained all necessary
-              prior express consents and opt-ins from its customers required under applicable data protection, consumer
-              rights, and telecommunication laws before initiating any automated marketing, WhatsApp broadcasts, or email
-              campaigns.
-            </p>
-            <p>
-              <strong>5.4 Indemnity for Customer Disputes:</strong> NextVisit operates strictly as a software processor. The
-              Business shall bear sole legal liability for any consumer disputes, spam grievances, or regulatory inquiries
-              arising from customer data uploaded or managed by the Business.
+              <strong>Re-application Rights:</strong> Rejected applicants are permitted to re-apply by submitting a new
+              signup request with updated and corrected information using the same email address. The system will reset
+              the status to pending review for administrator re-evaluation without blocking the user.
             </p>
           </div>
         ),
@@ -273,69 +187,44 @@ export default function TermsPage() {
       {
         id: "section-6",
         number: 6,
-        title: "Platform Usage and Acceptable Use Policy",
-        category: "Data & Usage",
+        title: "Account Security and Password Responsibilities",
+        category: "Account & Security",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
-            <p>You agree to use NextVisit strictly for lawful commercial purposes. You expressly agree NOT to:</p>
-            <ul className="list-disc space-y-2 pl-5">
-              <li>Engage in, facilitate, or promote any illegal, fraudulent, deceptive, or unauthorized business activities;</li>
-              <li>
-                Transmit unsolicited bulk messages, spam, abusive promotions, or communications that violate national
-                Do-Not-Disturb (DND) or telecommunication regulations;
-              </li>
-              <li>Harass, threaten, defame, impersonate, or violate the legal rights of any individual or entity;</li>
-              <li>
-                Attempt to bypass, disable, probe, or breach any security mechanism, authentication checkpoint, or rate limit
-                of the Platform;
-              </li>
-              <li>
-                Reverse-engineer, decompile, disassemble, copy, decipher, or extract source code, proprietary algorithms, or
-                architectural models of NextVisit;
-              </li>
-              <li>
-                Introduce viruses, trojans, worms, logic bombs, or other technologically malicious materials into the Platform
-                infrastructure;
-              </li>
-              <li>
-                Use automated bots, scrapers, or scripts to harvest data or generate artificial load on NextVisit servers;
-              </li>
-              <li>
-                Resell, sub-license, rent, lease, or redistribute NextVisit software without prior explicit written agreement
-                from NextVisit.
-              </li>
-            </ul>
+            <p>
+              NextVisit enforces strict password complexity requirements (minimum 8 characters, uppercase and lowercase
+              letters, numerical digits, and special characters) and industry-standard cryptographic hashing.
+            </p>
+            <p>
+              You are solely responsible for maintaining the confidentiality of your login credentials. You agree not to
+              share your master password with unauthorized third parties. The Business Owner is fully responsible for all
+              activities, orders, transactions, customer records, and communications initiated under their account credentials.
+            </p>
+            <p>
+              You must notify NextVisit immediately at{" "}
+              <a href="mailto:hello@growthos.app" className="text-primary hover:underline font-medium">
+                hello@growthos.app
+              </a>{" "}
+              if you discover or suspect any unauthorized access or compromise of your account.
+            </p>
           </div>
         ),
       },
       {
         id: "section-7",
         number: 7,
-        title: "Automated Messaging and Communications",
+        title: "Use of the NextVisit Platform",
         category: "Data & Usage",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              <strong>7.1 Communication Capabilities:</strong> NextVisit provides intelligent messaging modules, including:
-            </p>
-            <ul className="list-disc space-y-1.5 pl-5">
-              <li>Instant welcome messages upon customer check-in or first visit;</li>
-              <li>Automated birthday and wedding anniversary celebration greetings and reward coupons;</li>
-              <li>Customer recovery campaigns targeting dormant or churn-risk patrons;</li>
-              <li>Loyalty tier updates, point balance summaries, and reward redemption confirmations;</li>
-              <li>Google review boosters and post-visit feedback requests;</li>
-              <li>Seasonal, festival, and bespoke promotional broadcasts.</li>
-            </ul>
-            <p>
-              <strong>7.2 Merchant Responsibilities:</strong> The Business is solely responsible for: (a) verifying the
-              accuracy of recipient numbers; (b) ensuring message content is truthful, non-offensive, and compliant with
-              advertising standards; (c) honoring consumer opt-out requests immediately; and (d) adhering to all applicable
-              telecommunication and privacy guidelines.
+              NextVisit grants you a limited, non-exclusive, non-transferable, revocable license to access and use the
+              Platform during your active subscription or promotional trial period solely for your internal business
+              operations.
             </p>
             <p>
-              <strong>7.3 Delivery Disclaimer:</strong> While NextVisit employs high-reliability delivery pipelines, message
-              delivery depends upon mobile network operators, WhatsApp infrastructure, device connectivity, and anti-spam
-              filters. NextVisit does not warrant 100% instantaneous delivery for every outgoing communication.
+              You agree to use the Platform in compliance with all applicable local, state, national, and international laws,
+              statutes, ordinances, and commercial regulations.
             </p>
           </div>
         ),
@@ -343,20 +232,20 @@ export default function TermsPage() {
       {
         id: "section-8",
         number: 8,
-        title: "Third-Party Services and Integrations",
+        title: "Business Data and Customer Data",
         category: "Data & Usage",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              <strong>8.1 External Integrations:</strong> NextVisit integrates with specialized third-party services,
-              including but not limited to WhatsApp Business API / Meta infrastructure, Resend transactional email
-              services, cloud database hosting, UPI payment providers, and mapping APIs.
+              <strong>Merchant Responsibility for Data:</strong> The Business is solely responsible for the accuracy,
+              integrity, and legality of all information entered into the platform, including item descriptions, menu prices,
+              tax rates (GST), service charges, UPI identifiers, and customer contact information.
             </p>
             <p>
-              <strong>8.2 Third-Party Terms &amp; Outages:</strong> Your utilization of integrated features may be governed by
-              the respective third party's terms of service and privacy policies. NextVisit is not liable for service
-              interruptions, policy changes, account suspensions, rate limits, or network failures caused directly by
-              third-party providers.
+              <strong>Customer Data Ownership &amp; Consent:</strong> The Business represents and warrants that it has
+              lawfully collected all customer names, phone numbers, visit timestamps, and celebration dates in accordance
+              with applicable data protection and consumer laws. NextVisit acts purely as a technical software processor
+              operating under the instructions of the Business.
             </p>
           </div>
         ),
@@ -364,32 +253,23 @@ export default function TermsPage() {
       {
         id: "section-9",
         number: 9,
-        title: "Subscriptions, Plans, and Payments",
-        category: "Subscriptions",
+        title: "Customer Communications and Marketing Automation",
+        category: "Data & Usage",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              <strong>9.1 Subscription Plans:</strong> Access to NextVisit is offered under tiered subscription plans with
-              specified quotas, feature access levels, and billing intervals as outlined in the active platform pricing
-              schedules.
+              NextVisit provides automated communication tools, including welcome greetings, birthday and anniversary
+              wishes, customer recovery win-back messages, review boosters, and promotional broadcast templates.
             </p>
             <p>
-              <strong>9.2 Billing &amp; Renewal:</strong> Subscriptions are billed in advance on a recurring monthly or annual
-              cycle. Unless cancelled prior to the renewal date, subscriptions automatically renew for the equivalent term.
+              <strong>Express Customer Consent:</strong> The Business guarantees that it has obtained all necessary prior
+              express consents and opt-ins from its customers before triggering automated WhatsApp, SMS, or email
+              messages. The Business is solely liable for honoring customer opt-out requests and adhering to national
+              telecom regulations and Do-Not-Disturb (DND) registries.
             </p>
             <p>
-              <strong>9.3 Applicable Taxes:</strong> All stated fees are exclusive of applicable statutory taxes (such as
-              Goods and Services Tax / GST) unless explicitly indicated otherwise.
-            </p>
-            <p>
-              <strong>9.4 Payment Failures:</strong> In the event of payment failure or overdue invoices, NextVisit reserves
-              the right to temporarily suspend access to premium automation features, marketing queues, and reporting until
-              outstanding balances are resolved.
-            </p>
-            <p>
-              <strong>9.5 Cancellation &amp; Refund Policy:</strong> Subscriptions may be cancelled at any time through the
-              merchant dashboard. Cancellations take effect at the conclusion of the current paid billing cycle. Refunds are
-              governed by NextVisit's prevailing operational refund policies as defined on the platform.
+              NextVisit does not warrant 100% instantaneous delivery for every outgoing message, as delivery is contingent
+              upon third-party telecom carriers, device connectivity, and WhatsApp network policies.
             </p>
           </div>
         ),
@@ -397,22 +277,19 @@ export default function TermsPage() {
       {
         id: "section-10",
         number: 10,
-        title: "Free Trials and Promotional Offers",
-        category: "Subscriptions",
+        title: "QR Ordering and Transaction Information",
+        category: "Data & Usage",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              <strong>10.1 Evaluation Period:</strong> NextVisit may provide complimentary evaluation periods (Free Trials)
-              to newly approved merchant accounts to explore platform features.
+              NextVisit provides table-specific QR codes and mobile web interfaces to facilitate customer self-ordering and
+              bill calculation.
             </p>
             <p>
-              <strong>10.2 Transition to Paid Service:</strong> At the conclusion of a promotional trial, the Business may
-              select an active paid subscription plan to retain uninterrupted access to automated campaigns, loyalty
-              tracking, and business intelligence.
-            </p>
-            <p>
-              <strong>10.3 Modifications to Trials:</strong> NextVisit reserves the right to modify trial durations, feature
-              availability, or eligibility criteria at any time without prior liability.
+              NextVisit is a software platform provider and is <span className="font-semibold text-foreground">NOT</span> a
+              food provider, salon operator, bank, or payment processor. The Business is solely responsible for food
+              preparation, salon services, pricing accuracy, order fulfillment, refund handling, and physical service
+              quality.
             </p>
           </div>
         ),
@@ -420,25 +297,17 @@ export default function TermsPage() {
       {
         id: "section-11",
         number: 11,
-        title: "Intellectual Property Rights",
-        category: "General",
+        title: "Loyalty, Coupons and Promotional Features",
+        category: "Subscriptions",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              <strong>11.1 NextVisit Intellectual Property:</strong> All rights, title, and interest in and to the NextVisit
-              Platform—including software code, user interface designs, logos, trademarks, database architectures, graphics,
-              visual workflows, documentation, and underlying proprietary algorithms—are and shall remain the exclusive
-              intellectual property of NextVisit.
+              NextVisit includes configurable loyalty points engines and coupon management modules (percentage, flat, BOGO,
+              and free-item discounts).
             </p>
             <p>
-              <strong>11.2 Limited License:</strong> Subject to compliance with these Terms, NextVisit grants you a limited,
-              revocable, non-exclusive, non-transferable license to access and use the Platform during your active
-              subscription solely for internal business operations.
-            </p>
-            <p>
-              <strong>11.3 Feedback:</strong> Any suggestions, enhancements, feature requests, or feedback you submit
-              regarding NextVisit may be freely adopted, incorporated, or commercialized by NextVisit without obligation or
-              compensation to you.
+              The Business maintains complete autonomy and responsibility over the discount amounts, earning rules, point
+              conversion rates, minimum order thresholds, and expiry parameters offered to its retail patrons.
             </p>
           </div>
         ),
@@ -446,23 +315,18 @@ export default function TermsPage() {
       {
         id: "section-12",
         number: 12,
-        title: "User-Submitted Content and Licenses",
-        category: "General",
+        title: "Third-Party Services and Integrations",
+        category: "Data & Usage",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              <strong>12.1 Merchant Content Ownership:</strong> You retain all intellectual property rights and ownership in
-              the menus, logos, photographs, business descriptions, customer data, and marketing copy you upload to the
-              Platform.
+              The Platform relies upon and integrates with third-party providers, including WhatsApp Business API / Meta,
+              Resend email delivery services, cloud hosting infrastructure, and payment gateway interfaces.
             </p>
             <p>
-              <strong>12.2 License to Host &amp; Process:</strong> You grant NextVisit a worldwide, non-exclusive, royalty-free
-              license to store, host, reproduce, format, and transmit your Content solely to the extent necessary to provide,
-              maintain, and optimize the Services for your Business.
-            </p>
-            <p>
-              <strong>12.3 Content Representations:</strong> You warrant that your uploaded Content does not infringe upon any
-              third-party copyrights, trademarks, privacy rights, or proprietary trade secrets.
+              Your utilization of integrated third-party features is subject to the respective third party's operating terms.
+              NextVisit is not responsible or liable for third-party network downtimes, rate limits, policy revisions, or
+              service interruptions outside our reasonable control.
             </p>
           </div>
         ),
@@ -470,18 +334,17 @@ export default function TermsPage() {
       {
         id: "section-13",
         number: 13,
-        title: "Privacy and Data Protection",
-        category: "Data & Usage",
+        title: "Payments, Subscriptions and Billing",
+        category: "Subscriptions",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              <strong>13.1 Commitment to Privacy:</strong> Your privacy and data confidentiality are of paramount importance.
-              Our collection, processing, and handling of personal and operational information are governed by our
-              comprehensive Privacy Policy, incorporated herein by reference.
+              Access to NextVisit is offered under subscription plans billed on recurring monthly or annual intervals. Newly
+              approved accounts may receive a complimentary 14-day evaluation trial without requiring credit card details.
             </p>
             <p>
-              <strong>13.2 Software Processor Role:</strong> In processing end-customer records on behalf of your Business,
-              NextVisit acts as a technical software processor operating under your commercial instruction.
+              All stated subscription fees are exclusive of applicable statutory taxes (such as GST). You may cancel your
+              subscription at any time through the dashboard, which takes effect at the end of the current billing cycle.
             </p>
           </div>
         ),
@@ -489,23 +352,17 @@ export default function TermsPage() {
       {
         id: "section-14",
         number: 14,
-        title: "Data Retention, Backups, and Deletion",
-        category: "Data & Usage",
+        title: "Platform Availability and Service Changes",
+        category: "Subscriptions",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              <strong>14.1 Retention During Active Account:</strong> NextVisit retains your business records, customer
-              profiles, transaction histories, and campaign logs throughout the duration of your active account.
+              We strive to maintain high system availability and operational resilience. However, NextVisit does not
+              guarantee uninterrupted, error-free, or continuous availability of the Platform.
             </p>
             <p>
-              <strong>14.2 Account Closure &amp; Purging:</strong> Upon formal account termination, NextVisit retains records
-              for a limited grace period to allow for subscription reactivation or dispute resolution. Thereafter, data is
-              queued for permanent, secure deletion.
-            </p>
-            <p>
-              <strong>14.3 Non-Instantaneous Purging:</strong> You acknowledge that routine system backups and redundant
-              disaster recovery archives may retain encrypted residual snapshots for a finite operational cycle before being
-              overwritten.
+              We may perform scheduled maintenance, database optimizations, and feature enhancements. We reserve the right
+              to update, modify, evolve, or deprecate specific features over time.
             </p>
           </div>
         ),
@@ -513,41 +370,37 @@ export default function TermsPage() {
       {
         id: "section-15",
         number: 15,
-        title: "Service Availability and Maintenance",
-        category: "Subscriptions",
+        title: "Prohibited Activities",
+        category: "Data & Usage",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
-            <p>
-              <strong>15.1 High-Availability Infrastructure:</strong> NextVisit utilizes robust cloud architecture designed for
-              continuous commercial operations. However, you acknowledge that no cloud service is immune to unforeseen
-              downtime.
-            </p>
-            <p>
-              <strong>15.2 Scheduled Maintenance:</strong> NextVisit periodically performs system updates, database indexing,
-              and security patches. Where feasible, maintenance windows are scheduled during off-peak commercial hours.
-            </p>
-            <p>
-              <strong>15.3 No Guarantee of 100% Uptime:</strong> NextVisit does not guarantee uninterrupted, error-free, or
-              continuous availability of the Platform at all times.
-            </p>
+            <p>You agree NOT to engage in any of the following prohibited activities:</p>
+            <ul className="list-disc space-y-2 pl-5">
+              <li>Using the Platform for fraudulent, unlawful, deceptive, or misleading commercial activities;</li>
+              <li>Sending unsolicited mass spam, harassment, or abusive promotions to consumers;</li>
+              <li>Attempting to probe, scan, breach, or bypass any security or authentication controls;</li>
+              <li>Reverse engineering, decompiling, disassembling, or extracting source code from the Platform;</li>
+              <li>Introducing malicious code, viruses, automated scrapers, or bots into the Platform infrastructure;</li>
+              <li>Reselling, sub-licensing, or redistributing NextVisit software without prior written authorization.</li>
+            </ul>
           </div>
         ),
       },
       {
         id: "section-16",
         number: 16,
-        title: "Security Safeguards and Practices",
-        category: "Account & Security",
+        title: "Intellectual Property",
+        category: "General",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              <strong>16.1 Technical Safeguards:</strong> NextVisit implements industry-standard encryption protocols (HTTPS/TLS
-              in transit and hashed credential security at rest), role-based permission boundaries, and active database access
-              controls.
+              All software, source code, user interface designs, logos, trademarks, database models, algorithms, and
+              documentation comprising NextVisit are the exclusive intellectual property of NextVisit.
             </p>
             <p>
-              <strong>16.2 Shared Responsibility:</strong> Security is a shared responsibility. The Business must protect its
-              hardware terminals, ensure secure internet connections, and prohibit credential sharing among staff members.
+              The Business retains full intellectual property ownership in its uploaded business logos, menu item names,
+              descriptions, photographs, and customer records. You grant NextVisit a limited license to host and display
+              your content solely for providing the Services.
             </p>
           </div>
         ),
@@ -555,25 +408,14 @@ export default function TermsPage() {
       {
         id: "section-17",
         number: 17,
-        title: "Account Suspension and Termination",
-        category: "Account & Security",
+        title: "Privacy and Data Protection",
+        category: "Data & Usage",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              <strong>17.1 Grounds for Suspension or Termination:</strong> NextVisit reserves the right to immediately suspend
-              or terminate any Account with or without notice upon:
-            </p>
-            <ul className="list-disc space-y-1.5 pl-5">
-              <li>Material breach of any provision of these Terms or the Acceptable Use Policy;</li>
-              <li>Repeated customer spam complaints or unauthorized commercial broadcasting;</li>
-              <li>Engagement in fraudulent, deceptive, or illegal commercial practices;</li>
-              <li>Non-payment of subscription dues or chargeback abuse;</li>
-              <li>Attempts to compromise, probe, or breach platform infrastructure security;</li>
-              <li>Receipt of binding court orders or government regulatory directives.</li>
-            </ul>
-            <p>
-              <strong>17.2 Voluntary Termination:</strong> You may terminate your Account at any time by accessing your account
-              settings or submitting a termination request to customer support.
+              NextVisit processes data in accordance with our Privacy Policy. We maintain technical and operational
+              safeguards, including encryption in transit (HTTPS/TLS) and isolated tenant databases. We do not sell or
+              monetize your customer data.
             </p>
           </div>
         ),
@@ -581,18 +423,18 @@ export default function TermsPage() {
       {
         id: "section-18",
         number: 18,
-        title: "Consequences of Termination",
+        title: "Account Suspension and Termination",
         category: "Account & Security",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              <strong>18.1 Immediate Effects:</strong> Upon termination of your Account: (a) all software licenses granted to
-              you terminate immediately; (b) your access to the merchant portal, QR ordering tables, and automation queues is
-              disabled; and (c) all scheduled campaigns are halted.
+              NextVisit reserves the right to immediately suspend or terminate any Account upon: (a) material breach of
+              these Terms or the Acceptable Use Policy; (b) repeated spam complaints from consumers; (c) fraudulent or
+              illegal business operations; (d) non-payment of subscription dues; or (e) security threats posed to the
+              Platform.
             </p>
             <p>
-              <strong>18.2 Surviving Clauses:</strong> Sections relating to Intellectual Property, Confidentiality,
-              Disclaimers, Limitation of Liability, Indemnification, and Governing Law shall survive termination.
+              You may terminate your Account at any time through account settings or by submitting a support request.
             </p>
           </div>
         ),
@@ -600,21 +442,18 @@ export default function TermsPage() {
       {
         id: "section-19",
         number: 19,
-        title: "Disclaimers and Warranties",
+        title: "Limitation of Liability",
         category: "Legal & Disclaimers",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              <strong>19.1 "As Is" and "As Available":</strong> The NextVisit Platform and all associated services are provided
-              on an <span className="font-semibold text-foreground">"AS IS"</span> and{" "}
-              <span className="font-semibold text-foreground">"AS AVAILABLE"</span> basis without warranties of any kind,
-              either express, implied, statutory, or otherwise.
+              To the maximum extent permitted by applicable law, in no event shall NextVisit, its founders, directors, or
+              employees be liable for any indirect, incidental, special, consequential, or punitive damages, including loss
+              of business revenue, profits, customer goodwill, or data.
             </p>
             <p>
-              <strong>19.2 Commercial Outcome Disclaimers:</strong> NextVisit explicitly disclaims any warranty or guarantee
-              that the Platform will: (a) increase your business revenue or foot traffic; (b) guarantee specific customer
-              acquisition or retention numbers; (c) generate positive review ratings; or (d) deliver messages in all network
-              scenarios.
+              NextVisit's total aggregate liability arising out of or relating to these Terms shall not exceed the total
+              amount actually paid by you to NextVisit in the twelve (12) months preceding the claim.
             </p>
           </div>
         ),
@@ -622,20 +461,18 @@ export default function TermsPage() {
       {
         id: "section-20",
         number: 20,
-        title: "Limitation of Liability",
+        title: "Disclaimer",
         category: "Legal & Disclaimers",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              <strong>20.1 Exclusion of Indirect Damages:</strong> To the maximum extent permitted by applicable law, in no
-              event shall NextVisit, its founders, directors, employees, affiliates, or licensors be liable for any indirect,
-              incidental, special, consequential, punitive, or exemplary damages, including but not limited to loss of profits,
-              loss of goodwill, loss of customer relationships, loss of data, business interruption, or system downtime.
+              NextVisit is provided strictly on an <span className="font-semibold text-foreground">"AS IS"</span> and{" "}
+              <span className="font-semibold text-foreground">"AS AVAILABLE"</span> basis. NextVisit does not guarantee
+              specific revenue growth, footfall increases, marketing returns, review volumes, or uninterrupted message
+              delivery.
             </p>
             <p>
-              <strong>20.2 Total Liability Cap:</strong> In all circumstances, NextVisit's total aggregate liability arising out
-              of or related to these Terms or your use of the Platform shall be strictly capped at the total amount actually
-              paid by you to NextVisit in the twelve (12) months immediately preceding the event giving rise to liability.
+              NextVisit is not a bank, payment gateway, financial advisor, or legal counsel.
             </p>
           </div>
         ),
@@ -643,39 +480,32 @@ export default function TermsPage() {
       {
         id: "section-21",
         number: 21,
-        title: "Indemnification",
-        category: "Legal & Disclaimers",
+        title: "Changes to These Terms",
+        category: "General",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              You agree to defend, indemnify, and hold harmless NextVisit, its officers, directors, employees, and agents from
-              and against any and all claims, damages, obligations, losses, liabilities, costs, or debt, and expenses (including
-              reasonable legal fees) arising from:
+              NextVisit reserves the right to update or revise these Terms from time to time. The "Last Updated" date at the
+              top of this page reflects the latest version. Your continued use of the Platform after changes are published
+              constitutes your acceptance of the revised Terms.
             </p>
-            <ul className="list-disc space-y-1.5 pl-5">
-              <li>Your violation of any provision of these Terms or the Acceptable Use Policy;</li>
-              <li>Your violation of any third-party rights, including privacy, publicity, or intellectual property rights;</li>
-              <li>
-                Any consumer grievances or regulatory fines arising from communications dispatched to customer phone numbers
-                uploaded by your Business;
-              </li>
-              <li>Any food, salon, or retail dispute between your Business and your retail customers.</li>
-            </ul>
           </div>
         ),
       },
       {
         id: "section-22",
         number: 22,
-        title: "Changes to the Platform",
-        category: "General",
+        title: "Governing Law and Jurisdiction",
+        category: "Legal & Disclaimers",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
             <p>
-              NextVisit continuously innovates to improve functionality. We reserve the right to update, upgrade, modify, or
-              temporarily or permanently discontinue specific features, workflows, or integrations at our discretion. Where
-              material changes impact active subscribers, reasonable notice will be provided via dashboard announcements or
-              email.
+              These Terms shall be governed by and construed in accordance with the applicable laws of{" "}
+              <span className="font-semibold text-foreground">
+                [Applicable jurisdiction to be specified by NextVisit operator]
+              </span>
+              . Any legal action or proceeding arising under these Terms shall be resolved through good-faith informal
+              consultation or brought before competent courts of jurisdiction.
             </p>
           </div>
         ),
@@ -683,126 +513,11 @@ export default function TermsPage() {
       {
         id: "section-23",
         number: 23,
-        title: "Changes to Terms",
+        title: "Contact Information",
         category: "General",
         content: (
           <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
-            <p>
-              NextVisit reserves the right to modify or replace these Terms at any time. When modifications occur, we will
-              update the "Last Updated" date at the top of this document. Continued access or use of the Platform following the
-              effective date of revised Terms constitutes your full acceptance of the revised Terms.
-            </p>
-          </div>
-        ),
-      },
-      {
-        id: "section-24",
-        number: 24,
-        title: "Governing Law and Dispute Resolution",
-        category: "Legal & Disclaimers",
-        content: (
-          <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
-            <p>
-              <strong>24.1 Governing Jurisdiction:</strong> These Terms and any dispute or claim arising out of or in connection
-              with them shall be governed by and construed in accordance with the laws of{" "}
-              <span className="font-semibold text-foreground">
-                [Applicable jurisdiction to be specified by NextVisit operator]
-              </span>
-              .
-            </p>
-            <p>
-              <strong>24.2 Amicable Resolution:</strong> Before initiating formal legal proceedings, the parties agree to
-              attempt to resolve any dispute through informal good-faith negotiations by notifying{" "}
-              <a href="mailto:hello@growthos.app" className="text-primary hover:underline font-medium">
-                hello@growthos.app
-              </a>
-              .
-            </p>
-          </div>
-        ),
-      },
-      {
-        id: "section-25",
-        number: 25,
-        title: "Severability",
-        category: "Legal & Disclaimers",
-        content: (
-          <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
-            <p>
-              If any provision of these Terms is held to be invalid, illegal, or unenforceable by a court of competent
-              jurisdiction, such provision shall be modified to the minimum extent necessary to make it enforceable, and the
-              remaining provisions shall continue in full force and effect.
-            </p>
-          </div>
-        ),
-      },
-      {
-        id: "section-26",
-        number: 26,
-        title: "Waiver",
-        category: "Legal & Disclaimers",
-        content: (
-          <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
-            <p>
-              No failure or delay by NextVisit in exercising any right, power, or privilege under these Terms shall operate as a
-              waiver thereof, nor shall any single or partial exercise preclude any other or further exercise thereof.
-            </p>
-          </div>
-        ),
-      },
-      {
-        id: "section-27",
-        number: 27,
-        title: "Entire Agreement",
-        category: "General",
-        content: (
-          <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
-            <p>
-              These Terms, together with the Privacy Policy and any active Subscription documentation, constitute the entire
-              agreement between you and NextVisit regarding the Platform and supersede all prior understandings, agreements, or
-              representations.
-            </p>
-          </div>
-        ),
-      },
-      {
-        id: "section-28",
-        number: 28,
-        title: "Assignment",
-        category: "General",
-        content: (
-          <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
-            <p>
-              You may not assign, transfer, or delegate your rights or obligations under these Terms without prior written
-              consent from NextVisit. NextVisit may assign or transfer its rights and obligations freely in connection with a
-              merger, acquisition, or sale of assets.
-            </p>
-          </div>
-        ),
-      },
-      {
-        id: "section-29",
-        number: 29,
-        title: "Force Majeure",
-        category: "Legal & Disclaimers",
-        content: (
-          <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
-            <p>
-              Neither party shall be liable for any failure or delay in performing its obligations (except payment obligations)
-              due to causes beyond its reasonable control, including acts of God, war, terrorism, civil unrest, labor disputes,
-              telecommunication outages, internet service provider failures, or government restrictions.
-            </p>
-          </div>
-        ),
-      },
-      {
-        id: "section-30",
-        number: 30,
-        title: "Contact Information and Legal Inquiries",
-        category: "General",
-        content: (
-          <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
-            <p>For questions, formal notices, compliance inquiries, or clarifications regarding these Terms, please contact:</p>
+            <p>For inquiries, legal notices, or questions regarding these Terms, please contact us at:</p>
             <div className="rounded-xl border bg-muted/40 p-4">
               <div className="grid gap-3 sm:grid-cols-2 text-xs">
                 <div className="flex items-center gap-2">
@@ -815,7 +530,7 @@ export default function TermsPage() {
                   <Mail className="h-4 w-4 text-primary shrink-0" />
                   <span>
                     <strong>Email:</strong>{" "}
-                    <a href="mailto:hello@growthos.app" className="text-primary hover:underline">
+                    <a href="mailto:hello@growthos.app" className="text-primary hover:underline font-medium">
                       hello@growthos.app
                     </a>
                   </span>
@@ -824,7 +539,7 @@ export default function TermsPage() {
                   <Phone className="h-4 w-4 text-primary shrink-0" />
                   <span>
                     <strong>Support Phone:</strong>{" "}
-                    <a href="tel:9555702945" className="text-primary hover:underline">
+                    <a href="tel:9555702945" className="text-primary hover:underline font-medium">
                       +91 9555702945
                     </a>
                   </span>
@@ -832,7 +547,7 @@ export default function TermsPage() {
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
                   <span>
-                    <strong>Admin Verification:</strong> Super Admin Governance Team
+                    <strong>Governance:</strong> Super Admin Compliance Team
                   </span>
                 </div>
               </div>
@@ -850,7 +565,7 @@ export default function TermsPage() {
     return sections.filter((s) => s.title.toLowerCase().includes(q) || s.number.toString().includes(q));
   }, [searchQuery, sections]);
 
-  // Scrollspy to highlight active section
+  // Scrollspy
   useEffect(() => {
     const handleScroll = () => {
       const scrollPos = window.scrollY + 140;
@@ -889,7 +604,7 @@ export default function TermsPage() {
       <SiteHeader />
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* Top Breadcrumb & Return Bar */}
+        {/* Top Breadcrumb & Actions Bar */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b pb-4">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Link to="/" className="hover:text-foreground">
@@ -936,7 +651,7 @@ export default function TermsPage() {
               <Scale className="h-3 w-3 text-primary" /> Legal Agreement
             </Badge>
             <Badge variant="outline" className="rounded-full text-xs">
-              Version 2.4
+              NextVisit SaaS
             </Badge>
             <Badge variant="outline" className="rounded-full gap-1 text-xs text-muted-foreground">
               <Clock className="h-3 w-3" /> Last Updated: August 18, 2026
@@ -947,25 +662,25 @@ export default function TermsPage() {
             Terms &amp; Conditions
           </h1>
           <p className="mt-2 max-w-3xl text-sm sm:text-base text-muted-foreground leading-relaxed">
-            Please review these comprehensive terms carefully before accessing or using NextVisit. This agreement
-            governs your subscription, business account rights, customer messaging compliance, intellectual property, and
-            limitations of liability.
+            Please review these terms carefully before registering or using NextVisit. This agreement outlines your
+            rights, obligations, account review and approval processes, customer messaging consent rules, and limitations of
+            liability.
           </p>
 
-          {/* Quick Notice Card */}
+          {/* Quick Notice Banner */}
           <div className="mt-6 flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-foreground">
             <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <p className="font-semibold">Important Notice for Merchant Accounts:</p>
+              <p className="font-semibold">Important Notice for All Merchant Accounts:</p>
               <p className="text-muted-foreground leading-relaxed">
-                By creating an account and obtaining Super Admin approval, your business agrees to maintain lawful customer
-                consent for automated WhatsApp and promotional campaigns, preserve credential security, and adhere to
-                applicable telecommunication and commercial regulations.
+                NextVisit requires Super Admin review prior to account activation. Creating an account does not guarantee
+                automatic approval. The Business is strictly responsible for customer data accuracy, express opt-in consent
+                for automated messaging, and credential security.
               </p>
             </div>
           </div>
 
-          {/* In-Page Search */}
+          {/* In-Page Search Filter */}
           <div className="relative mt-6 max-w-md">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -977,13 +692,13 @@ export default function TermsPage() {
           </div>
         </div>
 
-        {/* Content Layout with Sticky Sidebar */}
+        {/* Content Grid */}
         <div className="grid gap-8 lg:grid-cols-[280px_1fr]">
-          {/* Table of Contents Sidebar */}
+          {/* Sidebar */}
           <aside className="hidden lg:block">
             <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto rounded-2xl border bg-card/60 p-4 backdrop-blur shadow-sm">
               <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-2 mb-2">
-                Table of Contents (30 Sections)
+                Table of Contents (23 Sections)
               </p>
               <nav className="space-y-0.5 text-xs">
                 {filteredSections.map((s) => (
@@ -1005,7 +720,7 @@ export default function TermsPage() {
             </div>
           </aside>
 
-          {/* Sections List */}
+          {/* Section Cards */}
           <div className="space-y-6">
             {filteredSections.length === 0 ? (
               <Card className="rounded-2xl p-8 text-center text-muted-foreground">
@@ -1041,12 +756,12 @@ export default function TermsPage() {
               ))
             )}
 
-            {/* Bottom Actions Bar */}
+            {/* Bottom Actions Card */}
             <div className="mt-8 rounded-2xl border bg-muted/30 p-6 text-center space-y-4">
               <h3 className="font-display text-base font-semibold">Have Questions About Our Terms?</h3>
               <p className="text-xs text-muted-foreground max-w-md mx-auto">
-                Our support and legal compliance team is available to assist you with any questions regarding platform
-                policies, data rights, or subscriptions.
+                Our support team is available to assist you with questions regarding platform terms, data handling, or
+                account review.
               </p>
               <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
                 <Button onClick={handleBack} className="rounded-full gradient-brand text-primary-foreground text-xs gap-1.5">
