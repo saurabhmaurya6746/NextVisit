@@ -25,16 +25,15 @@ class EmailService:
         subject: str,
         html: str,
         text: str | None = None,
-    ) -> bool:
+    ) -> tuple[bool, str | None]:
         """
         Low-level safe email sender using Resend API.
-        Never throws exceptions to caller; returns boolean status.
+        Never throws exceptions to caller; returns (success: bool, error_message: str | None).
         """
         if not cls.is_configured():
-            logger.warning(
-                "Resend email dispatch skipped: RESEND_API_KEY is not configured."
-            )
-            return False
+            err_msg = "RESEND_API_KEY is not configured."
+            logger.warning("Resend email dispatch skipped: %s", err_msg)
+            return False, err_msg
 
         try:
             resend.api_key = settings.RESEND_API_KEY.strip()
@@ -43,8 +42,9 @@ class EmailService:
             clean_recipients = [r.strip() for r in recipient_list if r and r.strip()]
 
             if not clean_recipients:
-                logger.warning("Resend email dispatch skipped: No valid recipients provided.")
-                return False
+                err_msg = "No valid recipients provided."
+                logger.warning("Resend email dispatch skipped: %s", err_msg)
+                return False, err_msg
 
             params: resend.Emails.SendParams = {
                 "from": settings.RESEND_FROM_EMAIL or "NextVisit <onboarding@resend.dev>",
@@ -63,18 +63,17 @@ class EmailService:
                 clean_recipients,
                 email_id,
             )
-            return True
+            return True, None
 
         except Exception as exc:
-            # Safe logging: never print or expose the API key or internal credentials
+            err_msg = str(exc)
             logger.error(
                 "Failed to send email notification: %s | subject='%s' to=%s",
-                str(exc),
+                err_msg,
                 subject,
                 clean_recipients if 'clean_recipients' in locals() else to,
             )
-            return False
-
+            return False, err_msg
 
     @classmethod
     def send_new_signup_notification(
@@ -85,7 +84,7 @@ class EmailService:
         business_type: str,
         signup_time: datetime | str | None = None,
         business_id: str | None = None,
-    ) -> bool:
+    ) -> tuple[bool, str | None]:
         """
         Send notification to NextVisit Super Admin when a new merchant registers.
         """
@@ -198,7 +197,7 @@ NextVisit System
         owner_name: str,
         business_name: str,
         login_url: str | None = None,
-    ) -> bool:
+    ) -> tuple[bool, str | None]:
         """
         Send welcome and approval confirmation email to merchant owner once approved by admin.
         """
@@ -282,7 +281,7 @@ NextVisit Team
         owner_name: str,
         business_name: str,
         reason: str | None = None,
-    ) -> bool:
+    ) -> tuple[bool, str | None]:
         """
         Send professional status update email to merchant owner if registration was rejected.
         """

@@ -220,7 +220,7 @@ class AuthService:
                     try:
                         from app.services.email_service import EmailService
                         business_type_name = getattr(business_type, "name", "") if business_type else ""
-                        sent = EmailService.send_new_signup_notification(
+                        sent, err_msg = EmailService.send_new_signup_notification(
                             business_name=existing_biz.name,
                             owner_name=owner_user.name,
                             owner_email=owner_user.email,
@@ -236,8 +236,9 @@ class AuthService:
                             )
                         else:
                             logger.warning(
-                                "Failed to send admin signup notification email for resubmitted business ID %s",
+                                "Failed to send admin signup notification email for resubmitted business ID %s: %s",
                                 str(existing_biz.id),
+                                err_msg or "Unknown error",
                             )
                     except Exception as email_err:
                         logger.warning(
@@ -303,7 +304,7 @@ class AuthService:
             try:
                 from app.services.email_service import EmailService
                 business_type_name = getattr(business_type, "name", "") if business_type else ""
-                sent = EmailService.send_new_signup_notification(
+                sent, err_msg = EmailService.send_new_signup_notification(
                     business_name=business.name,
                     owner_name=user.name,
                     owner_email=user.email,
@@ -314,7 +315,7 @@ class AuthService:
                 if sent:
                     logger.info("Admin signup notification email sent successfully for user ID %s (business ID: %s)", str(user.id), str(business.id))
                 else:
-                    logger.warning("Failed to send admin signup notification email for user ID %s (business ID: %s)", str(user.id), str(business.id))
+                    logger.warning("Failed to send admin signup notification email for user ID %s (business ID: %s): %s", str(user.id), str(business.id), err_msg or "Unknown error")
             except Exception as email_err:
                 logger.warning("Non-blocking signup admin email notification error: %s", str(email_err))
 

@@ -119,35 +119,24 @@ class MerchantApprovalService:
                     if (owner_user and owner_user.name)
                     else (business.owner_name.strip() if business.owner_name else "Merchant")
                 )
-                user_id_str = str(owner_user.id) if owner_user else str(business.id)
 
                 if recipient_email:
-                    sent = EmailService.send_account_approved_email(
+                    sent, err_msg = EmailService.send_account_approved_email(
                         owner_email=recipient_email,
                         owner_name=recipient_name,
                         business_name=business.name,
                     )
                     if sent:
-                        logger.info(
-                            "Approval email sent successfully for user ID %s (recipient: %s)",
-                            user_id_str,
-                            recipient_email,
-                        )
+                        logger.info("Approval email sent successfully to %s", recipient_email)
                     else:
-                        logger.warning(
-                            "Failed to send approval email: Resend dispatch returned False for user ID %s (recipient: %s)",
-                            user_id_str,
-                            recipient_email,
-                        )
+                        logger.error("Failed to send approval email: %s", err_msg or "Unknown error")
                 else:
                     logger.warning(
-                        "Approval email skipped: No recipient email found for business ID %s",
+                        "Failed to send approval email: No recipient email found for business ID %s",
                         str(business_id),
                     )
             except Exception as email_err:
-                logger.warning(
-                    "Failed to send approval email: %s", str(email_err)
-                )
+                logger.error("Failed to send approval email: %s", str(email_err))
 
             return business
         except HTTPException:
@@ -223,36 +212,25 @@ class MerchantApprovalService:
                     if (owner_user and owner_user.name)
                     else (business.owner_name.strip() if business.owner_name else "Merchant")
                 )
-                user_id_str = str(owner_user.id) if owner_user else str(business.id)
 
                 if recipient_email:
-                    sent = EmailService.send_account_rejected_email(
+                    sent, err_msg = EmailService.send_account_rejected_email(
                         owner_email=recipient_email,
                         owner_name=recipient_name,
                         business_name=business.name,
                         reason=business.rejection_reason,
                     )
                     if sent:
-                        logger.info(
-                            "Rejection email sent successfully for user ID %s (recipient: %s)",
-                            user_id_str,
-                            recipient_email,
-                        )
+                        logger.info("Rejection email sent successfully to %s", recipient_email)
                     else:
-                        logger.warning(
-                            "Failed to send rejection email: Resend dispatch returned False for user ID %s (recipient: %s)",
-                            user_id_str,
-                            recipient_email,
-                        )
+                        logger.error("Failed to send rejection email: %s", err_msg or "Unknown error")
                 else:
                     logger.warning(
-                        "Rejection email skipped: No recipient email found for business ID %s",
+                        "Failed to send rejection email: No recipient email found for business ID %s",
                         str(business_id),
                     )
             except Exception as email_err:
-                logger.warning(
-                    "Failed to send rejection email: %s", str(email_err)
-                )
+                logger.error("Failed to send rejection email: %s", str(email_err))
 
             return business
         except HTTPException:
@@ -263,3 +241,4 @@ class MerchantApprovalService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to reject business due to an internal error.",
             ) from e
+
