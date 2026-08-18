@@ -19,6 +19,39 @@ export const Route = createFileRoute("/signup")({
   component: SignupPage,
 });
 
+const getInitialForm = () => {
+  try {
+    const saved = sessionStorage.getItem("nextvisit_signup_draft");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return {
+        business: parsed.business || "",
+        owner: parsed.owner || "",
+        type: parsed.type || "Restaurant",
+        phone: parsed.phone || "",
+        email: parsed.email || "",
+        password: parsed.password || "",
+        confirm: parsed.confirm || "",
+        country: parsed.country || "India",
+        city: parsed.city || "",
+        terms: !!parsed.terms,
+      };
+    }
+  } catch {}
+  return {
+    business: "",
+    owner: "",
+    type: "Restaurant",
+    phone: "",
+    email: "",
+    password: "",
+    confirm: "",
+    country: "India",
+    city: "",
+    terms: false,
+  };
+};
+
 export default function SignupPage() {
   const navigate = useNavigate();
   const [submitted, setSubmitted] = useState(false);
@@ -38,18 +71,7 @@ export default function SignupPage() {
     validateField,
     registerRef,
   } = useFormValidation(
-    {
-      business: "",
-      owner: "",
-      type: "Restaurant",
-      phone: "",
-      email: "",
-      password: "",
-      confirm: "",
-      country: "India",
-      city: "",
-      terms: false,
-    },
+    getInitialForm(),
     {
       business: { required: true, requiredMessage: "Business name is required" },
       owner: { required: true, requiredMessage: "Owner name is required" },
@@ -97,6 +119,12 @@ export default function SignupPage() {
       }
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("nextvisit_signup_draft", JSON.stringify(form));
+    } catch {}
+  }, [form]);
 
   const handlePasswordChange = (val: string) => {
     handleChange("password", val);
@@ -161,6 +189,9 @@ export default function SignupPage() {
       });
 
       toast.success("Account created successfully!");
+      try {
+        sessionStorage.removeItem("nextvisit_signup_draft");
+      } catch {}
       setSubmitted(true);
     } catch (err: any) {
       toast.error(err.message || "Registration failed. Please try again.");
@@ -342,7 +373,17 @@ export default function SignupPage() {
                     onCheckedChange={(v) => handleChange("terms", !!v)}
                     className="mt-0.5"
                   />
-                  <span>I accept the <Link to="/docs" className="text-primary hover:underline">Terms</Link> and <Link to="/docs" className="text-primary hover:underline">Privacy Policy</Link>.</span>
+                  <span>
+                    I accept the{" "}
+                    <Link to="/terms" state={{ from: "signup" }} className="text-primary hover:underline">
+                      Terms &amp; Conditions
+                    </Link>{" "}
+                    and{" "}
+                    <Link to="/docs" className="text-primary hover:underline">
+                      Privacy Policy
+                    </Link>
+                    .
+                  </span>
                 </label>
               </ValidatedField>
               <p className="rounded-lg bg-primary/5 p-3 text-xs text-muted-foreground">

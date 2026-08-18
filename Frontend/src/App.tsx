@@ -14,6 +14,7 @@ import FeaturesPage from "./routes/features";
 import PricingPage from "./routes/pricing";
 import UseCasesPage from "./routes/use-cases";
 import DocsPage from "./routes/docs";
+import TermsPage from "./routes/terms";
 import LoginIndexPage from "./routes/login.index";
 import LoginBusinessPage from "./routes/login.business";
 import LoginAdminPage from "./routes/login.admin";
@@ -115,6 +116,8 @@ export default function App() {
             <Route path="/pricing" element={<PricingPage />} />
             <Route path="/use-cases" element={<UseCasesPage />} />
             <Route path="/docs" element={<DocsPage />} />
+            <Route path="/terms" element={<TermsPage />} />
+            <Route path="/terms-and-conditions" element={<TermsPage />} />
 
             {/* Auth Routes */}
             <Route path="/login" element={<LoginIndexPage />} />

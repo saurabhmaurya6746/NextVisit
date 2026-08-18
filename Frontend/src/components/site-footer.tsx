@@ -75,6 +75,11 @@ export function SiteFooter() {
               </Link>
             </li>
             <li>
+              <Link to="/terms" className="hover:text-foreground transition-colors">
+                Terms &amp; Conditions
+              </Link>
+            </li>
+            <li>
               <a href="mailto:hello@growthos.app" className="hover:text-foreground transition-colors">
                 Support
               </a>
@@ -112,7 +117,11 @@ export function SiteFooter() {
       <div className="border-t">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-6 py-5 text-xs text-muted-foreground sm:flex-row">
           <p>© 2026 NextVisit. All rights reserved.</p>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <Link to="/terms" className="hover:text-foreground transition-colors">
+              Terms &amp; Conditions
+            </Link>
+            <span>•</span>
             <a href="tel:9555702945" className="hover:text-foreground transition-colors">
               9555702945
             </a>
