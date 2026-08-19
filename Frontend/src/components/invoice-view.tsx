@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Printer } from "lucide-react";
+import { Printer, Download } from "lucide-react";
 import { fmt } from "@/lib/currency";
 import { jsPDF } from "jspdf";
+import { cn } from "@/lib/utils";
 
 export interface InvoiceData {
   order_number: string;
@@ -46,14 +48,41 @@ export interface InvoiceData {
   } | null;
 }
 
+export function printInvoiceDom(elementId: string = "print-invoice") {
+  const el = document.getElementById(elementId);
+  if (!el) {
+    window.print();
+    return;
+  }
+
+  // Remove any stale print root
+  const oldRoot = document.getElementById("nextvisit-print-root");
+  if (oldRoot) oldRoot.remove();
+
+  const printRoot = document.createElement("div");
+  printRoot.id = "nextvisit-print-root";
+  printRoot.innerHTML = el.outerHTML;
+  document.body.appendChild(printRoot);
+
+  window.print();
+
+  setTimeout(() => {
+    if (printRoot && document.body.contains(printRoot)) {
+      printRoot.remove();
+    }
+  }, 1000);
+}
+
 export function InvoiceView({
   data,
   order,
   showPrintButton = true,
+  defaultPaperSize = "80mm",
 }: {
   data?: InvoiceData;
   order?: any;
   showPrintButton?: boolean;
+  defaultPaperSize?: "58mm" | "80mm" | "A4" | string;
 }) {
   // Convert legacy order prop to InvoiceData if data is not directly provided
   const invData: InvoiceData = data || {
@@ -82,195 +111,265 @@ export function InvoiceView({
     loyalty: order?.loyalty || null,
   };
 
+  const [paperSize, setPaperSize] = useState<"58mm" | "80mm" | "A4">(
+    defaultPaperSize === "58mm" ? "58mm" : defaultPaperSize === "A4" ? "A4" : "80mm"
+  );
+  const [downloading, setDownloading] = useState(false);
+
   const invNum = invData.invoice_number || `INV-${invData.order_number.replace("ORD-", "")}`;
   const d = new Date(invData.created_at);
   const dateStr = d.toLocaleDateString("en-GB");
   const timeStr = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+  // Native Browser Print Flow using Isolated Print Root
   const handlePrint = () => {
+    printInvoiceDom("print-invoice");
+  };
+
+  // Dedicated PDF Download Flow with Dynamic Content Height
+  const handleDownloadPdf = () => {
+    setDownloading(true);
     try {
       const invNo = invNum;
       const dateStrFormatted = `${dateStr} at ${timeStr}`;
       const items = invData.items || [];
-      const baseHeight = 125;
-      const itemsHeight = Math.max(items.length, 1) * 5;
-      const totalHeight = baseHeight + itemsHeight;
+
+      const is58 = paperSize === "58mm";
+      const isA4 = paperSize === "A4";
+
+      const pdfWidth = is58 ? 58 : isA4 ? 210 : 80;
+      const baseHeight = is58 ? 100 : isA4 ? 297 : 110;
+      const itemsHeight = Math.max(items.length, 1) * (is58 ? 7 : 5.5);
+      const totalHeight = isA4 ? 297 : baseHeight + itemsHeight;
 
       const pdf = new jsPDF({
         unit: "mm",
-        format: [80, Math.max(totalHeight, 130)],
+        format: [pdfWidth, totalHeight],
       });
 
-      let y = 10;
+      let y = is58 ? 6 : isA4 ? 15 : 10;
+      const leftMargin = is58 ? 4 : isA4 ? 15 : 8;
+      const rightMargin = is58 ? 54 : isA4 ? 195 : 72;
+      const centerX = pdfWidth / 2;
 
       pdf.setTextColor(0, 0, 0);
       pdf.setDrawColor(180, 180, 180);
-      pdf.setLineWidth(0.25);
+      pdf.setLineWidth(0.2);
 
       // Header
       pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(11);
-      pdf.text(invData.business?.restaurant_name || "Jail Restaurant", 40, y, { align: "center" });
-      y += 4.5;
+      pdf.setFontSize(is58 ? 9.5 : isA4 ? 14 : 11);
+      pdf.text(invData.business?.restaurant_name || "NextVisit", centerX, y, { align: "center" });
+      y += is58 ? 3.8 : 4.5;
 
       pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(7);
+      pdf.setFontSize(is58 ? 6.5 : 7.5);
       if (invData.business?.address) {
-        pdf.text(invData.business.address, 40, y, { align: "center" });
-        y += 3.5;
+        pdf.text(invData.business.address, centerX, y, { align: "center" });
+        y += 3.2;
       }
       if (invData.business?.phone) {
-        pdf.text(`Ph: ${invData.business.phone}`, 40, y, { align: "center" });
-        y += 3.5;
+        pdf.text(`Ph: ${invData.business.phone}`, centerX, y, { align: "center" });
+        y += 3.2;
       }
       if (invData.business?.gst_number) {
-        pdf.text(`GSTIN: ${invData.business.gst_number}`, 40, y, { align: "center" });
-        y += 3.5;
+        pdf.text(`GSTIN: ${invData.business.gst_number}`, centerX, y, { align: "center" });
+        y += 3.2;
       }
 
-      y += 2;
-      pdf.line(8, y, 72, y);
-      y += 5;
+      y += 1.5;
+      pdf.line(leftMargin, y, rightMargin, y);
+      y += 4;
 
       // Metadata
-      pdf.text("Invoice No:", 8, y);
+      pdf.text("Invoice No:", leftMargin, y);
       pdf.setFont("helvetica", "bold");
-      pdf.text(invNo, 72, y, { align: "right" });
-      y += 4;
+      pdf.text(invNo, rightMargin, y, { align: "right" });
+      y += 3.5;
 
       pdf.setFont("helvetica", "normal");
-      pdf.text("Order No:", 8, y);
+      pdf.text("Order No:", leftMargin, y);
       pdf.setFont("helvetica", "bold");
-      pdf.text(invData.order_number, 72, y, { align: "right" });
-      y += 4;
+      pdf.text(invData.order_number, rightMargin, y, { align: "right" });
+      y += 3.5;
 
       pdf.setFont("helvetica", "normal");
-      pdf.text("Date & Time:", 8, y);
+      pdf.text("Date & Time:", leftMargin, y);
       pdf.setFont("helvetica", "bold");
-      pdf.text(dateStrFormatted, 72, y, { align: "right" });
-      y += 4;
+      pdf.text(dateStrFormatted, rightMargin, y, { align: "right" });
+      y += 3.5;
 
       if (invData.table_name) {
         pdf.setFont("helvetica", "normal");
-        pdf.text("Table:", 8, y);
+        pdf.text("Table:", leftMargin, y);
         pdf.setFont("helvetica", "bold");
-        pdf.text(invData.table_name, 72, y, { align: "right" });
-        y += 4;
+        pdf.text(invData.table_name, rightMargin, y, { align: "right" });
+        y += 3.5;
       }
 
       pdf.setFont("helvetica", "normal");
-      pdf.text("Customer:", 8, y);
+      pdf.text("Customer:", leftMargin, y);
       pdf.setFont("helvetica", "bold");
-      pdf.text(invData.customer_name || "Guest", 72, y, { align: "right" });
-      y += 4;
+      pdf.text(invData.customer_name || "Guest", rightMargin, y, { align: "right" });
+      y += 3.5;
 
       pdf.setFont("helvetica", "normal");
-      pdf.text("Payment Method:", 8, y);
+      pdf.text("Payment Method:", leftMargin, y);
       pdf.setFont("helvetica", "bold");
-      pdf.text((invData.payment_method || "CASH").toUpperCase(), 72, y, { align: "right" });
-      y += 5;
+      pdf.text((invData.payment_method || "CASH").toUpperCase(), rightMargin, y, { align: "right" });
+      y += 4.5;
 
-      pdf.line(8, y, 72, y);
-      y += 4;
+      pdf.line(leftMargin, y, rightMargin, y);
+      y += 3.5;
 
       // Items Header
       pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(7);
-      pdf.text("Item", 8, y);
-      pdf.text("Qty", 42, y, { align: "right" });
-      pdf.text("Price", 57, y, { align: "right" });
-      pdf.text("Total", 72, y, { align: "right" });
-      y += 4;
+      pdf.setFontSize(is58 ? 6.5 : 7.5);
+      pdf.text("Item", leftMargin, y);
+      const qtyX = is58 ? 32 : isA4 ? 120 : 42;
+      const priceX = is58 ? 42 : isA4 ? 155 : 57;
+      pdf.text("Qty", qtyX, y, { align: "right" });
+      pdf.text("Price", priceX, y, { align: "right" });
+      pdf.text("Total", rightMargin, y, { align: "right" });
+      y += 3.5;
 
-      pdf.line(8, y, 72, y);
-      y += 5;
+      pdf.line(leftMargin, y, rightMargin, y);
+      y += 4;
 
       // Items Rows
       pdf.setFont("helvetica", "normal");
       items.forEach((item) => {
-        const name = item.item_name.length > 18 ? item.item_name.slice(0, 16) + ".." : item.item_name;
-        pdf.text(name, 8, y);
-        pdf.text(String(item.quantity), 42, y, { align: "right" });
-        pdf.text(`Rs.${item.unit_price}`, 57, y, { align: "right" });
-        pdf.text(`Rs.${item.subtotal}`, 72, y, { align: "right" });
-        y += 5;
+        const maxLen = is58 ? 12 : 18;
+        const name = item.item_name.length > maxLen ? item.item_name.slice(0, maxLen - 2) + ".." : item.item_name;
+        pdf.text(name, leftMargin, y);
+        pdf.text(String(item.quantity), qtyX, y, { align: "right" });
+        pdf.text(`Rs.${item.unit_price}`, priceX, y, { align: "right" });
+        pdf.text(`Rs.${item.subtotal}`, rightMargin, y, { align: "right" });
+        y += 4.5;
       });
 
-      pdf.line(8, y, 72, y);
-      y += 5;
-
-      // Totals
-      pdf.text("Subtotal", 8, y);
-      pdf.text(`Rs.${invData.subtotal}`, 72, y, { align: "right" });
+      pdf.line(leftMargin, y, rightMargin, y);
       y += 4;
 
+      // Totals
+      pdf.text("Subtotal", leftMargin, y);
+      pdf.text(`Rs.${invData.subtotal}`, rightMargin, y, { align: "right" });
+      y += 3.5;
+
       if (invData.discount_amount && invData.discount_amount > 0) {
-        const codeLabel = invData.coupon_code ? `Coupon (${invData.coupon_code.toUpperCase()})` : "Coupon (BIRTHDAY20)";
-        pdf.text(codeLabel, 8, y);
+        const codeLabel = invData.coupon_code ? `Coupon (${invData.coupon_code.toUpperCase()})` : "Discount";
+        pdf.text(codeLabel, leftMargin, y);
         pdf.setTextColor(220, 38, 38);
-        pdf.text(`-Rs.${invData.discount_amount}`, 72, y, { align: "right" });
+        pdf.text(`-Rs.${invData.discount_amount}`, rightMargin, y, { align: "right" });
         pdf.setTextColor(0, 0, 0);
-        y += 4;
+        y += 3.5;
       }
 
       if (invData.tax_amount) {
-        pdf.text("GST", 8, y);
-        pdf.text(`Rs.${invData.tax_amount}`, 72, y, { align: "right" });
-        y += 4;
+        pdf.text("GST", leftMargin, y);
+        pdf.text(`Rs.${invData.tax_amount}`, rightMargin, y, { align: "right" });
+        y += 3.5;
       }
 
-      pdf.line(8, y, 72, y);
+      pdf.line(leftMargin, y, rightMargin, y);
+      y += 4.5;
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(is58 ? 8 : 9);
+      pdf.text("Grand Total", leftMargin, y);
+      pdf.text(`Rs.${invData.total_amount}`, rightMargin, y, { align: "right" });
+      y += 5.5;
+
+      pdf.line(leftMargin, y, rightMargin, y);
       y += 5;
 
       pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(9);
-      pdf.text("Grand Total", 8, y);
-      pdf.text(`Rs.${invData.total_amount}`, 72, y, { align: "right" });
-      y += 6;
+      pdf.setFontSize(is58 ? 6.5 : 7.5);
+      pdf.text("Thank you for visiting!", centerX, y, { align: "center" });
 
-      pdf.line(8, y, 72, y);
-      y += 6;
-
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(7.5);
-      pdf.text("Thank you for visiting!", 40, y, { align: "center" });
-
-      pdf.autoPrint();
-      const blobUrl = pdf.output("bloburl");
-      window.open(blobUrl, "_blank");
+      pdf.save(`Invoice_${invNo}.pdf`);
     } catch (err) {
-      console.error("Failed to print thermal PDF:", err);
+      console.error("Failed to download PDF invoice:", err);
+    } finally {
+      setDownloading(false);
     }
   };
 
   return (
     <div className="space-y-4">
+      {/* Paper Size Selector & Print Controls */}
       {showPrintButton && (
-        <div className="flex justify-end">
-          <Button size="sm" variant="outline" className="rounded-full gap-1.5 text-xs" onClick={handlePrint}>
-            <Printer className="h-3.5 w-3.5" /> Print Thermal Invoice
-          </Button>
+        <div className="no-print flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+          <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-xl text-xs">
+            <button
+              type="button"
+              className={cn(
+                "px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer",
+                paperSize === "58mm" ? "bg-background shadow-xs text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
+              )}
+              onClick={() => setPaperSize("58mm")}
+            >
+              58mm
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer",
+                paperSize === "80mm" ? "bg-background shadow-xs text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
+              )}
+              onClick={() => setPaperSize("80mm")}
+            >
+              80mm
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer",
+                paperSize === "A4" ? "bg-background shadow-xs text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
+              )}
+              onClick={() => setPaperSize("A4")}
+            >
+              A4
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="rounded-full gap-1.5 text-xs h-8" onClick={handleDownloadPdf} disabled={downloading}>
+              <Download className={cn("h-3.5 w-3.5", downloading && "animate-spin")} /> {downloading ? "Saving…" : "Download PDF"}
+            </Button>
+            <Button size="sm" className="rounded-full gap-1.5 text-xs h-8 gradient-brand text-primary-foreground font-semibold" onClick={handlePrint}>
+              <Printer className="h-3.5 w-3.5" /> Print Invoice
+            </Button>
+          </div>
         </div>
       )}
 
+      {/* Main Printable Invoice Wrapper */}
       <div
         id="print-invoice"
-        className="mx-auto max-w-md rounded-2xl border bg-card p-6 text-card-foreground text-sm shadow-sm"
+        className={cn(
+          "print-active-invoice mx-auto rounded-2xl border bg-card text-card-foreground shadow-sm transition-all",
+          paperSize === "58mm"
+            ? "paper-58mm max-w-[340px] p-4 text-xs"
+            : paperSize === "A4"
+            ? "paper-a4 max-w-2xl p-8 text-sm"
+            : "paper-80mm max-w-md p-6 text-sm"
+        )}
       >
-        {/* Restaurant Header */}
+        {/* Business Header */}
         <div className="text-center space-y-0.5">
-          <p className="font-display text-xl font-bold tracking-tight">
-            {invData.business?.restaurant_name || "Jail Restaurant"}
+          <p className={cn("font-display font-bold tracking-tight text-foreground", paperSize === "58mm" ? "text-base" : "text-xl")}>
+            {invData.business?.restaurant_name || "NextVisit"}
           </p>
-          {invData.business?.address && <p className="text-xs text-muted-foreground">{invData.business.address}</p>}
-          {invData.business?.phone && <p className="text-xs text-muted-foreground">Ph: {invData.business.phone}</p>}
+          {invData.business?.address && <p className="text-[11px] text-muted-foreground leading-tight">{invData.business.address}</p>}
+          {invData.business?.phone && <p className="text-[11px] text-muted-foreground">Ph: {invData.business.phone}</p>}
           {invData.business?.gst_number && (
             <p className="text-[11px] font-mono text-muted-foreground">GSTIN: {invData.business.gst_number}</p>
           )}
         </div>
 
         {/* Invoice Metadata */}
-        <div className="my-4 border-y py-2.5 text-xs space-y-1">
+        <div className="my-3 border-y py-2 text-xs space-y-1">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Invoice No:</span>
             <span className="font-mono font-semibold">{invNum}</span>
@@ -281,13 +380,13 @@ export function InvoiceView({
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Date & Time:</span>
-            <span>
+            <span className="tabular-nums">
               {dateStr} at {timeStr}
             </span>
           </div>
           {invData.table_name && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Table:</span>
+              <span className="text-muted-foreground">Table / Area:</span>
               <span className="font-medium">{invData.table_name}</span>
             </div>
           )}
@@ -298,7 +397,7 @@ export function InvoiceView({
           {invData.customer_phone && (
             <div className="flex justify-between">
               <span className="text-muted-foreground">Phone:</span>
-              <span>{invData.customer_phone}</span>
+              <span className="tabular-nums">{invData.customer_phone}</span>
             </div>
           )}
           <div className="flex justify-between">
@@ -309,7 +408,7 @@ export function InvoiceView({
           </div>
           {invData.staff_name && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Cashier / Staff:</span>
+              <span className="text-muted-foreground">Staff:</span>
               <span>{invData.staff_name}</span>
             </div>
           )}
@@ -328,13 +427,13 @@ export function InvoiceView({
           <tbody className="divide-y divide-border/40">
             {invData.items.map((i, idx) => (
               <tr key={i.id || idx}>
-                <td className="py-2 pr-2">
-                  <span className="font-medium">{i.item_name}</span>
+                <td className="py-1.5 pr-1">
+                  <span className="font-medium leading-tight block">{i.item_name}</span>
                   {i.notes && <div className="text-[10px] text-muted-foreground">Note: {i.notes}</div>}
                 </td>
-                <td className="py-2 text-right tabular-nums">{i.quantity}</td>
-                <td className="py-2 text-right tabular-nums text-muted-foreground">{fmt(i.unit_price)}</td>
-                <td className="py-2 text-right tabular-nums font-medium">{fmt(i.subtotal)}</td>
+                <td className="py-1.5 text-right tabular-nums align-top">{i.quantity}</td>
+                <td className="py-1.5 text-right tabular-nums text-muted-foreground align-top">{fmt(i.unit_price)}</td>
+                <td className="py-1.5 text-right tabular-nums font-medium align-top">{fmt(i.subtotal)}</td>
               </tr>
             ))}
           </tbody>
@@ -346,13 +445,12 @@ export function InvoiceView({
           const discount = invData.discount_amount || 0;
           const couponCode = invData.coupon_code;
           const netSubtotal = Math.max(0, subtotal - discount);
-          
+
           const enableGst = invData.enable_gst ?? invData.business?.enable_gst ?? (invData.tax_amount ? invData.tax_amount > 0 : true);
-          
-          // Dynamic GST calculation fallback (checks passed gst_percentage, tax_rate, or calculates from subtotal vs tax_amount)
+
           const calculatedGst = subtotal > 0 && invData.tax_amount ? Math.round((invData.tax_amount / subtotal) * 100) : 5;
           const gstPct = invData.gst_percentage ?? invData.tax_rate ?? invData.business?.tax_percentage ?? (calculatedGst > 0 ? calculatedGst : 5);
-          
+
           const isInclusive = invData.price_includes_gst ?? invData.business?.price_includes_gst ?? false;
 
           let taxableAmt = netSubtotal;
@@ -372,7 +470,7 @@ export function InvoiceView({
           }
 
           return (
-            <div className="mt-4 space-y-1.5 border-t pt-3 text-xs">
+            <div className="mt-3 space-y-1 border-t pt-2.5 text-xs">
               {/* Subtotal */}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Subtotal</span>
@@ -382,7 +480,7 @@ export function InvoiceView({
               {/* Coupon Discount */}
               {discount > 0 && (
                 <div className="flex justify-between text-emerald-600 font-medium">
-                  <span>Coupon Discount ({couponCode ? couponCode.toUpperCase() : "BIRTHDAY20"})</span>
+                  <span>Discount {couponCode ? `(${couponCode.toUpperCase()})` : ""}</span>
                   <span className="tabular-nums font-mono">-{fmt(discount)}</span>
                 </div>
               )}
@@ -412,7 +510,7 @@ export function InvoiceView({
 
         {/* Loyalty Section */}
         {invData.loyalty && (
-          <div className="mt-4 rounded-xl bg-muted/50 p-3 text-xs space-y-1 border">
+          <div className="mt-3 rounded-xl bg-muted/50 p-2.5 text-xs space-y-1 border">
             <p className="font-semibold text-primary">🎁 NextVisit Loyalty Rewards</p>
             {invData.loyalty.earned_points ? (
               <div className="flex justify-between">
@@ -427,7 +525,7 @@ export function InvoiceView({
               </div>
             )}
             {invData.loyalty.remaining_until_next_reward ? (
-              <p className="text-[11px] text-muted-foreground pt-0.5">
+              <p className="text-[10px] text-muted-foreground pt-0.5">
                 Earn {invData.loyalty.remaining_until_next_reward} more points for your next reward!
               </p>
             ) : null}
@@ -435,9 +533,9 @@ export function InvoiceView({
         )}
 
         {/* Footer */}
-        <div className="mt-6 text-center text-xs text-muted-foreground space-y-0.5">
+        <div className="mt-4 text-center text-xs text-muted-foreground space-y-0.5">
           <p className="font-medium text-foreground">Thank you for visiting!</p>
-          <p className="text-[11px]">We look forward to serving you again.</p>
+          <p className="text-[10.5px]">We look forward to serving you again.</p>
         </div>
       </div>
     </div>

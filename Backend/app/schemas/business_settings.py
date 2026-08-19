@@ -41,6 +41,7 @@ class BusinessSettingsResponse(BaseModel):
     show_gst_on_invoice: bool = True
     show_qr_on_invoice: bool = True
     auto_print_invoice: bool = False
+    receipt_paper_size: str = "80mm"
 
     # 5. Tax & Currency Settings
     currency: str = "INR"
@@ -116,6 +117,7 @@ class BusinessSettingsUpdate(BaseModel):
     show_gst_on_invoice: bool | None = None
     show_qr_on_invoice: bool | None = None
     auto_print_invoice: bool | None = None
+    receipt_paper_size: str | None = Field(default=None, max_length=20)
 
     # 5. Tax & Currency
     currency: str | None = Field(default=None, max_length=10)

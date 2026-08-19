@@ -44,6 +44,7 @@ export interface BusinessSettings {
   show_gst_on_invoice: boolean;
   show_qr_on_invoice: boolean;
   auto_print_invoice: boolean;
+  receipt_paper_size?: "58mm" | "80mm" | "A4" | string;
 
   // 5. Tax & Currency
   currency: string;

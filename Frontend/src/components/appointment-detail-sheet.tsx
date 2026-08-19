@@ -21,6 +21,7 @@ import { listServicesCatalogApi, updateVisitServicesApi, completeVisitApi, downl
 import { listSalonServiceCategoriesApi, type SalonServiceCategory } from "@/lib/salon-categories-api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { InvoiceView } from "@/components/invoice-view";
 import { API_BASE_URL } from "@/lib/auth";
 import { useQueryClient } from "@tanstack/react-query";
 import { Edit2, Tag, X } from "lucide-react";
@@ -85,6 +86,7 @@ export function AppointmentDetailSheet({
   const [couponError, setCouponError] = useState<string | null>(null);
 
   const [invoiceSuccessOpen, setInvoiceSuccessOpen] = useState(false);
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [countdown, setCountdown] = useState(30);
   const [releaseError, setReleaseError] = useState(false);
   const [releasing, setReleasing] = useState(false);
@@ -1321,7 +1323,7 @@ async function collectPayment() {
           )}
           {paid && (
             <div className="flex items-center gap-2 pt-2">
-              <Button size="sm" variant="outline" className="rounded-full" onClick={() => window.print()}><Printer className="mr-1.5 h-4 w-4" /> Print receipt</Button>
+              <Button size="sm" variant="outline" className="rounded-full" onClick={() => setShowInvoiceModal(true)}><Printer className="mr-1.5 h-4 w-4" /> Print receipt</Button>
               <Button
                 size="sm"
                 variant="outline"
@@ -1893,7 +1895,7 @@ async function collectPayment() {
               {/* ACTION BUTTONS */}
               <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t">
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="outline" className="rounded-full text-xs" onClick={() => window.print()}>
+                  <Button size="sm" variant="outline" className="rounded-full text-xs" onClick={() => setShowInvoiceModal(true)}>
                     <Printer className="mr-1.5 h-3.5 w-3.5" /> Print Invoice
                   </Button>
                   <Button
@@ -1955,6 +1957,54 @@ async function collectPayment() {
           onOpenChange={setAddServiceModalOpen}
           onAddServices={handleAddExtraServices}
         />
+
+        {/* PRINTABLE SALON INVOICE MODAL */}
+        <Dialog open={showInvoiceModal} onOpenChange={setShowInvoiceModal}>
+          <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto rounded-2xl p-6">
+            <DialogHeader>
+              <DialogTitle className="font-display text-base">Salon Invoice Receipt</DialogTitle>
+            </DialogHeader>
+            {a && (
+              <InvoiceView
+                defaultPaperSize={(businessSettings as any)?.receipt_paper_size || "80mm"}
+                data={{
+                  order_number: apptCode(a),
+                  invoice_number: `INV-${a.id.slice(0, 8).toUpperCase()}`,
+                  created_at: a.start || new Date().toISOString(),
+                  table_name: a.chairName || a.serviceAreaName || "Workstation",
+                  customer_name: a.customerName || customerObj?.name || "Valued Client",
+                  customer_phone: a.customerPhone || customerObj?.phone || undefined,
+                  staff_name: a.staff || "Staff Member",
+                  payment_method: (payment || (a as any).paymentMethod || "CASH").toUpperCase(),
+                  items: services.map((s, idx) => ({
+                    id: String(idx),
+                    item_name: s.name || "Salon Service",
+                    quantity: 1,
+                    unit_price: s.price || 0,
+                    subtotal: s.price || 0,
+                  })),
+                  subtotal: totalPrice,
+                  tax_amount: taxAmount,
+                  tax_rate: taxPct,
+                  gst_percentage: taxPct,
+                  coupon_code: activeCouponCode || undefined,
+                  discount_amount: discountAmount || 0,
+                  total_amount: Math.max(0, grandTotal - advancePaid),
+                  business: {
+                    restaurant_name: (businessSettings as any)?.name || bizName || "NextVisit Salon",
+                    address: (businessSettings as any)?.address || undefined,
+                    phone: (businessSettings as any)?.phone || undefined,
+                    gst_number: (businessSettings as any)?.gst_number || undefined,
+                  },
+                  loyalty: {
+                    current_points: (customerObj?.points || 0) + Math.floor(grandTotal / 10),
+                    earned_points: Math.floor(grandTotal / 10),
+                  },
+                }}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
       </SheetContent>
     </Sheet>
   );

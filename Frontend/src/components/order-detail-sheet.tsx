@@ -60,7 +60,7 @@ import { getBusinessSettingsApi, getRestaurantSetupSettingsApi } from "@/lib/bus
 import { useProfile, useAuthenticatedBusiness } from "@/lib/business-profile";
 import { getSession, API_BASE_URL } from "@/lib/auth";
 import { openWhatsApp } from "@/lib/celebration-utils";
-import { InvoiceView, type InvoiceData } from "@/components/invoice-view";
+import { InvoiceView, printInvoiceDom, type InvoiceData } from "@/components/invoice-view";
 import { fmt } from "@/lib/currency";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
@@ -200,7 +200,7 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
     return `Table`;
   })();
 
-const handleDownloadInvoice = async (autoPrint: boolean = false) => {
+const handleDownloadInvoice = async () => {
   if (!order) return;
 
   setDownloadingInvoice(true);
@@ -292,26 +292,26 @@ const handleDownloadInvoice = async (autoPrint: boolean = false) => {
     const items = order.items || [];
 
     // -----------------------------------------
-    // 6. DYNAMIC PDF HEIGHT
+    // 6. DYNAMIC PDF HEIGHT & PAPER SIZE
     // -----------------------------------------
-    const baseHeight = 125;
-    const itemsHeight = Math.max(items.length, 1) * 5;
+    const is58 = bizSettings?.receipt_paper_size === "58mm";
+    const baseHeight = is58 ? 100 : 115;
+    const itemsHeight = Math.max(items.length, 1) * 5.5;
 
-    const totalHeight =
-      baseHeight + itemsHeight;
+    const totalHeight = baseHeight + itemsHeight;
 
     // -----------------------------------------
-    // 7. CREATE 80MM THERMAL PDF
+    // 7. CREATE THERMAL PDF
     // -----------------------------------------
     const doc = new jsPDF({
       unit: "mm",
-      format: [80, Math.max(totalHeight, 130)],
+      format: [is58 ? 58 : 80, totalHeight],
     });
 
-    let y = 10;
-    const leftMargin = 6;
-    const rightMargin = 74;
-    const centerX = 40;
+    let y = is58 ? 6 : 10;
+    const leftMargin = is58 ? 4 : 6;
+    const rightMargin = is58 ? 54 : 74;
+    const centerX = is58 ? 29 : 40;
 
     // -----------------------------------------
     // 8. DEFAULT STYLE
@@ -896,21 +896,10 @@ const handleDownloadInvoice = async (autoPrint: boolean = false) => {
     );
 
     // -----------------------------------------
-    // 28. DOWNLOAD / AUTO PRINT STREAM
+    // 28. DOWNLOAD PDF STREAM
     // -----------------------------------------
-    if (autoPrint) {
-      doc.autoPrint();
-      const blobUrl = doc.output("bloburl");
-      window.open(blobUrl, "_blank");
-      toast.success("Opening thermal print preview...");
-    } else {
-      doc.save(
-        `Invoice_${invNo}.pdf`
-      );
-      toast.success(
-        "Invoice PDF downloaded successfully!"
-      );
-    }
+    doc.save(`Invoice_${invNo}.pdf`);
+    toast.success("Invoice PDF downloaded successfully!");
 
   } catch (err: any) {
     console.error(
@@ -1489,7 +1478,10 @@ const handleDownloadInvoice = async (autoPrint: boolean = false) => {
                           size="sm"
                           variant="outline"
                           className="rounded-xl text-xs gap-1.5 h-9 font-medium hover:bg-primary/5 hover:text-primary px-2"
-                          onClick={() => handleDownloadInvoice(true)}
+                          onClick={() => {
+                            setShowInvoiceModal(true);
+                            setTimeout(() => printInvoiceDom("print-invoice"), 300);
+                          }}
                         >
                           <Printer className="h-3.5 w-3.5 text-primary" /> Print Invoice
                         </Button>
@@ -1738,7 +1730,7 @@ const handleDownloadInvoice = async (autoPrint: boolean = false) => {
                       className="rounded-xl text-xs gap-1.5 h-9 hover:bg-primary/5 hover:text-primary"
                       onClick={() => {
                         setShowInvoiceModal(true);
-                        setTimeout(() => window.print(), 300);
+                        setTimeout(() => printInvoiceDom("print-invoice"), 300);
                       }}
                     >
                       <Printer className="h-3.5 w-3.5 text-primary" /> Print
@@ -2308,6 +2300,7 @@ const handleDownloadInvoice = async (autoPrint: boolean = false) => {
 
           {order && (
             <InvoiceView
+              defaultPaperSize={bizSettings?.receipt_paper_size || "80mm"}
               data={{
                 order_number: order.order_number,
                 invoice_number: order.invoice_number || `INV-${order.order_number.replace("ORD-", "")}`,

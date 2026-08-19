@@ -247,3 +247,119 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* ==========================================================================
+   PRINT STYLES: CLEAN, ISOLATED, PRINTER-FRIENDLY RECEIPT PRINTING
+   ========================================================================== */
+#nextvisit-print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 0mm;
+    size: auto;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 100% !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, monospace, sans-serif !important;
+  }
+
+  /* 1. Hide EVERYTHING attached to body except the clean isolated print root */
+  body > *:not(#nextvisit-print-root) {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* 2. Show ONLY the clean print root */
+  #nextvisit-print-root {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    width: 100% !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  #nextvisit-print-root,
+  #nextvisit-print-root * {
+    visibility: visible !important;
+    color: #000000 !important;
+    border-color: #000000 !important;
+    text-shadow: none !important;
+    opacity: 1 !important;
+  }
+
+  /* 3. Paper width dimensions */
+  #nextvisit-print-root .paper-58mm,
+  .paper-58mm {
+    width: 58mm !important;
+    max-width: 58mm !important;
+    min-width: 58mm !important;
+    margin: 0 auto !important;
+    padding: 2mm 3mm !important;
+    font-size: 11px !important;
+    line-height: 1.3 !important;
+    box-sizing: border-box !important;
+  }
+
+  #nextvisit-print-root .paper-80mm,
+  .paper-80mm {
+    width: 80mm !important;
+    max-width: 80mm !important;
+    min-width: 80mm !important;
+    margin: 0 auto !important;
+    padding: 3mm 4mm !important;
+    font-size: 12px !important;
+    line-height: 1.35 !important;
+    box-sizing: border-box !important;
+  }
+
+  #nextvisit-print-root .paper-a4,
+  .paper-a4 {
+    width: 100% !important;
+    max-width: 210mm !important;
+    margin: 0 auto !important;
+    padding: 10mm 15mm !important;
+    font-size: 13px !important;
+    line-height: 1.5 !important;
+    box-sizing: border-box !important;
+  }
+
+  #nextvisit-print-root .text-muted-foreground {
+    color: #222222 !important;
+  }
+
+  #nextvisit-print-root table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  #nextvisit-print-root td,
+  #nextvisit-print-root th {
+    color: #000000 !important;
+  }
+
+  /* Fallback in case #nextvisit-print-root wasn't created */
+  .print-active-invoice {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    margin: 0 auto !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+}

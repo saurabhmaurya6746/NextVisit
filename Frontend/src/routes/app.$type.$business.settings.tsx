@@ -39,6 +39,7 @@ import {
   Smartphone,
 } from "lucide-react";
 import { TestPaymentDialog } from "@/components/test-payment-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { API_BASE_URL } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
 import {
@@ -451,6 +452,7 @@ function InvoiceTab({
   const [footer, setFooter] = useState(settings.invoice_footer || defaultFooter);
   const [showGst, setShowGst] = useState<boolean>(settings.show_gst_on_invoice !== false);
   const [showQr, setShowQr] = useState<boolean>(settings.show_qr_on_invoice !== false);
+  const [paperSize, setPaperSize] = useState<string>(settings.receipt_paper_size || "80mm");
   const [allowGuestCheckout, setAllowGuestCheckout] = useState<boolean>(
     settings.allow_guest_checkout !== false
   );
@@ -465,6 +467,7 @@ function InvoiceTab({
       setAllowGuestCheckout(settings.allow_guest_checkout !== false);
       setShowGst(settings.show_gst_on_invoice !== false);
       setShowQr(settings.show_qr_on_invoice !== false);
+      setPaperSize(settings.receipt_paper_size || "80mm");
       setPrefix(settings.invoice_prefix || "INV-");
       setFooter(settings.invoice_footer || defaultFooter);
       setPayeeName(settings.payment_payee_name || (settings as any).payment_payee_name || "");
@@ -496,6 +499,7 @@ function InvoiceTab({
         invoice_footer: footer.trim() || undefined,
         show_gst_on_invoice: Boolean(showGst),
         show_qr_on_invoice: Boolean(showQr),
+        receipt_paper_size: paperSize,
         allow_guest_checkout: Boolean(allowGuestCheckout),
         payment_payee_name: trimmedPayee,
         payment_upi_id: trimmedUpi,
@@ -514,7 +518,7 @@ function InvoiceTab({
     <Card className="rounded-2xl border shadow-sm">
       <CardHeader>
         <CardTitle className="font-display text-base">Invoice & Payment Setup</CardTitle>
-        <CardDescription>Format printed receipts, invoice numbering, and UPI payment details for dynamic QR generation.</CardDescription>
+        <CardDescription>Format printed receipts, invoice numbering, default paper size, and UPI payment details for dynamic QR generation.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -527,6 +531,23 @@ function InvoiceTab({
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold">Invoice Footer Text</Label>
             <Input value={footer} onChange={(e) => setFooter(e.target.value)} placeholder={defaultFooter} />
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold">Receipt Paper Size</Label>
+            <Select value={paperSize} onValueChange={setPaperSize}>
+              <SelectTrigger className="text-xs rounded-xl h-9">
+                <SelectValue placeholder="Select paper size" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="80mm">80mm (Standard POS Thermal - 3 inch)</SelectItem>
+                <SelectItem value="58mm">58mm (Compact POS Thermal - 2 inch)</SelectItem>
+                <SelectItem value="A4">A4 (Standard Document / Full Page)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">Sets default receipt layout for POS thermal and document printing.</p>
           </div>
         </div>
 

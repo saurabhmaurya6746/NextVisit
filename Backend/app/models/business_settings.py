@@ -44,6 +44,7 @@ class BusinessSettings(BaseModel):
     show_gst_on_invoice: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     show_qr_on_invoice: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     auto_print_invoice: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    receipt_paper_size: Mapped[str] = mapped_column(String(20), default="80mm", server_default="80mm", nullable=False)
 
     # 5. Tax & Currency Settings
     currency: Mapped[str] = mapped_column(String(10), default="INR", nullable=False)
