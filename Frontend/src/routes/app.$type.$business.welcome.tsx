@@ -16,6 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageTransition } from "@/components/page-transition";
 import { EmptyState } from "@/components/empty-state";
+import { SkeletonCustomerCards } from "@/components/skeletons";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AiGenerateDialog } from "@/components/ai-generate-dialog";
 import { CampaignSendModal } from "@/components/campaign-send-modal";
 import { fmt } from "@/lib/currency";
@@ -74,14 +76,7 @@ export default function WelcomePage() {
     refetchInterval: 15000,
   });
 
-  const cards = welcomeData?.summary_cards || {
-    todays_new: 0,
-    this_week: 0,
-    this_month: 0,
-    returning: 0,
-    birthdays_today: 0,
-    recovery_due: 0,
-  };
+  const cards = welcomeData?.summary_cards;
 
   const customers = welcomeData?.items || [];
   const totalPages = welcomeData?.total_pages || 1;
@@ -110,22 +105,22 @@ export default function WelcomePage() {
         actions={
           <Button
             className="rounded-full bg-primary text-primary-foreground font-semibold text-xs px-4"
-            disabled={customers.length === 0}
+            disabled={customers.length === 0 || isLoading}
             onClick={() => setSendCampaignOpen(true)}
           >
-            <MessageCircle className="mr-1.5 h-3.5 w-3.5" /> Launch Welcome Campaign ({customers.length})
+            <MessageCircle className="mr-1.5 h-3.5 w-3.5" /> Launch Welcome Campaign ({isLoading ? "…" : customers.length})
           </Button>
         }
       />
 
       {/* SUMMARY DASHBOARD CARDS */}
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <InfoCard label="Today's New" value={cards.todays_new} icon={UserPlus} />
-        <InfoCard label="This Week" value={cards.this_week} icon={Calendar} />
-        <InfoCard label="This Month" value={cards.this_month} icon={Users} />
-        <InfoCard label="Returning Guests" value={cards.returning} icon={RotateCcw} />
-        <InfoCard label="Birthdays Today" value={cards.birthdays_today} icon={Cake} />
-        <InfoCard label="Recovery Due" value={cards.recovery_due} icon={RefreshCcw} />
+        <InfoCard label="Today's New" value={cards?.todays_new} icon={UserPlus} loading={isLoading} />
+        <InfoCard label="This Week" value={cards?.this_week} icon={Calendar} loading={isLoading} />
+        <InfoCard label="This Month" value={cards?.this_month} icon={Users} loading={isLoading} />
+        <InfoCard label="Returning Guests" value={cards?.returning} icon={RotateCcw} loading={isLoading} />
+        <InfoCard label="Birthdays Today" value={cards?.birthdays_today} icon={Cake} loading={isLoading} />
+        <InfoCard label="Recovery Due" value={cards?.recovery_due} icon={RefreshCcw} loading={isLoading} />
       </div>
 
       {/* TABS & SEARCH BAR */}
@@ -169,7 +164,18 @@ export default function WelcomePage() {
 
       {/* CUSTOMER CARDS GRID */}
       {isLoading ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">Loading welcome customers...</div>
+        <SkeletonCustomerCards count={6} />
+      ) : isError ? (
+        <EmptyState
+          title="Failed to load welcome guests"
+          description={(error as Error)?.message || "Could not retrieve guest data."}
+          icon={<UserPlus className="h-8 w-8 text-destructive" />}
+          action={
+            <Button variant="outline" size="sm" className="rounded-full" onClick={() => refetch()}>
+              Retry
+            </Button>
+          }
+        />
       ) : customers.length === 0 ? (
         <EmptyState
           title="No new customers yet"
@@ -334,14 +340,20 @@ export default function WelcomePage() {
   );
 }
 
-function InfoCard({ label, value, icon: Icon }: { label: string; value: number; icon: any }) {
+function InfoCard({ label, value, icon: Icon, loading = false }: { label: string; value?: number | null; icon: any; loading?: boolean }) {
   return (
-    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl border p-4 transition-all hover:shadow-sm bg-card">
+    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl border p-4 transition-all hover:shadow-sm bg-card flex flex-col justify-between min-h-[110px]">
       <div className="grid h-9 w-9 place-items-center rounded-xl bg-muted text-primary">
         <Icon className="h-4 w-4" />
       </div>
-      <p className="mt-3 text-xs text-muted-foreground">{label}</p>
-      <p className="font-display text-2xl font-bold">{value}</p>
+      <div>
+        <p className="mt-3 text-xs text-muted-foreground">{label}</p>
+        {loading ? (
+          <Skeleton className="h-7 w-16 mt-1 rounded-md" />
+        ) : (
+          <p className="font-display text-2xl font-bold">{value ?? 0}</p>
+        )}
+      </div>
     </motion.div>
   );
 }

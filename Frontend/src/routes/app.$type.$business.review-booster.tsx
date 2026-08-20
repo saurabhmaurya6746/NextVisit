@@ -17,6 +17,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { PageTransition } from "@/components/page-transition";
 import { EmptyState } from "@/components/empty-state";
+import { SkeletonCustomerCards, SkeletonRows } from "@/components/skeletons";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AiGenerateDialog } from "@/components/ai-generate-dialog";
 import { openWhatsApp } from "@/lib/celebration-utils";
 import { logWhatsApp } from "@/lib/whatsapp-history";
@@ -106,7 +108,7 @@ export default function ReviewsPage() {
 
   const googleReviewUrl = settingsData?.google_review_url || "https://g.page/r/your-google-review-link";
 
-  const { data: dashData } = useQuery({
+  const { data: dashData, isLoading: isDashLoading } = useQuery({
     queryKey: ["review-booster-dashboard"],
     queryFn: getReviewBoosterDashboardApi,
   });
@@ -239,13 +241,28 @@ export default function ReviewsPage() {
         <Tabs value={tab} onValueChange={(v) => { setTab(v as StatusTab); setPage(1); }}>
           <TabsList className="rounded-full">
             <TabsTrigger value="pending" className="rounded-full">
-              Pending <Badge variant="secondary" className="ml-1.5 rounded-full text-[10px]">{counts.pending}</Badge>
+              Pending{" "}
+              {isDashLoading ? (
+                <Skeleton className="ml-1.5 h-4 w-6 rounded-full inline-block" />
+              ) : (
+                <Badge variant="secondary" className="ml-1.5 rounded-full text-[10px]">{counts.pending}</Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger value="requested" className="rounded-full">
-              Requested <Badge variant="secondary" className="ml-1.5 rounded-full text-[10px]">{counts.requested}</Badge>
+              Requested{" "}
+              {isDashLoading ? (
+                <Skeleton className="ml-1.5 h-4 w-6 rounded-full inline-block" />
+              ) : (
+                <Badge variant="secondary" className="ml-1.5 rounded-full text-[10px]">{counts.requested}</Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger value="reviewed" className="rounded-full">
-              Reviewed <Badge variant="secondary" className="ml-1.5 rounded-full text-[10px]">{counts.reviewed}</Badge>
+              Reviewed{" "}
+              {isDashLoading ? (
+                <Skeleton className="ml-1.5 h-4 w-6 rounded-full inline-block" />
+              ) : (
+                <Badge variant="secondary" className="ml-1.5 rounded-full text-[10px]">{counts.reviewed}</Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger value="all" className="rounded-full">
               All Visits
@@ -288,9 +305,13 @@ export default function ReviewsPage() {
 
       {/* CUSTOMERS GRID / LIST CONTAINER */}
       {isCustLoading ? (
-        <div className="py-20 text-center text-sm text-muted-foreground">Loading database review records…</div>
+        viewMode === "grid" ? <SkeletonCustomerCards count={6} /> : <SkeletonRows rows={6} cols={5} />
       ) : isError ? (
-        <div className="py-12 text-center text-sm text-destructive">Failed to load review booster list.</div>
+        <EmptyState
+          title="Failed to load review booster list"
+          description="Could not query the database. Please retry."
+          icon={<Star className="h-7 w-7 text-destructive" />}
+        />
       ) : customers.length === 0 ? (
         <EmptyState
           title={tab === "pending" ? "No pending review requests" : tab === "requested" ? "No pending follow-ups" : "No review records"}

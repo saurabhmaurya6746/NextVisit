@@ -20,6 +20,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { PageTransition } from "@/components/page-transition";
 import { EmptyState } from "@/components/empty-state";
+import { SkeletonCustomerCards } from "@/components/skeletons";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AiGenerateDialog } from "@/components/ai-generate-dialog";
 import { CampaignSendModal, SendCustomerItem } from "@/components/campaign-send-modal";
 import { openWhatsApp, sendWhatsAppWithStatusTracking } from "@/lib/celebration-utils";
@@ -308,7 +310,11 @@ export default function RecoveryBucketPage() {
       {/* PAGE HEADER */}
       <PageHeader
         title={`${guestLabel} absent for ${days}+ days`}
-        description={`${totalItems} ${guestLabel.toLowerCase()} found. Suggested offer: ${offerFor(days, isSalon)}`}
+        description={
+          isLoading
+            ? `Finding ${guestLabel.toLowerCase()} absent for ${days}+ days… Suggested offer: ${offerFor(days, isSalon)}`
+            : `${totalItems} ${guestLabel.toLowerCase()} found. Suggested offer: ${offerFor(days, isSalon)}`
+        }
         actions={
           <div className="flex items-center gap-2 flex-wrap">
             <Button
@@ -321,7 +327,7 @@ export default function RecoveryBucketPage() {
             </Button>
             <Button
               className="rounded-full bg-primary text-primary-foreground text-xs font-semibold px-4"
-              disabled={list.length === 0}
+              disabled={list.length === 0 || isLoading}
               onClick={() => {
                 setSendCustomers(
                   list.map((c) => ({
@@ -336,7 +342,7 @@ export default function RecoveryBucketPage() {
                 setSendOpen(true);
               }}
             >
-              <MessageCircle className="mr-1.5 h-3.5 w-3.5" /> Launch {days}d Campaign ({totalItems})
+              <MessageCircle className="mr-1.5 h-3.5 w-3.5" /> Launch {days}d Campaign ({isLoading ? "…" : totalItems})
             </Button>
           </div>
         }
@@ -491,9 +497,18 @@ export default function RecoveryBucketPage() {
 
       {/* CUSTOMER LIST */}
       {isLoading ? (
-        <div className="py-20 text-center text-sm text-muted-foreground">Loading {guestLabel.toLowerCase()} from database…</div>
+        <SkeletonCustomerCards count={6} />
       ) : isError ? (
-        <div className="py-12 text-center text-sm text-destructive">Failed to load recovery list. Please try again.</div>
+        <EmptyState
+          title="Failed to load recovery list"
+          description="Could not query the database. Please retry."
+          icon={<UserMinus className="h-8 w-8 text-destructive" />}
+          action={
+            <Button variant="outline" size="sm" className="rounded-full" onClick={() => refetch()}>
+              Retry
+            </Button>
+          }
+        />
       ) : list.length === 0 ? (
         <EmptyState
           title={`No ${guestLabel.toLowerCase()} to recover`}

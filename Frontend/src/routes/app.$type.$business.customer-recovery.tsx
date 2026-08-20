@@ -28,6 +28,8 @@ import {
   launchRecoveryCampaignApi,
 } from "@/lib/customer-recovery-api";
 
+import { Skeleton } from "@/components/ui/skeleton";
+
 export const Route = createFileRoute("/app/$type/$business/customer-recovery")({ component: RecoveryPage });
 
 const BUCKET_CONFIG = [
@@ -165,11 +167,11 @@ export default function RecoveryPage() {
             </Button>
             <Button
               className="rounded-full bg-primary text-primary-foreground text-xs font-semibold"
-              disabled={totalRecoverable === 0 || isLaunching}
+              disabled={totalRecoverable === 0 || isDashLoading || isLaunching}
               onClick={() => handleLaunchOffer(30, "MISSYOU30", `30-Day ${isSalon ? "Rebook" : "Win-Back"} Offer`)}
             >
               <MessageCircle className="mr-1.5 h-3.5 w-3.5" />
-              Launch Recovery ({totalRecoverable})
+              Launch Recovery ({isDashLoading ? "…" : totalRecoverable})
             </Button>
           </div>
         }
@@ -179,27 +181,31 @@ export default function RecoveryPage() {
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <SummaryMetric
           label="Potential Revenue"
-          value={isAnalyticsLoading ? "…" : fmt(analytics?.potential_revenue ?? 0)}
+          value={fmt(analytics?.potential_revenue ?? 0)}
           icon={TrendingUp}
           subtext={`Avg spend: ${fmt(analytics?.average_spend ?? 0)}`}
+          loading={isAnalyticsLoading}
         />
         <SummaryMetric
           label={`Recoverable ${guestLabel}`}
-          value={isDashLoading ? "…" : String(totalRecoverable)}
+          value={String(totalRecoverable)}
           icon={Users}
           subtext={`Not ${visitLabel === "appointments" ? "visited" : "dined"} in 15+ days`}
+          loading={isDashLoading}
         />
         <SummaryMetric
           label="Recovery Rate"
-          value={isAnalyticsLoading ? "…" : `${analytics?.recovery_rate_pct ?? 0}%`}
+          value={`${analytics?.recovery_rate_pct ?? 0}%`}
           icon={Target}
           subtext={`${analytics?.total_recovered ?? 0} ${guestLabel.toLowerCase()} returned`}
+          loading={isAnalyticsLoading}
         />
         <SummaryMetric
           label="Messages Sent"
-          value={isAnalyticsLoading ? "…" : String(analytics?.messages_sent ?? 0)}
+          value={String(analytics?.messages_sent ?? 0)}
           icon={CheckCircle2}
           subtext={`Failed: ${analytics?.messages_failed ?? 0}`}
+          loading={isAnalyticsLoading}
         />
       </div>
 
@@ -226,15 +232,15 @@ export default function RecoveryPage() {
                     <div className="relative">
                       <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{b.subtext}</p>
                       <p className="mt-1.5 font-display text-2xl font-bold">{b.title}</p>
-                      <p className="mt-2 text-sm font-semibold">
+                      <div className="mt-2 min-h-[20px] flex items-center">
                         {isDashLoading ? (
-                          <span className="text-muted-foreground">Loading…</span>
+                          <Skeleton className="h-4 w-16 rounded-md" />
                         ) : (
-                          <span className={count > 0 ? "text-foreground" : "text-muted-foreground"}>
+                          <span className={cn("text-sm font-semibold", count > 0 ? "text-foreground" : "text-muted-foreground")}>
                             {count} {count === 1 ? (isSalon ? "client" : "guest") : (isSalon ? "clients" : "guests")}
                           </span>
                         )}
-                      </p>
+                      </div>
                       <Badge variant="outline" className={cn("mt-2 text-[10px] rounded-full", b.badgeClass)}>
                         {b.defaultOffer}
                       </Badge>
@@ -373,20 +379,33 @@ function SummaryMetric({
   value,
   icon: Icon,
   subtext,
+  loading = false,
 }: {
   label: string;
   value: string;
   icon: any;
   subtext: string;
+  loading?: boolean;
 }) {
   return (
-    <Card className="rounded-2xl border bg-card p-4">
+    <Card className="rounded-2xl border bg-card p-4 flex flex-col justify-between min-h-[110px]">
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground font-medium">{label}</span>
         <Icon className="h-4 w-4 text-primary" />
       </div>
-      <p className="mt-2 font-display text-2xl font-bold">{value}</p>
-      <p className="mt-1 text-[10px] text-muted-foreground">{subtext}</p>
+      <div>
+        {loading ? (
+          <div className="mt-2 space-y-1.5">
+            <Skeleton className="h-7 w-20 rounded-md" />
+            <Skeleton className="h-3 w-28 rounded-sm" />
+          </div>
+        ) : (
+          <>
+            <p className="mt-2 font-display text-2xl font-bold">{value}</p>
+            <p className="mt-1 text-[10px] text-muted-foreground">{subtext}</p>
+          </>
+        )}
+      </div>
     </Card>
   );
 }

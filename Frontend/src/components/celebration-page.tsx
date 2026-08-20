@@ -3,6 +3,7 @@ import { Cake, Gift, CalendarDays, CalendarRange, ArrowRight } from "lucide-reac
 import { Link, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { type Kind } from "@/lib/celebration-utils";
 import { useQuery } from "@tanstack/react-query";
@@ -21,13 +22,15 @@ function ClickableStat({
   Icon,
   accent,
   index,
+  loading = false,
 }: {
   label: string;
-  value: number | string;
+  value: number | string | undefined | null;
   to: string;
   Icon: typeof Cake;
   accent: keyof typeof accentMap;
   index: number;
+  loading?: boolean;
 }) {
   return (
     <motion.div
@@ -42,7 +45,13 @@ function ClickableStat({
           <div className="relative flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
-              <p className="mt-2 font-display text-3xl font-semibold text-foreground">{value}</p>
+              {loading ? (
+                <div className="mt-2 py-0.5">
+                  <Skeleton className="h-8 w-16 rounded-md" />
+                </div>
+              ) : (
+                <p className="mt-2 font-display text-3xl font-semibold text-foreground">{value ?? 0}</p>
+              )}
               <p className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
                 View list <ArrowRight className="h-3 w-3" />
               </p>
@@ -71,7 +80,7 @@ export default function CelebrationPage({ kind }: { kind: Kind }) {
 
   // Fetch real database summary counts for birthday or anniversary
   const summaryEndpoint = isBday ? "/api/v1/customers/birthday-summary" : "/api/v1/customers/anniversary-summary";
-  const { data: summary } = useQuery({
+  const { data: summary, isLoading } = useQuery({
     queryKey: [isBday ? "birthday-summary" : "anniversary-summary"],
     queryFn: async () => {
       const res = await apiFetch(summaryEndpoint);
@@ -81,19 +90,19 @@ export default function CelebrationPage({ kind }: { kind: Kind }) {
     refetchInterval: 30000,
   });
 
-  const todayCount = summary?.today ?? 0;
-  const tomCount = summary?.tomorrow ?? 0;
-  const weekCount = summary?.this_week ?? 0;
-  const monthCount = summary?.this_month ?? 0;
+  const todayCount = summary?.today;
+  const tomCount = summary?.tomorrow;
+  const weekCount = summary?.this_week;
+  const monthCount = summary?.this_month;
 
   return (
     <>
       <PageHeader title={title} description={`${emoji} Delight guests on their special day — click a card to open its list.`} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <ClickableStat label={labelToday} value={todayCount} to={`${base}/today`} Icon={Cake} accent="primary" index={0} />
-        <ClickableStat label="Tomorrow" value={tomCount} to={`${base}/tomorrow`} Icon={Gift} accent="accent" index={1} />
-        <ClickableStat label="This Week" value={weekCount} to={`${base}/week`} Icon={CalendarDays} accent="warning" index={2} />
-        <ClickableStat label="This Month" value={monthCount} to={`${base}/month`} Icon={CalendarRange} accent="primary" index={3} />
+        <ClickableStat label={labelToday} value={todayCount} to={`${base}/today`} Icon={Cake} accent="primary" index={0} loading={isLoading} />
+        <ClickableStat label="Tomorrow" value={tomCount} to={`${base}/tomorrow`} Icon={Gift} accent="accent" index={1} loading={isLoading} />
+        <ClickableStat label="This Week" value={weekCount} to={`${base}/week`} Icon={CalendarDays} accent="warning" index={2} loading={isLoading} />
+        <ClickableStat label="This Month" value={monthCount} to={`${base}/month`} Icon={CalendarRange} accent="primary" index={3} loading={isLoading} />
       </div>
       <p className="mt-6 text-sm text-muted-foreground">
         Tip: from any list you can open WhatsApp with the prefilled personalized AI message — just tap Send.

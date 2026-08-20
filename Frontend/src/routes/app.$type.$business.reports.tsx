@@ -25,6 +25,7 @@ import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { PageTransition } from "@/components/page-transition";
 import { EmptyState } from "@/components/empty-state";
+import { SkeletonStatsGrid, SkeletonRows } from "@/components/skeletons";
 import {
   getBiReportsAnalyticsApi,
   getReportFilterOptionsApi,
@@ -332,9 +333,9 @@ export default function ReportsBiDashboardPage() {
       )}
 
       {isLoading ? (
-        <div className="py-24 text-center text-sm text-muted-foreground flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          Fetching database analytics…
+        <div className="space-y-6">
+          <SkeletonStatsGrid count={5} />
+          <SkeletonRows rows={4} cols={5} />
         </div>
       ) : isError ? (
         <EmptyState

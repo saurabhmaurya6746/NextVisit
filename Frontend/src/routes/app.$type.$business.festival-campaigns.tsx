@@ -31,6 +31,9 @@ import { Switch } from "@/components/ui/switch";
 import { PageTransition } from "@/components/page-transition";
 import { AiGenerateDialog } from "@/components/ai-generate-dialog";
 import { CampaignSendModal, SendCustomerItem } from "@/components/campaign-send-modal";
+import { EmptyState } from "@/components/empty-state";
+import { SkeletonCampaignCards } from "@/components/skeletons";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -128,7 +131,7 @@ export default function FestivalsPage() {
   const [draftDiscounts, setDraftDiscounts] = useState<Record<string, string>>({});
 
   // Fetch Customers List
-  const { data: realCustomers = [] } = useQuery({
+  const { data: realCustomers = [], isLoading: isCustomersLoading } = useQuery({
     queryKey: ["customers-list"],
     queryFn: listCustomersApi,
     refetchInterval: 30000,
@@ -155,7 +158,7 @@ export default function FestivalsPage() {
   });
 
   // Fetch Upcoming Summary Metrics
-  const { data: upcoming } = useQuery({
+  const { data: upcoming, isLoading: isUpcomingLoading } = useQuery({
     queryKey: ["festival-upcoming"],
     queryFn: async () => {
       const res = await apiFetch("/api/v1/festival-campaigns/upcoming");
@@ -405,12 +408,21 @@ export default function FestivalsPage() {
             <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
               <Calendar className="h-5 w-5" />
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Next Festival</p>
-              <p className="font-display text-lg font-semibold">{nextFest ? nextFest.festival_name : "None Scheduled"}</p>
-              <p className="text-xs text-primary font-medium">
-                {nextFest ? `${nextFest.days_remaining} days remaining (${nextFest.festival_date})` : "Check back soon"}
-              </p>
+              {isUpcomingLoading ? (
+                <div className="mt-1 space-y-1">
+                  <Skeleton className="h-5 w-28 rounded-md" />
+                  <Skeleton className="h-3 w-36 rounded-sm" />
+                </div>
+              ) : (
+                <>
+                  <p className="font-display text-lg font-semibold truncate">{nextFest ? nextFest.festival_name : "None Scheduled"}</p>
+                  <p className="text-xs text-primary font-medium truncate">
+                    {nextFest ? `${nextFest.days_remaining} days remaining (${nextFest.festival_date})` : "Check back soon"}
+                  </p>
+                </>
+              )}
             </div>
           </div>
         </Card>
@@ -420,10 +432,19 @@ export default function FestivalsPage() {
             <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent/20 text-accent-foreground">
               <Clock className="h-5 w-5" />
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Next 30 Days</p>
-              <p className="font-display text-2xl font-semibold">{upcoming?.next_30_days?.length ?? 0} Festivals</p>
-              <p className="text-xs text-muted-foreground">Automated audience ready</p>
+              {isUpcomingLoading ? (
+                <div className="mt-1 space-y-1">
+                  <Skeleton className="h-6 w-20 rounded-md" />
+                  <Skeleton className="h-3 w-28 rounded-sm" />
+                </div>
+              ) : (
+                <>
+                  <p className="font-display text-2xl font-semibold">{upcoming?.next_30_days?.length ?? 0} Festivals</p>
+                  <p className="text-xs text-muted-foreground">Automated audience ready</p>
+                </>
+              )}
             </div>
           </div>
         </Card>
@@ -433,17 +454,37 @@ export default function FestivalsPage() {
             <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
               <Users className="h-5 w-5" />
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Eligible Customers</p>
-              <p className="font-display text-2xl font-semibold">{sendCustomerList.length}</p>
-              <p className="text-xs text-muted-foreground">Active merchant database</p>
+              {isCustomersLoading ? (
+                <div className="mt-1 space-y-1">
+                  <Skeleton className="h-6 w-16 rounded-md" />
+                  <Skeleton className="h-3 w-28 rounded-sm" />
+                </div>
+              ) : (
+                <>
+                  <p className="font-display text-2xl font-semibold">{sendCustomerList.length}</p>
+                  <p className="text-xs text-muted-foreground">Active merchant database</p>
+                </>
+              )}
             </div>
           </div>
         </Card>
       </div>
 
       {isLoading ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">Loading database festival campaigns…</div>
+        <SkeletonCampaignCards count={4} />
+      ) : campaigns.length === 0 ? (
+        <EmptyState
+          title="No festival campaigns scheduled"
+          description="Create your first festive campaign or enable automated calendar events."
+          icon={<PartyPopper className="h-8 w-8 text-muted-foreground" />}
+          action={
+            <Button onClick={openAddModal} className="rounded-full gradient-brand text-primary-foreground text-xs font-semibold">
+              <Plus className="mr-1.5 h-4 w-4" /> Add Festival Campaign
+            </Button>
+          }
+        />
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {campaigns.map((f, i) => (

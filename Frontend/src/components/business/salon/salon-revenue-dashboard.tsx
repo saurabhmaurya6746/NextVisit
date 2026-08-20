@@ -237,6 +237,7 @@ export function SalonRevenueDashboard() {
           trend={dbTop?.today_vs_yesterday_pct && dbTop.today_vs_yesterday_pct < 0 ? "down" : "up"}
           icon={DollarSign}
           accent="primary"
+          loading={loading}
         />
         <StatCard
           label="Yesterday Revenue"
@@ -245,6 +246,7 @@ export function SalonRevenueDashboard() {
           trend="neutral"
           icon={Clock}
           accent="accent"
+          loading={loading}
         />
         <StatCard
           label="This Week Revenue"
@@ -253,6 +255,7 @@ export function SalonRevenueDashboard() {
           trend={dbTop?.week_vs_last_week_pct && dbTop.week_vs_last_week_pct < 0 ? "down" : "up"}
           icon={TrendingUp}
           accent="info"
+          loading={loading}
         />
         <StatCard
           label="This Month Revenue"
@@ -261,6 +264,7 @@ export function SalonRevenueDashboard() {
           trend={dbTop?.month_vs_last_month_pct && dbTop.month_vs_last_month_pct < 0 ? "down" : "up"}
           icon={Calendar}
           accent="primary"
+          loading={loading}
         />
         <StatCard
           label="This Year Revenue"
@@ -269,6 +273,7 @@ export function SalonRevenueDashboard() {
           trend={dbTop?.year_vs_last_year_pct && dbTop.year_vs_last_year_pct < 0 ? "down" : "up"}
           icon={Award}
           accent="warning"
+          loading={loading}
         />
         <StatCard
           label="Total Lifetime Revenue"
@@ -277,6 +282,7 @@ export function SalonRevenueDashboard() {
           trend="neutral"
           icon={Receipt}
           accent="accent"
+          loading={loading}
         />
         <StatCard
           label="Paid Appointments"
@@ -285,6 +291,7 @@ export function SalonRevenueDashboard() {
           trend="up"
           icon={CheckCircle2}
           accent="primary"
+          loading={loading}
         />
         <StatCard
           label="Average Service Value"
@@ -293,6 +300,7 @@ export function SalonRevenueDashboard() {
           trend="neutral"
           icon={Scissors}
           accent="info"
+          loading={loading}
         />
       </div>
 

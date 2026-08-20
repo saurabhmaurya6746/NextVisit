@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface StatCardProps {
   label: string;
@@ -10,6 +11,7 @@ interface StatCardProps {
   icon?: LucideIcon;
   accent?: "primary" | "accent" | "warning" | "info" | "destructive";
   index?: number;
+  loading?: boolean;
 }
 
 const accentMap = {
@@ -20,7 +22,7 @@ const accentMap = {
   destructive: "from-destructive/20 to-destructive/5 text-destructive",
 };
 
-export function StatCard({ label, value, delta, trend = "up", icon: Icon, accent = "primary", index = 0 }: StatCardProps) {
+export function StatCard({ label, value, delta, trend = "up", icon: Icon, accent = "primary", index = 0, loading = false }: StatCardProps) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -44,21 +46,30 @@ export function StatCard({ label, value, delta, trend = "up", icon: Icon, accent
       </div>
 
       <div className="relative mt-2 sm:mt-3 flex-1 flex flex-col justify-end">
-        <p className="font-display text-lg sm:text-3xl font-bold tracking-tight text-foreground tabular-nums truncate">
-          {value}
-        </p>
-        <div className="min-h-[16px] sm:min-h-[18px] mt-0.5 sm:mt-1 flex items-center">
-          {delta ? (
-            <p className={cn("text-[10px] sm:text-xs font-medium truncate leading-none", trend === "up" ? "text-success" : trend === "down" ? "text-destructive" : "text-muted-foreground")}>
-              <span className="mr-0.5">{trend === "up" ? "▲" : trend === "down" ? "▼" : "•"}</span>
-              {delta}
+        {loading ? (
+          <div className="space-y-1.5 py-0.5">
+            <Skeleton className="h-6 w-20 sm:h-8 sm:w-28 rounded-md" />
+            <Skeleton className="h-3 w-14 sm:w-16 rounded-sm" />
+          </div>
+        ) : (
+          <>
+            <p className="font-display text-lg sm:text-3xl font-bold tracking-tight text-foreground tabular-nums truncate">
+              {value}
             </p>
-          ) : (
-            <span className="text-[10px] sm:text-xs text-muted-foreground/30 leading-none select-none">
-              —
-            </span>
-          )}
-        </div>
+            <div className="min-h-[16px] sm:min-h-[18px] mt-0.5 sm:mt-1 flex items-center">
+              {delta ? (
+                <p className={cn("text-[10px] sm:text-xs font-medium truncate leading-none", trend === "up" ? "text-success" : trend === "down" ? "text-destructive" : "text-muted-foreground")}>
+                  <span className="mr-0.5">{trend === "up" ? "▲" : trend === "down" ? "▼" : "•"}</span>
+                  {delta}
+                </p>
+              ) : (
+                <span className="text-[10px] sm:text-xs text-muted-foreground/30 leading-none select-none">
+                  —
+                </span>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </motion.div>
   );

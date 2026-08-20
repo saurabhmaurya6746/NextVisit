@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { AiGenerateDialog } from "@/components/ai-generate-dialog";
 import { CampaignSendModal } from "@/components/campaign-send-modal";
 import { EmptyState } from "@/components/empty-state";
+import { SkeletonCustomerCards } from "@/components/skeletons";
 import { PageTransition } from "@/components/page-transition";
 import { logWhatsApp } from "@/lib/whatsapp-history";
 import { toast } from "sonner";
@@ -82,10 +83,18 @@ export default function CelebrationDetailPage({ kind, bucket }: Props) {
   } as const;
 
   const descMap = {
-    today: `${emoji} Reach out to ${totalItems} guest${totalItems === 1 ? "" : "s"} celebrating today.`,
-    tomorrow: `${emoji} Prepare tomorrow's outreach — ${totalItems} guest${totalItems === 1 ? "" : "s"}.`,
-    week: `${emoji} ${totalItems} guest${totalItems === 1 ? "" : "s"} in the next 7 days.`,
-    month: `${emoji} ${totalItems} guest${totalItems === 1 ? "" : "s"} in the next 30 days.`,
+    today: isLoading
+      ? `${emoji} Finding guests celebrating today…`
+      : `${emoji} Reach out to ${totalItems} guest${totalItems === 1 ? "" : "s"} celebrating today.`,
+    tomorrow: isLoading
+      ? `${emoji} Loading tomorrow's celebratory guests…`
+      : `${emoji} Prepare tomorrow's outreach — ${totalItems} guest${totalItems === 1 ? "" : "s"}.`,
+    week: isLoading
+      ? `${emoji} Loading celebratory guests in the next 7 days…`
+      : `${emoji} ${totalItems} guest${totalItems === 1 ? "" : "s"} in the next 7 days.`,
+    month: isLoading
+      ? `${emoji} Loading celebratory guests in the next 30 days…`
+      : `${emoji} ${totalItems} guest${totalItems === 1 ? "" : "s"} in the next 30 days.`,
   } as const;
 
   const campaignPath = isBday ? "birthday-campaigns" : "anniversary-campaigns";
@@ -119,10 +128,10 @@ export default function CelebrationDetailPage({ kind, bucket }: Props) {
 
             <Button
               className="rounded-full bg-primary text-primary-foreground font-semibold text-xs px-4"
-              disabled={list.length === 0}
+              disabled={list.length === 0 || isLoading}
               onClick={() => setSendCampaignOpen(true)}
             >
-              <MessageCircle className="mr-1.5 h-3.5 w-3.5" /> Launch {isBday ? "Birthday" : "Anniversary"} Campaign ({list.length})
+              <MessageCircle className="mr-1.5 h-3.5 w-3.5" /> Launch {isBday ? "Birthday" : "Anniversary"} Campaign ({isLoading ? "…" : list.length})
             </Button>
           </div>
         }
@@ -169,7 +178,7 @@ export default function CelebrationDetailPage({ kind, bucket }: Props) {
       </div>
 
       {isLoading ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">Loading celebration customers…</div>
+        <SkeletonCustomerCards count={6} />
       ) : list.length === 0 ? (
         <EmptyState
           title={isBday ? "No birthday customers found" : "No anniversary customers found"}
