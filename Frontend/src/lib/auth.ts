@@ -268,7 +268,14 @@ export async function getBusinessTypesApi() {
   return await res.json();
 }
 
-export async function registerApi(payload: any) {
+export interface RegisterResponse {
+  success: boolean;
+  requires_email_verification: boolean;
+  email: string;
+  message: string;
+}
+
+export async function registerApi(payload: any): Promise<RegisterResponse> {
   const res = await apiFetch("/api/v1/auth/register", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -279,11 +286,49 @@ export async function registerApi(payload: any) {
     throw new Error(errData.detail || "Registration failed. Please check your details.");
   }
 
-  const data = await res.json();
-  if (data.access_token) {
-    setToken(data.access_token);
+  return await res.json();
+}
+
+export interface VerifyEmailResponse {
+  success: boolean;
+  email_verified: boolean;
+  status: string;
+  message: string;
+}
+
+export interface ResendVerificationResponse {
+  success: boolean;
+  message: string;
+}
+
+export async function verifyEmailApi(email: string, code: string): Promise<VerifyEmailResponse> {
+  const res = await apiFetch("/api/v1/auth/verify-email", {
+    method: "POST",
+    body: JSON.stringify({ email: email.trim(), code: code.trim() }),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    const msg = typeof errData.detail === "string" ? errData.detail : "Email verification failed. Please try again.";
+    throw new Error(msg);
   }
-  return data;
+
+  return await res.json();
+}
+
+export async function resendVerificationApi(email: string): Promise<ResendVerificationResponse> {
+  const res = await apiFetch("/api/v1/auth/resend-verification", {
+    method: "POST",
+    body: JSON.stringify({ email: email.trim() }),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    const msg = typeof errData.detail === "string" ? errData.detail : "Failed to resend verification code. Please try again.";
+    throw new Error(msg);
+  }
+
+  return await res.json();
 }
 
 export async function forgotPasswordApi(email: string): Promise<{ message: string }> {

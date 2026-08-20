@@ -240,7 +240,7 @@ export default function SignupPage() {
         return;
       }
 
-      await registerApi({
+      const res = await registerApi({
         business: {
           business_type_id: typeId,
           business_name: form.business.trim(),
@@ -257,9 +257,12 @@ export default function SignupPage() {
         },
       });
 
-      toast.success("Account created successfully!");
+      toast.success(res.message || "Verification code sent to your email!");
+      const targetEmail = form.email.trim();
       clearSignupDraft();
-      setSubmitted(true);
+      navigate(`/verify-email?email=${encodeURIComponent(targetEmail)}`, {
+        state: { email: targetEmail },
+      });
     } catch (err: any) {
       toast.error(err.message || "Registration failed. Please try again.");
     } finally {

@@ -56,7 +56,20 @@ export function LoginShell({ role, target, tagline, quote, author }: { role: "Bu
       window.location.href = `/app/${type}/${slug}/dashboard`;
     } catch (err: any) {
       console.error("[LOGIN] submit error caught:", err);
-      toast.error(err.message || "Login failed. Please check your credentials.");
+      const errMsg = err.message || "Login failed. Please check your credentials.";
+      if (errMsg.toLowerCase().includes("verify your email")) {
+        toast.error(errMsg, {
+          action: {
+            label: "Verify Now",
+            onClick: () => {
+              window.location.href = `/verify-email?email=${encodeURIComponent(cleanEmail)}`;
+            },
+          },
+          duration: 8000,
+        });
+      } else {
+        toast.error(errMsg);
+      }
       setLoading(false);
       setTransitioning(false);
     }

@@ -42,10 +42,18 @@ class BusinessRepository(BaseRepository):
     ) -> tuple[list[Business], int]:
         from sqlalchemy import func, or_
         from app.models.business import BusinessStatus
+        from app.models.user import User
 
         stmt = select(Business).where(
             Business.status == BusinessStatus.PENDING.value,
             Business.is_deleted == False,
+            Business.id.in_(
+                select(User.business_id).where(
+                    User.email_verified == True,
+                    func.lower(User.role) == "owner",
+                    User.status != "DELETED",
+                )
+            ),
         )
 
         if search and search.strip():

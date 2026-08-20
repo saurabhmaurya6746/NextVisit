@@ -53,6 +53,13 @@ class AdminDashboardService:
             select(func.count(Business.id)).where(
                 Business.status == BusinessStatus.PENDING.value,
                 Business.is_deleted == False,
+                Business.id.in_(
+                    select(User.business_id).where(
+                        User.email_verified == True,
+                        func.lower(User.role) == "owner",
+                        User.status != "DELETED",
+                    )
+                ),
             )
         ) or 0
 

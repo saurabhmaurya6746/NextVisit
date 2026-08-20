@@ -19,6 +19,7 @@ import LoginIndexPage from "./routes/login.index";
 import LoginBusinessPage from "./routes/login.business";
 import LoginAdminPage from "./routes/login.admin";
 import SignupPage from "./routes/signup";
+import VerifyEmailPage from "./routes/verify-email";
 import ForgotPasswordPage from "./routes/forgot-password";
 import ResetPasswordPage from "./routes/reset-password";
 import QrBusinessTablePage from "./routes/qr.$business.$table";
@@ -126,6 +127,7 @@ export default function App() {
             <Route path="/login/business" element={<LoginBusinessPage />} />
             <Route path="/login/admin" element={<LoginAdminPage />} />
             <Route path="/signup" element={<SignupPage />} />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
 

@@ -10,9 +10,14 @@ from app.schemas.auth import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     LoginRequest,
+    RegisterResponse,
+    ResendVerificationRequest,
+    ResendVerificationResponse,
     ResetPasswordRequest,
     ResetPasswordResponse,
     TokenResponse,
+    VerifyEmailRequest,
+    VerifyEmailResponse,
 )
 from app.schemas.business import BusinessCreate
 from app.schemas.user import UserResponse
@@ -28,7 +33,7 @@ router = APIRouter(
 
 @router.post(
     "/register",
-    response_model=TokenResponse,
+    response_model=RegisterResponse,
     summary="Register a new business and owner account",
 )
 def register(
@@ -36,6 +41,30 @@ def register(
     db: Session = Depends(get_db),
 ):
     return AuthService(db).register(data)
+
+
+@router.post(
+    "/verify-email",
+    response_model=VerifyEmailResponse,
+    summary="Verify 6-digit OTP code sent during registration",
+)
+def verify_email(
+    data: VerifyEmailRequest,
+    db: Session = Depends(get_db),
+):
+    return AuthService(db).verify_email(email=data.email, code=data.code)
+
+
+@router.post(
+    "/resend-verification",
+    response_model=ResendVerificationResponse,
+    summary="Resend 6-digit OTP code to unverified email",
+)
+def resend_verification(
+    data: ResendVerificationRequest,
+    db: Session = Depends(get_db),
+):
+    return AuthService(db).resend_verification(email=data.email)
 
 
 @router.post(

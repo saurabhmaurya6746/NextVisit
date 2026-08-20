@@ -453,6 +453,105 @@ The NextVisit Team
             text=text_content,
         )
 
+    @classmethod
+    def send_verification_otp_email(
+        cls,
+        to_email: str,
+        owner_name: str,
+        otp_code: str,
+        expires_in_minutes: int = 10,
+    ) -> tuple[bool, str | None]:
+        """
+        Send a secure 6-digit verification code to merchant owner during registration.
+        """
+        subject = "Verify your NextVisit account"
+        safe_name = owner_name.strip() if owner_name else "NextVisit Merchant"
+
+        text_content = f"""Verify your NextVisit account
+
+Hello {safe_name},
+
+Welcome to NextVisit.
+
+Your email verification code is:
+
+{otp_code}
+
+This code will expire in {expires_in_minutes} minutes.
+
+If you did not create this account, you can safely ignore this email.
+
+Regards,
+NextVisit Team
+"""
+
+        html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify your NextVisit account</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; background-color: #f8fafc; margin: 0; padding: 24px; }}
+    .container {{ max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }}
+    .header {{ background: linear-gradient(135deg, #0ea5e9 0%, #3b82f6 100%); color: #ffffff; padding: 28px 24px; text-align: center; }}
+    .header h1 {{ margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.025em; }}
+    .header p {{ margin: 6px 0 0 0; font-size: 13px; opacity: 0.9; }}
+    .content {{ padding: 32px 24px; text-align: center; }}
+    .greeting {{ font-size: 16px; font-weight: 600; color: #0f172a; margin-bottom: 12px; text-align: left; }}
+    .paragraph {{ font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 20px 0; text-align: left; }}
+    .otp-box {{ background: #f0f9ff; border: 2px dashed #0284c7; border-radius: 12px; padding: 18px 24px; margin: 24px auto; display: inline-block; }}
+    .otp-code {{ font-family: 'SF Mono', Monaco, Consolas, monospace; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #0369a1; margin: 0; }}
+    .expiry-note {{ font-size: 13px; color: #64748b; margin-top: 12px; }}
+    .security-note {{ background: #f8fafc; border-left: 4px solid #94a3b8; padding: 12px 16px; border-radius: 6px; margin-top: 28px; font-size: 12px; color: #475569; text-align: left; line-height: 1.5; }}
+    .footer {{ background: #f8fafc; padding: 18px 24px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.5; }}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>NextVisit</h1>
+      <p>Email Verification</p>
+    </div>
+    <div class="content">
+      <div class="greeting">Hello {safe_name},</div>
+      <p class="paragraph">
+        Welcome to NextVisit! Please use the 6-digit verification code below to verify your email address and continue your registration:
+      </p>
+      
+      <div class="otp-box">
+        <div class="otp-code">{otp_code}</div>
+      </div>
+      
+      <p class="expiry-note">
+        This code will expire in <strong>{expires_in_minutes} minutes</strong>.
+      </p>
+
+      <div class="security-note">
+        <strong>Security Tip:</strong> Never share this verification code with anyone. NextVisit employees will never ask for your code. If you did not create this account, you can safely ignore this email.
+      </div>
+
+      <p class="paragraph" style="margin-top: 24px; text-align: left;">
+        Best regards,<br>
+        <strong>NextVisit Team</strong>
+      </p>
+    </div>
+    <div class="footer">
+      © NextVisit · CRM & Growth Automation for Local Businesses<br>
+      This is an automated verification notification.
+    </div>
+  </div>
+</body>
+</html>"""
+
+        return cls.send_resend_email(
+            to=to_email,
+            subject=subject,
+            html=html_content,
+            text=text_content,
+        )
+
 
 email_service = EmailService()
+
 

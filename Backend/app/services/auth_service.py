@@ -1,6 +1,7 @@
 import logging
 import re
-from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
@@ -9,7 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.core.security import (
     create_access_token,
+    hash_otp,
     hash_password,
+    verify_otp,
     verify_password,
 )
 from app.models.business import Business, BusinessStatus
@@ -139,9 +142,44 @@ class AuthService:
             if existing_biz:
                 # Check status of existing business
                 if existing_biz.status == BusinessStatus.PENDING.value:
+                    owner_user = self.db.scalar(
+                        select(User).where(
+                            User.business_id == existing_biz.id,
+                            func.lower(User.role) == "owner",
+                            User.status != "DELETED",
+                        )
+                    )
+                    if owner_user and not owner_user.email_verified:
+                        # Allow resending verification / updating draft credentials
+                        otp = str(secrets.randbelow(900000) + 100000)
+                        owner_user.hashed_password = hash_password(data.owner.password)
+                        owner_user.verification_code_hash = hash_otp(otp)
+                        owner_user.verification_code_expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+                        owner_user.verification_attempts = 0
+                        owner_user.verification_last_sent_at = datetime.now(timezone.utc)
+                        self.db.commit()
+
+                        try:
+                            from app.services.email_service import EmailService
+                            EmailService.send_verification_otp_email(
+                                to_email=clean_email,
+                                owner_name=owner_user.name,
+                                otp_code=otp,
+                                expires_in_minutes=10,
+                            )
+                        except Exception as email_err:
+                            logger.warning("Failed to send verification email on re-signup: %s", str(email_err))
+
+                        return {
+                            "success": True,
+                            "requires_email_verification": True,
+                            "email": clean_email,
+                            "message": "Verification code sent to your email.",
+                        }
+
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,
-                        detail="An account with this email is already pending approval.",
+                        detail="An account with this email is already pending administrator approval.",
                     )
                 elif existing_biz.status in [
                     BusinessStatus.ACTIVE.value,
@@ -176,6 +214,8 @@ class AuthService:
                     if not existing_biz.subscription_plan_id and starter_plan:
                         existing_biz.subscription_plan_id = starter_plan.id
 
+                    otp = str(secrets.randbelow(900000) + 100000)
+
                     # Update or create owner user
                     owner_user = self.db.scalar(
                         select(User).where(
@@ -195,6 +235,12 @@ class AuthService:
                         owner_user.role = "OWNER"
                         owner_user.status = "ACTIVE"
                         owner_user.is_active = True
+                        owner_user.email_verified = False
+                        owner_user.email_verified_at = None
+                        owner_user.verification_code_hash = hash_otp(otp)
+                        owner_user.verification_code_expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+                        owner_user.verification_attempts = 0
+                        owner_user.verification_last_sent_at = datetime.now(timezone.utc)
                     else:
                         owner_user = User(
                             business_id=existing_biz.id,
@@ -204,6 +250,12 @@ class AuthService:
                             role="OWNER",
                             status="ACTIVE",
                             is_active=True,
+                            email_verified=False,
+                            email_verified_at=None,
+                            verification_code_hash=hash_otp(otp),
+                            verification_code_expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+                            verification_attempts=0,
+                            verification_last_sent_at=datetime.now(timezone.utc),
                         )
                         owner_user = self.user_repo.create(owner_user)
 
@@ -216,46 +268,24 @@ class AuthService:
                     self.db.refresh(owner_user)
                     self.db.refresh(existing_biz)
 
-                    # Non-blocking Admin Email Notification for resubmitted signup
+                    # Dispatch verification code email to re-applying merchant
                     try:
                         from app.services.email_service import EmailService
-                        business_type_name = getattr(business_type, "name", "") if business_type else ""
-                        sent, err_msg = EmailService.send_new_signup_notification(
-                            business_name=existing_biz.name,
+                        EmailService.send_verification_otp_email(
+                            to_email=clean_email,
                             owner_name=owner_user.name,
-                            owner_email=owner_user.email,
-                            business_type=business_type_name,
-                            signup_time=datetime.now(timezone.utc),
-                            business_id=str(existing_biz.id),
+                            otp_code=otp,
+                            expires_in_minutes=10,
                         )
-                        if sent:
-                            logger.info(
-                                "Admin signup notification email sent successfully for resubmitted business ID %s (%s)",
-                                str(existing_biz.id),
-                                owner_user.email,
-                            )
-                        else:
-                            logger.warning(
-                                "Failed to send admin signup notification email for resubmitted business ID %s: %s",
-                                str(existing_biz.id),
-                                err_msg or "Unknown error",
-                            )
+                        logger.info("Verification code sent to re-applying user email | user_id=%s email=%s", str(owner_user.id), clean_email)
                     except Exception as email_err:
-                        logger.warning(
-                            "Non-blocking signup admin email notification error: %s",
-                            str(email_err),
-                        )
+                        logger.warning("Failed to send verification email on reapplication: %s", str(email_err))
 
-                    token = create_access_token(
-                        {
-                            "sub": str(owner_user.id),
-                            "business_id": str(existing_biz.id),
-                            "role": owner_user.role,
-                        }
-                    )
                     return {
-                        "access_token": token,
-                        "token_type": "bearer",
+                        "success": True,
+                        "requires_email_verification": True,
+                        "email": clean_email,
+                        "message": "Verification code sent to your email.",
                     }
                 else:
                     raise HTTPException(
@@ -278,7 +308,9 @@ class AuthService:
             )
             business = self.business_repo.create(business)
 
-            # 4. Create Owner User
+            otp = str(secrets.randbelow(900000) + 100000)
+
+            # 4. Create Owner User with email verification pending
             user = User(
                 business_id=business.id,
                 name=data.owner.owner_name,
@@ -287,6 +319,12 @@ class AuthService:
                 role="OWNER",
                 status="ACTIVE",
                 is_active=True,
+                email_verified=False,
+                email_verified_at=None,
+                verification_code_hash=hash_otp(otp),
+                verification_code_expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+                verification_attempts=0,
+                verification_last_sent_at=datetime.now(timezone.utc),
             )
             user = self.user_repo.create(user)
 
@@ -300,36 +338,24 @@ class AuthService:
             self.db.refresh(user)
             self.db.refresh(business)
 
-            # 7. Non-blocking Admin Email Notification
+            # 7. Send 6-digit OTP verification email to user
             try:
                 from app.services.email_service import EmailService
-                business_type_name = getattr(business_type, "name", "") if business_type else ""
-                sent, err_msg = EmailService.send_new_signup_notification(
-                    business_name=business.name,
+                EmailService.send_verification_otp_email(
+                    to_email=clean_email,
                     owner_name=user.name,
-                    owner_email=user.email,
-                    business_type=business_type_name,
-                    signup_time=business.created_at or datetime.now(timezone.utc),
-                    business_id=str(business.id),
+                    otp_code=otp,
+                    expires_in_minutes=10,
                 )
-                if sent:
-                    logger.info("Admin signup notification email sent successfully for user ID %s (business ID: %s)", str(user.id), str(business.id))
-                else:
-                    logger.warning("Failed to send admin signup notification email for user ID %s (business ID: %s): %s", str(user.id), str(business.id), err_msg or "Unknown error")
+                logger.info("Verification code generated and sent to user email | user_id=%s email=%s", str(user.id), clean_email)
             except Exception as email_err:
-                logger.warning("Non-blocking signup admin email notification error: %s", str(email_err))
-
-            token = create_access_token(
-                {
-                    "sub": str(user.id),
-                    "business_id": str(business.id),
-                    "role": user.role,
-                }
-            )
+                logger.warning("Non-blocking verification email send warning: %s", str(email_err))
 
             return {
-                "access_token": token,
-                "token_type": "bearer",
+                "success": True,
+                "requires_email_verification": True,
+                "email": clean_email,
+                "message": "Verification code sent to your email.",
             }
 
         except HTTPException:
@@ -350,6 +376,240 @@ class AuthService:
                 detail="Registration failed due to an internal error. Please try again.",
             ) from exc
 
+    # ------------------------------------------------------------------
+    # Email Verification & Resend Endpoints
+    # ------------------------------------------------------------------
+
+    def verify_email(self, email: str, code: str) -> dict:
+        """
+        Verify the 6-digit OTP code sent to user email.
+        On success, marks email_verified=True and dispatches admin approval notification.
+        """
+        clean_email = (email or "").strip().lower()
+        clean_code = (code or "").strip()
+        logger.info("Email verification attempt | email=%s", clean_email)
+
+        if not clean_email or not clean_code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email and 6-digit verification code are required.",
+            )
+
+        user = self.db.scalar(
+            select(User)
+            .join(Business, User.business_id == Business.id)
+            .where(
+                func.lower(User.email) == clean_email,
+                Business.is_deleted.is_(False),
+                User.status != "DELETED",
+            )
+        )
+
+        if not user:
+            biz = self.db.scalar(
+                select(Business).where(
+                    func.lower(Business.email) == clean_email,
+                    Business.is_deleted.is_(False),
+                )
+            )
+            if biz:
+                user = self.db.scalar(
+                    select(User).where(
+                        User.business_id == biz.id,
+                        User.role == "OWNER",
+                        User.status != "DELETED",
+                    )
+                )
+
+        if not user:
+            logger.warning("Email verification rejected — user not found | email=%s", clean_email)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid verification request.",
+            )
+
+        if user.email_verified:
+            return {
+                "success": True,
+                "email_verified": True,
+                "status": "ADMIN_PENDING",
+                "message": "Email is already verified. Your registration request has been sent for admin approval.",
+            }
+
+        if not user.verification_code_hash:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No active verification code found. Please request a new code.",
+            )
+
+        # Check maximum verification attempts (5 attempts limit)
+        if (user.verification_attempts or 0) >= 5:
+            user.verification_code_hash = None
+            user.verification_code_expires_at = None
+            self.db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Too many incorrect attempts. Please request a new verification code.",
+            )
+
+        now_utc = datetime.now(timezone.utc)
+        if user.verification_code_expires_at and now_utc > user.verification_code_expires_at:
+            user.verification_code_hash = None
+            user.verification_code_expires_at = None
+            self.db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This verification code has expired. Please request a new code.",
+            )
+
+        if not verify_otp(clean_code, user.verification_code_hash):
+            user.verification_attempts = (user.verification_attempts or 0) + 1
+            if user.verification_attempts >= 5:
+                user.verification_code_hash = None
+                user.verification_code_expires_at = None
+                self.db.commit()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Too many incorrect attempts. Please request a new verification code.",
+                )
+            self.db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Incorrect verification code. Please try again.",
+            )
+
+        # Verification successful
+        user.email_verified = True
+        user.email_verified_at = now_utc
+        user.verification_code_hash = None
+        user.verification_code_expires_at = None
+        user.verification_attempts = 0
+        user.verification_last_sent_at = None
+
+        business = user.business
+        if business and business.status != BusinessStatus.ACTIVE.value:
+            business.status = BusinessStatus.PENDING.value
+
+        self.db.commit()
+        self.db.refresh(user)
+        if business:
+            self.db.refresh(business)
+
+        logger.info("Email verified successfully | user_id=%s email=%s", str(user.id), user.email)
+
+        # Send Admin New Signup Notification Email now that merchant is email-verified
+        try:
+            from app.services.email_service import EmailService
+            bt_name = getattr(business.business_type, "name", "") if business and business.business_type else ""
+            sent, err_msg = EmailService.send_new_signup_notification(
+                business_name=business.name if business else "N/A",
+                owner_name=user.name,
+                owner_email=user.email,
+                business_type=bt_name,
+                signup_time=business.created_at or now_utc if business else now_utc,
+                business_id=str(business.id) if business else None,
+            )
+            if sent:
+                logger.info("Admin signup notification email sent successfully for user ID %s (business ID: %s)", str(user.id), str(business.id) if business else "N/A")
+            else:
+                logger.warning("Failed to send admin signup notification email for user ID %s: %s", str(user.id), err_msg or "Unknown error")
+        except Exception as email_err:
+            logger.warning("Non-blocking signup admin email notification error: %s", str(email_err))
+
+        return {
+            "success": True,
+            "email_verified": True,
+            "status": "ADMIN_PENDING",
+            "message": "Email verified successfully. Your registration request has been sent for admin approval.",
+        }
+
+    def resend_verification(self, email: str) -> dict:
+        """
+        Resend a new 6-digit OTP code to unverified user email with 60-second rate limiting cooldown.
+        """
+        clean_email = (email or "").strip().lower()
+        logger.info("Resend verification code requested | email=%s", clean_email)
+
+        generic_response = {
+            "success": True,
+            "message": "A new verification code has been sent to your email.",
+        }
+
+        if not clean_email:
+            return generic_response
+
+        user = self.db.scalar(
+            select(User)
+            .join(Business, User.business_id == Business.id)
+            .where(
+                func.lower(User.email) == clean_email,
+                Business.is_deleted.is_(False),
+                User.status != "DELETED",
+            )
+        )
+
+        if not user:
+            biz = self.db.scalar(
+                select(Business).where(
+                    func.lower(Business.email) == clean_email,
+                    Business.is_deleted.is_(False),
+                )
+            )
+            if biz:
+                user = self.db.scalar(
+                    select(User).where(
+                        User.business_id == biz.id,
+                        User.role == "OWNER",
+                        User.status != "DELETED",
+                    )
+                )
+
+        if not user:
+            logger.info("Resend verification: user not found for %s", clean_email)
+            return generic_response
+
+        if user.email_verified:
+            return {
+                "success": True,
+                "message": "This email is already verified. You can proceed to sign in.",
+            }
+
+        now_utc = datetime.now(timezone.utc)
+
+        # Enforce 60-second cooldown
+        if user.verification_last_sent_at:
+            elapsed = (now_utc - user.verification_last_sent_at).total_seconds()
+            if elapsed < 60:
+                remaining = int(60 - elapsed)
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Please wait {remaining} seconds before requesting another code.",
+                )
+
+        otp = str(secrets.randbelow(900000) + 100000)
+        user.verification_code_hash = hash_otp(otp)
+        user.verification_code_expires_at = now_utc + timedelta(minutes=10)
+        user.verification_attempts = 0
+        user.verification_last_sent_at = now_utc
+
+        self.db.commit()
+
+        try:
+            from app.services.email_service import EmailService
+            EmailService.send_verification_otp_email(
+                to_email=user.email,
+                owner_name=user.name,
+                otp_code=otp,
+                expires_in_minutes=10,
+            )
+            logger.info("Resent verification code to %s", user.email)
+        except Exception as email_err:
+            logger.warning("Failed to resend verification email: %s", str(email_err))
+
+        return {
+            "success": True,
+            "message": "A new verification code has been sent to your email.",
+        }
 
     # ------------------------------------------------------------------
     # Login (Supports Owner Email OR Staff Auto-Generated Login ID)
@@ -405,6 +665,14 @@ class AuthService:
         if not verify_password(data.password, user.hashed_password):
             logger.warning("Login rejected — wrong password | identifier=%s", identifier)
             raise _invalid
+
+        # 2.5. Guard: Email verification check
+        if not user.email_verified:
+            logger.warning("Login rejected — email not verified | user_id=%s email=%s", user.id, user.email)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Please verify your email address before logging in.",
+            )
 
         # 3. Guard: active account and status ACTIVE
         if not user.is_active or (user.status and user.status.upper() in ["INACTIVE", "DELETED"]):

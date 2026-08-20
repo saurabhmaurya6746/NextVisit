@@ -84,9 +84,9 @@ class MerchantApprovalService:
             business.status = BusinessStatus.ACTIVE.value
             business.approved_at = datetime.now(timezone.utc)
 
-            # Ensure business users are active
+            # Ensure business users are active and email verified
             self.db.query(User).filter(User.business_id == business_id).update(
-                {"is_active": True}
+                {"is_active": True, "email_verified": True}
             )
 
             self.db.commit()

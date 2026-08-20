@@ -29,6 +29,55 @@ class ForgotPasswordResponse(BaseModel):
     )
 
 
+class RegisterResponse(BaseModel):
+    success: bool = True
+    requires_email_verification: bool = True
+    email: str
+    message: str = "Verification code sent to your email."
+
+
+class VerifyEmailRequest(BaseModel):
+    email: str
+    code: str
+
+    @field_validator("email")
+    def validate_email_format(cls, v: str) -> str:
+        clean = v.strip().lower()
+        if not clean or "@" not in clean or "." not in clean:
+            raise ValueError("A valid email address is required.")
+        return clean
+
+    @field_validator("code")
+    def validate_code_format(cls, v: str) -> str:
+        clean = v.strip()
+        if not clean or not clean.isdigit() or len(clean) != 6:
+            raise ValueError("Verification code must be a 6-digit number.")
+        return clean
+
+
+class VerifyEmailResponse(BaseModel):
+    success: bool = True
+    email_verified: bool = True
+    status: str = "ADMIN_PENDING"
+    message: str = "Email verified successfully. Your registration request has been sent for admin approval."
+
+
+class ResendVerificationRequest(BaseModel):
+    email: str
+
+    @field_validator("email")
+    def validate_email_format(cls, v: str) -> str:
+        clean = v.strip().lower()
+        if not clean or "@" not in clean or "." not in clean:
+            raise ValueError("A valid email address is required.")
+        return clean
+
+
+class ResendVerificationResponse(BaseModel):
+    success: bool = True
+    message: str = "A new verification code has been sent."
+
+
 class ResetPasswordRequest(BaseModel):
     token: str
     password: str
