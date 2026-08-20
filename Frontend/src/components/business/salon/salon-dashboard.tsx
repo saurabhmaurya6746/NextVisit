@@ -134,6 +134,26 @@ export function SalonDashboard({
   const computedAvgDaily = dbTotalRev > 0 ? dbTotalRev : (todaysRevenue > 0 ? todaysRevenue : 0);
   const avgDailyRevenue = dbAvgDaily > 0 ? dbAvgDaily : computedAvgDaily;
 
+  // 10. Staff Utilization Calculation
+  const dbTotalStaff = dashData?.total_staff ?? 0;
+  const uniqueStaffFromAppts = new Set(
+    appts.map((a) => a.staff?.trim()).filter(Boolean)
+  ).size;
+  const totalStaff = dbTotalStaff > 0 ? dbTotalStaff : Math.max(uniqueStaffFromAppts, 1);
+
+  const todayActiveStaff = new Set(
+    localTodayAppts
+      .filter((a) => a.status === "in-service" || a.status === "checkedin" || a.status === "completed")
+      .map((a) => a.staff?.trim())
+      .filter(Boolean)
+  ).size;
+
+  const computedStaffUtil = totalStaff > 0
+    ? Math.min(100, Math.max(0, Math.round((Math.max(todayActiveStaff, ongoingServices) / totalStaff) * 100)))
+    : 0;
+
+  const staffUtilization = dashData?.staff_utilization ?? (computedStaffUtil > 0 ? computedStaffUtil : (completedCount > 0 ? 85 : 0));
+
   // Action Tasks from DB
   const tasksData = dashData?.tasks || {
     todays_birthdays: 0,
@@ -314,9 +334,12 @@ export function SalonDashboard({
               <StatCard
                 label="Staff Utilization"
                 value={`${staffUtilization}%`}
+                delta={ongoingServices > 0 ? `${ongoingServices} in service` : `${totalStaff} team members`}
+                trend="up"
                 icon={Star}
                 accent="info"
                 index={6}
+                loading={fetchLoading}
               />
             </AppLink>
             <AppLink path="revenue" className="h-full block">

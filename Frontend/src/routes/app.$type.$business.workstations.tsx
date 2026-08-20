@@ -246,20 +246,6 @@ export default function WorkstationsPage() {
     }
   }
 
-  // Reset Form
-  function resetForm(targetAreaId?: string) {
-    const selectedArea = serviceAreas.find((a) => a.id === targetAreaId) || serviceAreas[0];
-    if (selectedArea) {
-      setAreaId(selectedArea.id);
-      setWorkstationType(selectedArea.name);
-    }
-    const defaultName = getNextUniqueChairName(chairs, "Chair");
-    setChairName(defaultName);
-    setChairNumber("");
-    setStatusVal("Available");
-    setIsActive(true);
-  }
-
   // Create Area Handler
   async function handleCreateArea() {
     if (!newAreaName.trim()) {
