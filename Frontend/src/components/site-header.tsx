@@ -49,54 +49,56 @@ export function SiteHeader() {
   }, [mobileMenuOpen]);
 
   return (
-    <header className="relative z-30 mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
-      <Link to="/" onClick={() => setMobileMenuOpen(false)}>
-        <BrandLogo />
-      </Link>
+    <header className="sticky top-0 z-40 w-full border-b border-border/40 bg-background/80 backdrop-blur-md supports-[backdrop-filter]:bg-background/60 transition-colors">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+        <Link to="/" onClick={() => setMobileMenuOpen(false)}>
+          <BrandLogo />
+        </Link>
 
-      {/* Desktop Navigation */}
-      <nav className="hidden items-center gap-8 text-sm md:flex">
-        {navItems.map((item) => (
-          <Link
-            key={item.href}
-            to={item.href}
-            className={cn(
-              "transition-colors",
-              isActive(item.href)
-                ? "text-foreground font-medium"
-                : "text-muted-foreground hover:text-foreground"
-            )}
+        {/* Desktop Navigation */}
+        <nav className="hidden items-center gap-8 text-sm md:flex">
+          {navItems.map((item) => (
+            <Link
+              key={item.href}
+              to={item.href}
+              className={cn(
+                "transition-colors",
+                isActive(item.href)
+                  ? "text-foreground font-medium"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+
+        {/* Desktop Action Buttons */}
+        <div className="hidden items-center gap-2 md:flex">
+          <ThemeToggle />
+          <Button asChild variant="ghost" size="sm" className="rounded-full">
+            <Link to="/login">Sign in</Link>
+          </Button>
+          <Button asChild size="sm" className="rounded-full gradient-brand text-primary-foreground shadow-glow">
+            <Link to="/signup">
+              Start free <ArrowRight className="ml-1 h-3.5 w-3.5" />
+            </Link>
+          </Button>
+        </div>
+
+        {/* Mobile Controls & Hamburger */}
+        <div className="flex items-center gap-2 md:hidden">
+          <ThemeToggle />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full h-9 w-9"
+            onClick={() => setMobileMenuOpen(true)}
+            aria-label="Open menu"
           >
-            {item.label}
-          </Link>
-        ))}
-      </nav>
-
-      {/* Desktop Action Buttons */}
-      <div className="hidden items-center gap-2 md:flex">
-        <ThemeToggle />
-        <Button asChild variant="ghost" size="sm" className="rounded-full">
-          <Link to="/login">Sign in</Link>
-        </Button>
-        <Button asChild size="sm" className="rounded-full gradient-brand text-primary-foreground shadow-glow">
-          <Link to="/signup">
-            Start free <ArrowRight className="ml-1 h-3.5 w-3.5" />
-          </Link>
-        </Button>
-      </div>
-
-      {/* Mobile Controls & Hamburger */}
-      <div className="flex items-center gap-2 md:hidden">
-        <ThemeToggle />
-        <Button
-          variant="ghost"
-          size="icon"
-          className="rounded-full h-9 w-9"
-          onClick={() => setMobileMenuOpen(true)}
-          aria-label="Open menu"
-        >
-          <Menu className="h-5 w-5" />
-        </Button>
+            <Menu className="h-5 w-5" />
+          </Button>
+        </div>
       </div>
 
       {/* Mobile Full Navigation Drawer & Backdrop */}
