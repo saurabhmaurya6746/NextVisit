@@ -120,13 +120,13 @@ export function SiteHeader() {
                   aria-hidden="true"
                 />
 
-                {/* Left Drawer Panel */}
+                {/* Right Drawer Panel */}
                 <motion.div
-                  initial={{ x: "-100%" }}
+                  initial={{ x: "100%" }}
                   animate={{ x: 0 }}
-                  exit={{ x: "-100%" }}
+                  exit={{ x: "100%" }}
                   transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                  className="fixed inset-y-0 left-0 z-50 flex h-full w-[300px] max-w-[85vw] flex-col justify-between border-r border-border bg-background p-5 sm:p-6 shadow-2xl overflow-y-auto"
+                  className="fixed inset-y-0 right-0 z-50 flex h-full w-[300px] max-w-[85vw] flex-col justify-between border-l border-border bg-background p-5 sm:p-6 shadow-2xl overflow-y-auto"
                   role="dialog"
                   aria-modal="true"
                   aria-label="Mobile Navigation Menu"
