@@ -19,26 +19,33 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # 1. Create email_otps table
-    op.create_table(
-        'email_otps',
-        sa.Column('id', sa.UUID(), nullable=False),
-        sa.Column('email', sa.String(length=150), nullable=False),
-        sa.Column('hashed_otp', sa.String(length=255), nullable=False),
-        sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
-        sa.Column('attempts', sa.Integer(), nullable=False, server_default='0'),
-        sa.Column('is_used', sa.Boolean(), nullable=False, server_default='false'),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.PrimaryKeyConstraint('id')
-    )
-    op.create_index(op.f('ix_email_otps_email'), 'email_otps', ['email'], unique=False)
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    tables = insp.get_table_names()
 
-    # 2. Add is_verified column to users table
-    op.add_column(
-        'users',
-        sa.Column('is_verified', sa.Boolean(), nullable=False, server_default='false')
-    )
+    # 1. Create email_otps table if not already created
+    if 'email_otps' not in tables:
+        op.create_table(
+            'email_otps',
+            sa.Column('id', sa.UUID(), nullable=False),
+            sa.Column('email', sa.String(length=150), nullable=False),
+            sa.Column('hashed_otp', sa.String(length=255), nullable=False),
+            sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
+            sa.Column('attempts', sa.Integer(), nullable=False, server_default='0'),
+            sa.Column('is_used', sa.Boolean(), nullable=False, server_default='false'),
+            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+            sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+            sa.PrimaryKeyConstraint('id')
+        )
+        op.create_index(op.f('ix_email_otps_email'), 'email_otps', ['email'], unique=False)
+
+    # 2. Add is_verified column to users table if not already present
+    cols = [c['name'] for c in insp.get_columns('users')]
+    if 'is_verified' not in cols:
+        op.add_column(
+            'users',
+            sa.Column('is_verified', sa.Boolean(), nullable=False, server_default='false')
+        )
 
 
 def downgrade() -> None:

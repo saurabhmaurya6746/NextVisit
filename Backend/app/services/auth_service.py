@@ -414,6 +414,11 @@ class AuthService:
 
         except IntegrityError as exc:
             self.db.rollback()
+            logger.warning(
+                "Registration failed due to database integrity conflict | email=%s: %s",
+                clean_email,
+                str(exc),
+            )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="A record with the provided details already exists.",
@@ -421,6 +426,11 @@ class AuthService:
 
         except Exception as exc:
             self.db.rollback()
+            logger.exception(
+                "Registration failed unexpectedly | email=%s: %s",
+                clean_email,
+                str(exc),
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Registration failed due to an internal error. Please try again.",
