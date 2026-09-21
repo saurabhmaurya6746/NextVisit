@@ -79,7 +79,9 @@ class AutomationService:
         self.segment_repo = CustomerSegmentationRepository(db)
         self.customer_repo = CustomerRepository(db)
 
-    def init_default_rules_for_business(self, business_id: UUID) -> list[AutomationRule]:
+    def init_default_rules_for_business(
+        self, business_id: UUID, commit: bool = True
+    ) -> list[AutomationRule]:
         created_rules = []
         for ctype in CampaignType:
             existing = self.repo.get_by_campaign_type(business_id, ctype)
@@ -93,7 +95,7 @@ class AutomationService:
                 self.repo.create(rule)
                 created_rules.append(rule)
 
-        if created_rules:
+        if created_rules and commit:
             self.db.commit()
             logger.info(
                 "Initialized %s default automation rules | business_id=%s",

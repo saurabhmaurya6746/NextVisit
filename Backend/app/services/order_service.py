@@ -121,7 +121,6 @@ class OrderService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Restaurant table '{data.table_id}' not found or inactive.",
             )
-
         target_business_id = table.business_id
 
         # Customer details logic:

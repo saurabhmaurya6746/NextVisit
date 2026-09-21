@@ -64,7 +64,7 @@ class MessageTemplateService:
         self.loyalty_repo = LoyaltyRepository(db)
 
     def init_default_templates_for_business(
-        self, business_id: UUID
+        self, business_id: UUID, commit: bool = True
     ) -> list[MessageTemplate]:
         created_templates = []
         for ctype, (tname, tmsg) in DEFAULT_TEMPLATE_DEFINITIONS.items():
@@ -80,7 +80,7 @@ class MessageTemplateService:
                 self.repo.create(template)
                 created_templates.append(template)
 
-        if created_templates:
+        if created_templates and commit:
             self.db.commit()
             logger.info(
                 "Initialized %s default message templates | business_id=%s",

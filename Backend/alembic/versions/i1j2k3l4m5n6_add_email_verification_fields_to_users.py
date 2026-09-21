@@ -17,65 +17,54 @@ depends_on = None
 
 
 def upgrade() -> None:
-    try:
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    cols = [c['name'] for c in insp.get_columns('users')]
+
+    if 'email_verified' not in cols:
         op.add_column(
             'users',
             sa.Column('email_verified', sa.Boolean(), nullable=False, server_default=sa.text('false'))
         )
-    except Exception:
-        pass
 
-    try:
+    if 'email_verified_at' not in cols:
         op.add_column(
             'users',
             sa.Column('email_verified_at', sa.DateTime(timezone=True), nullable=True)
         )
-    except Exception:
-        pass
 
-    try:
+    if 'verification_code_hash' not in cols:
         op.add_column(
             'users',
             sa.Column('verification_code_hash', sa.String(length=255), nullable=True)
         )
-    except Exception:
-        pass
 
-    try:
+    if 'verification_code_expires_at' not in cols:
         op.add_column(
             'users',
             sa.Column('verification_code_expires_at', sa.DateTime(timezone=True), nullable=True)
         )
-    except Exception:
-        pass
 
-    try:
+    if 'verification_attempts' not in cols:
         op.add_column(
             'users',
             sa.Column('verification_attempts', sa.Integer(), nullable=False, server_default=sa.text('0'))
         )
-    except Exception:
-        pass
 
-    try:
+    if 'verification_last_sent_at' not in cols:
         op.add_column(
             'users',
             sa.Column('verification_last_sent_at', sa.DateTime(timezone=True), nullable=True)
         )
-    except Exception:
-        pass
 
     # Data migration safety: Mark existing active users and existing approved businesses as email_verified
-    try:
-        op.execute("""
-            UPDATE users
-            SET email_verified = true, email_verified_at = now()
-            WHERE is_active = true
-               OR status = 'ACTIVE'
-               OR business_id IN (SELECT id FROM businesses WHERE status = 'ACTIVE' OR approved_at IS NOT NULL);
-        """)
-    except Exception:
-        pass
+    op.execute("""
+        UPDATE users
+        SET email_verified = true, email_verified_at = now()
+        WHERE is_active = true
+           OR status = 'ACTIVE'
+           OR business_id IN (SELECT id FROM businesses WHERE status = 'ACTIVE' OR approved_at IS NOT NULL);
+    """)
 
 
 def downgrade() -> None:

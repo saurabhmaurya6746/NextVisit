@@ -20,7 +20,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    op.add_column('orders', sa.Column('last_activity_at', sa.DateTime(timezone=True), nullable=True))
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    cols = [c['name'] for c in insp.get_columns('orders')]
+    if 'last_activity_at' not in cols:
+        op.add_column('orders', sa.Column('last_activity_at', sa.DateTime(timezone=True), nullable=True))
 
 
 def downgrade() -> None:

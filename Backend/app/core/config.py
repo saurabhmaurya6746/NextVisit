@@ -6,6 +6,10 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     GEMINI_API_KEY: str = ""  # blank default, .env se aayega
+    BREVO_API_KEY: str = ""
+    BREVO_SENDER_EMAIL: str = "saurabhmauryajnp28@gmail.com"
+    BREVO_SENDER_NAME: str = "Nextvisit"
+    OTP_EXPIRE_MINUTES: int = 10
     RESEND_API_KEY: str = ""
     RESEND_FROM_EMAIL: str = "NextVisit <onboarding@resend.dev>"
     NEXTVISIT_ADMIN_EMAIL: str = "saurabhmauryajnp28@gmail.com"
@@ -18,4 +22,3 @@ class Settings(BaseSettings):
     )
 
 settings = Settings()
-

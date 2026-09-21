@@ -362,4 +362,8 @@ export async function resetPasswordApi(payload: {
   }
 
   return await res.json();
-}
+}
+
+export const verifyOtpApi = verifyEmailApi;
+export const resendOtpApi = resendVerificationApi;
+

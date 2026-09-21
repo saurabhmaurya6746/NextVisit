@@ -35,6 +35,7 @@ from .subscription_plan import SubscriptionPlan
 from .subscription_upgrade_request import SubscriptionUpgradeRequest
 from .user import User
 from .user_session import UserSession
+from .otp import EmailOTP
 from .vip_settings import VipSettings
 from .visit import (
     PaymentMethod,

@@ -16,17 +16,22 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Add next_order_number column to business_settings
-    op.add_column(
-        'business_settings',
-        sa.Column('next_order_number', sa.Integer(), nullable=False, server_default='1')
-    )
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    cols = [c['name'] for c in insp.get_columns('business_settings')]
+    if 'next_order_number' not in cols:
+        op.add_column(
+            'business_settings',
+            sa.Column('next_order_number', sa.Integer(), nullable=False, server_default='1')
+        )
 
     # Create unique constraint uq_business_order_number on orders table
-    try:
-        op.create_unique_constraint('uq_business_order_number', 'orders', ['business_id', 'order_number'])
-    except Exception:
-        pass
+    uqs = [uq['name'] for uq in insp.get_unique_constraints('orders')]
+    if 'uq_business_order_number' not in uqs:
+        try:
+            op.create_unique_constraint('uq_business_order_number', 'orders', ['business_id', 'order_number'])
+        except Exception:
+            pass
 
 
 def downgrade() -> None:

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class LoginRequest(BaseModel):
@@ -9,6 +9,30 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class RegistrationResponse(BaseModel):
+    message: str
+    email: str
+    requires_verification: bool = True
+
+
+class VerifyOtpRequest(BaseModel):
+    email: str
+    otp: str = Field(..., min_length=6, max_length=6, description="6-digit verification code")
+
+
+class VerifyOtpResponse(BaseModel):
+    message: str
+    verified: bool = True
+
+
+class ResendOtpRequest(BaseModel):
+    email: str
+
+
+class ResendOtpResponse(BaseModel):
+    message: str
 
 
 class ForgotPasswordRequest(BaseModel):

@@ -107,6 +107,20 @@ class CustomerService:
             )
         return self._enrich_loyalty_points(current_user, customer)
 
+    def get_customer_by_phone(self, current_user: User, phone: str) -> Customer:
+        customer = self.repo.get_by_phone(current_user.business_id, phone.strip())
+        if not customer:
+            logger.info(
+                "Customer not found by phone | phone=%s business_id=%s",
+                phone,
+                current_user.business_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Customer with phone '{phone}' not found.",
+            )
+        return customer
+
     def create_customer(
         self, current_user: User, data: CustomerCreate
     ) -> Customer:

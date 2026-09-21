@@ -17,13 +17,14 @@ depends_on = None
 
 def upgrade() -> None:
     # Add allow_guest_checkout column to business_settings
-    try:
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    cols = [c['name'] for c in insp.get_columns('business_settings')]
+    if 'allow_guest_checkout' not in cols:
         op.add_column(
             'business_settings',
             sa.Column('allow_guest_checkout', sa.Boolean(), nullable=False, server_default=sa.text('true'))
         )
-    except Exception:
-        pass
 
 
 def downgrade() -> None:

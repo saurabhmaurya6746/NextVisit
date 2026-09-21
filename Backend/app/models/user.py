@@ -65,6 +65,12 @@ class User(BaseModel):
         default=True,
     )
 
+    is_verified: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
     permissions: Mapped[list[str] | None] = mapped_column(
         JSON,
         nullable=True,

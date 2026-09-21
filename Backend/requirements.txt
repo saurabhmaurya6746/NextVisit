@@ -17,6 +17,9 @@ email-validator
 bcrypt
 python-jose[cryptography]
 
+# HTTP client for Brevo transactional email API
+requests
+
 # Form / File uploads
 python-multipart
 
@@ -27,4 +30,4 @@ openpyxl
 
 # AI / Integrations
 google-generativeai
-resend
+resend

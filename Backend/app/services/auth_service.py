@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import logging
 import re
 import secrets
@@ -8,22 +10,44 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.security import (
     create_access_token,
-    hash_otp,
     hash_password,
-    verify_otp,
     verify_password,
 )
 from app.models.business import Business, BusinessStatus
+from app.models.otp import EmailOTP
 from app.models.user import User
 from app.repositories.business_repository import BusinessRepository
 from app.repositories.business_type_repository import BusinessTypeRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.auth import LoginRequest
 from app.schemas.business import BusinessCreate
+from app.services.brevo_service import BrevoService
 
 logger = logging.getLogger(__name__)
+
+
+def generate_otp() -> str:
+    """Generate a cryptographically secure 6-digit numeric OTP."""
+    return f"{secrets.randbelow(1000000):06d}"
+
+
+def hash_otp(email: str, otp: str) -> str:
+    """Generate HMAC-SHA256 hash of email + OTP using settings.SECRET_KEY."""
+    normalized_email = email.lower().strip()
+    return hmac.new(
+        settings.SECRET_KEY.encode("utf-8"),
+        f"{normalized_email}:{otp}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def verify_otp_hash(email: str, otp: str, stored_hash: str) -> bool:
+    """Safely verify OTP hash in constant time."""
+    computed_hash = hash_otp(email, otp)
+    return hmac.compare_digest(computed_hash, stored_hash)
 
 
 def validate_password_complexity(password: str) -> None:
@@ -62,10 +86,11 @@ class AuthService:
         self.business_repo = BusinessRepository(db)
         self.business_type_repo = BusinessTypeRepository(db)
 
-    def register(self, data: BusinessCreate):
+    def register(self, data: BusinessCreate) -> dict:
+        clean_email = data.owner.owner_email.strip().lower()
         logger.info(
             "Register request received | email=%s",
-            data.owner.owner_email,
+            clean_email,
         )
 
         try:
@@ -82,8 +107,6 @@ class AuthService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Business type '{data.business.business_type_id}' does not exist.",
                 )
-
-            clean_email = data.owner.owner_email.strip().lower()
 
             # Clean up soft-deleted businesses/users with this email to prevent unique constraint conflict
             legacy_deleted_bizs = list(self.db.scalars(
@@ -149,29 +172,38 @@ class AuthService:
                             User.status != "DELETED",
                         )
                     )
-                    if owner_user and not owner_user.email_verified:
+                    if owner_user and not (owner_user.is_verified or owner_user.email_verified):
                         # Allow resending verification / updating draft credentials
-                        otp = str(secrets.randbelow(900000) + 100000)
+                        otp = generate_otp()
+                        hashed_otp_val = hash_otp(clean_email, otp)
+                        now_utc = datetime.now(timezone.utc)
+                        expires_at = now_utc + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
+
                         owner_user.hashed_password = hash_password(data.owner.password)
-                        owner_user.verification_code_hash = hash_otp(otp)
-                        owner_user.verification_code_expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+                        owner_user.is_verified = False
+                        owner_user.email_verified = False
+                        owner_user.verification_code_hash = hashed_otp_val
+                        owner_user.verification_code_expires_at = expires_at
                         owner_user.verification_attempts = 0
-                        owner_user.verification_last_sent_at = datetime.now(timezone.utc)
+                        owner_user.verification_last_sent_at = now_utc
+
+                        otp_rec = EmailOTP(
+                            email=clean_email,
+                            hashed_otp=hashed_otp_val,
+                            expires_at=expires_at,
+                            attempts=0,
+                            is_used=False,
+                        )
+                        self.db.add(otp_rec)
+
+                        # Send via Brevo before commit
+                        brevo = BrevoService()
+                        brevo.send_otp_email(to_email=clean_email, otp=otp, to_name=owner_user.name)
+
                         self.db.commit()
-
-                        try:
-                            from app.services.email_service import EmailService
-                            EmailService.send_verification_otp_email(
-                                to_email=clean_email,
-                                owner_name=owner_user.name,
-                                otp_code=otp,
-                                expires_in_minutes=10,
-                            )
-                        except Exception as email_err:
-                            logger.warning("Failed to send verification email on re-signup: %s", str(email_err))
-
                         return {
                             "success": True,
+                            "requires_verification": True,
                             "requires_email_verification": True,
                             "email": clean_email,
                             "message": "Verification code sent to your email.",
@@ -214,7 +246,10 @@ class AuthService:
                     if not existing_biz.subscription_plan_id and starter_plan:
                         existing_biz.subscription_plan_id = starter_plan.id
 
-                    otp = str(secrets.randbelow(900000) + 100000)
+                    otp = generate_otp()
+                    hashed_otp_val = hash_otp(clean_email, otp)
+                    now_utc = datetime.now(timezone.utc)
+                    expires_at = now_utc + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
 
                     # Update or create owner user
                     owner_user = self.db.scalar(
@@ -230,59 +265,62 @@ class AuthService:
 
                     if owner_user:
                         owner_user.name = data.owner.owner_name
-                        owner_user.email = data.owner.owner_email.strip()
+                        owner_user.email = clean_email
                         owner_user.hashed_password = hash_password(data.owner.password)
                         owner_user.role = "OWNER"
                         owner_user.status = "ACTIVE"
                         owner_user.is_active = True
+                        owner_user.is_verified = False
                         owner_user.email_verified = False
                         owner_user.email_verified_at = None
-                        owner_user.verification_code_hash = hash_otp(otp)
-                        owner_user.verification_code_expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+                        owner_user.verification_code_hash = hashed_otp_val
+                        owner_user.verification_code_expires_at = expires_at
                         owner_user.verification_attempts = 0
-                        owner_user.verification_last_sent_at = datetime.now(timezone.utc)
+                        owner_user.verification_last_sent_at = now_utc
                     else:
                         owner_user = User(
                             business_id=existing_biz.id,
                             name=data.owner.owner_name,
-                            email=data.owner.owner_email.strip(),
+                            email=clean_email,
                             hashed_password=hash_password(data.owner.password),
                             role="OWNER",
                             status="ACTIVE",
                             is_active=True,
+                            is_verified=False,
                             email_verified=False,
                             email_verified_at=None,
-                            verification_code_hash=hash_otp(otp),
-                            verification_code_expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+                            verification_code_hash=hashed_otp_val,
+                            verification_code_expires_at=expires_at,
                             verification_attempts=0,
-                            verification_last_sent_at=datetime.now(timezone.utc),
+                            verification_last_sent_at=now_utc,
                         )
                         owner_user = self.user_repo.create(owner_user)
 
-                    # Initialize or ensure defaults
-                    AutomationService(self.db).init_default_rules_for_business(existing_biz.id)
-                    MessageTemplateService(self.db).init_default_templates_for_business(existing_biz.id)
-                    BusinessSettingsService(self.db).init_default_settings_for_business(existing_biz.id)
+                    # Initialize or ensure defaults with commit=False
+                    AutomationService(self.db).init_default_rules_for_business(existing_biz.id, commit=False)
+                    MessageTemplateService(self.db).init_default_templates_for_business(existing_biz.id, commit=False)
+                    BusinessSettingsService(self.db).init_default_settings_for_business(existing_biz.id, commit=False)
+
+                    otp_rec = EmailOTP(
+                        email=clean_email,
+                        hashed_otp=hashed_otp_val,
+                        expires_at=expires_at,
+                        attempts=0,
+                        is_used=False,
+                    )
+                    self.db.add(otp_rec)
+
+                    # Dispatch via Brevo before commit
+                    brevo = BrevoService()
+                    brevo.send_otp_email(to_email=clean_email, otp=otp, to_name=owner_user.name)
 
                     self.db.commit()
                     self.db.refresh(owner_user)
                     self.db.refresh(existing_biz)
 
-                    # Dispatch verification code email to re-applying merchant
-                    try:
-                        from app.services.email_service import EmailService
-                        EmailService.send_verification_otp_email(
-                            to_email=clean_email,
-                            owner_name=owner_user.name,
-                            otp_code=otp,
-                            expires_in_minutes=10,
-                        )
-                        logger.info("Verification code sent to re-applying user email | user_id=%s email=%s", str(owner_user.id), clean_email)
-                    except Exception as email_err:
-                        logger.warning("Failed to send verification email on reapplication: %s", str(email_err))
-
                     return {
                         "success": True,
+                        "requires_verification": True,
                         "requires_email_verification": True,
                         "email": clean_email,
                         "message": "Verification code sent to your email.",
@@ -298,7 +336,7 @@ class AuthService:
                 business_type_id=data.business.business_type_id,
                 name=data.business.business_name,
                 owner_name=data.owner.owner_name,
-                email=data.owner.owner_email.strip(),
+                email=clean_email,
                 phone=data.business.phone,
                 country=data.business.country,
                 currency=data.business.currency,
@@ -308,54 +346,66 @@ class AuthService:
             )
             business = self.business_repo.create(business)
 
-            otp = str(secrets.randbelow(900000) + 100000)
+            # 4. Create Owner User
+            otp = generate_otp()
+            hashed_otp_val = hash_otp(clean_email, otp)
+            now_utc = datetime.now(timezone.utc)
+            expires_at = now_utc + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
 
-            # 4. Create Owner User with email verification pending
             user = User(
                 business_id=business.id,
                 name=data.owner.owner_name,
-                email=data.owner.owner_email.strip(),
+                email=clean_email,
                 hashed_password=hash_password(data.owner.password),
                 role="OWNER",
                 status="ACTIVE",
                 is_active=True,
+                is_verified=False,
                 email_verified=False,
                 email_verified_at=None,
-                verification_code_hash=hash_otp(otp),
-                verification_code_expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+                verification_code_hash=hashed_otp_val,
+                verification_code_expires_at=expires_at,
                 verification_attempts=0,
-                verification_last_sent_at=datetime.now(timezone.utc),
+                verification_last_sent_at=now_utc,
             )
             user = self.user_repo.create(user)
 
-            # 5. Initialize defaults
-            AutomationService(self.db).init_default_rules_for_business(business.id)
-            MessageTemplateService(self.db).init_default_templates_for_business(business.id)
-            BusinessSettingsService(self.db).init_default_settings_for_business(business.id)
+            # 5. Initialize defaults with commit=False
+            AutomationService(self.db).init_default_rules_for_business(business.id, commit=False)
+            MessageTemplateService(self.db).init_default_templates_for_business(business.id, commit=False)
+            BusinessSettingsService(self.db).init_default_settings_for_business(business.id, commit=False)
 
-            # 6. Commit transaction
+            # 6. Generate secure 6-digit OTP and store hashed record
+            otp_record = EmailOTP(
+                email=clean_email,
+                hashed_otp=hashed_otp_val,
+                expires_at=expires_at,
+                attempts=0,
+                is_used=False,
+            )
+            self.db.add(otp_record)
+
+            # 7. Dispatch OTP through Brevo service BEFORE final commit
+            brevo = BrevoService()
+            brevo.send_otp_email(to_email=clean_email, otp=otp, to_name=user.name)
+
+            # 8. Atomic commit
             self.db.commit()
             self.db.refresh(user)
             self.db.refresh(business)
 
-            # 7. Send 6-digit OTP verification email to user
-            try:
-                from app.services.email_service import EmailService
-                EmailService.send_verification_otp_email(
-                    to_email=clean_email,
-                    owner_name=user.name,
-                    otp_code=otp,
-                    expires_in_minutes=10,
-                )
-                logger.info("Verification code generated and sent to user email | user_id=%s email=%s", str(user.id), clean_email)
-            except Exception as email_err:
-                logger.warning("Non-blocking verification email send warning: %s", str(email_err))
+            logger.info(
+                "Registration committed & OTP sent | user_id=%s business_id=%s",
+                user.id,
+                business.id,
+            )
 
             return {
                 "success": True,
-                "requires_email_verification": True,
+                "message": "Registration successful. Please verify your email with the 6-digit verification code sent to your inbox.",
                 "email": clean_email,
-                "message": "Verification code sent to your email.",
+                "requires_verification": True,
+                "requires_email_verification": True,
             }
 
         except HTTPException:
@@ -377,35 +427,27 @@ class AuthService:
             ) from exc
 
     # ------------------------------------------------------------------
-    # Email Verification & Resend Endpoints
+    # Verify OTP
     # ------------------------------------------------------------------
 
-    def verify_email(self, email: str, code: str) -> dict:
+    def verify_otp(self, email: str, otp: str) -> dict:
         """
-        Verify the 6-digit OTP code sent to user email.
-        On success, marks email_verified=True and dispatches admin approval notification.
+        Verify submitted 6-digit OTP code against the stored hash.
+        Marks email as verified while preserving the existing PENDING admin approval status.
         """
         clean_email = (email or "").strip().lower()
-        clean_code = (code or "").strip()
-        logger.info("Email verification attempt | email=%s", clean_email)
+        clean_otp = (otp or "").strip()
+        logger.info("Verify OTP request | email=%s", clean_email)
 
-        if not clean_email or not clean_code:
+        if not clean_email or not clean_otp:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email and 6-digit verification code are required.",
             )
 
-        user = self.db.scalar(
-            select(User)
-            .join(Business, User.business_id == Business.id)
-            .where(
-                func.lower(User.email) == clean_email,
-                Business.is_deleted.is_(False),
-                User.status != "DELETED",
-            )
-        )
-
+        user = self.user_repo.get_by_email(clean_email)
         if not user:
+            # Fallback search by business email
             biz = self.db.scalar(
                 select(Business).where(
                     func.lower(Business.email) == clean_email,
@@ -422,65 +464,87 @@ class AuthService:
                 )
 
         if not user:
-            logger.warning("Email verification rejected — user not found | email=%s", clean_email)
+            logger.warning("Verify OTP rejected — user not found | email=%s", clean_email)
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid verification request.",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Account with this email address was not found.",
             )
 
-        if user.email_verified:
+        if user.is_verified and user.email_verified:
             return {
                 "success": True,
+                "verified": True,
                 "email_verified": True,
                 "status": "ADMIN_PENDING",
-                "message": "Email is already verified. Your registration request has been sent for admin approval.",
+                "message": "Email is already verified. Your account is pending administrator approval.",
             }
 
-        if not user.verification_code_hash:
+        # Find latest OTP record for this email
+        otp_record = (
+            self.db.query(EmailOTP)
+            .filter(EmailOTP.email == clean_email)
+            .order_by(EmailOTP.created_at.desc())
+            .first()
+        )
+
+        if not otp_record:
+            logger.warning("Verify OTP rejected — no OTP record | email=%s", clean_email)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No active verification code found. Please request a new code.",
+                detail="No verification code found. Please request a new code.",
             )
 
-        # Check maximum verification attempts (5 attempts limit)
-        if (user.verification_attempts or 0) >= 5:
-            user.verification_code_hash = None
-            user.verification_code_expires_at = None
+        if otp_record.is_used:
+            logger.warning("Verify OTP rejected — already used | email=%s", clean_email)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This verification code has already been used. Please request a new one.",
+            )
+
+        now = datetime.now(timezone.utc)
+        exp = otp_record.expires_at
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+
+        if now > exp:
+            logger.warning("Verify OTP rejected — expired | email=%s", clean_email)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Verification code has expired. Please request a new code.",
+            )
+
+        if otp_record.attempts >= 5:
+            logger.warning("Verify OTP rejected — max attempts exceeded | email=%s", clean_email)
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed attempts. This code is locked. Please request a new code.",
+            )
+
+        if not verify_otp_hash(clean_email, clean_otp, otp_record.hashed_otp):
+            otp_record.attempts += 1
             self.db.commit()
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Too many incorrect attempts. Please request a new verification code.",
+            remaining = 5 - otp_record.attempts
+            logger.warning(
+                "Verify OTP rejected — invalid code | email=%s attempts=%d",
+                clean_email,
+                otp_record.attempts,
             )
-
-        now_utc = datetime.now(timezone.utc)
-        if user.verification_code_expires_at and now_utc > user.verification_code_expires_at:
-            user.verification_code_hash = None
-            user.verification_code_expires_at = None
-            self.db.commit()
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This verification code has expired. Please request a new code.",
-            )
-
-        if not verify_otp(clean_code, user.verification_code_hash):
-            user.verification_attempts = (user.verification_attempts or 0) + 1
-            if user.verification_attempts >= 5:
-                user.verification_code_hash = None
-                user.verification_code_expires_at = None
-                self.db.commit()
+            if remaining > 0:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Too many incorrect attempts. Please request a new verification code.",
+                    detail=f"Invalid verification code. {remaining} attempt(s) remaining.",
                 )
-            self.db.commit()
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Incorrect verification code. Please try again.",
-            )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Too many failed attempts. This code is locked. Please request a new code.",
+                )
 
-        # Verification successful
+        # Successful verification
+        otp_record.is_used = True
+        user.is_verified = True
         user.email_verified = True
-        user.email_verified_at = now_utc
+        user.email_verified_at = now
         user.verification_code_hash = None
         user.verification_code_expires_at = None
         user.verification_attempts = 0
@@ -495,59 +559,48 @@ class AuthService:
         if business:
             self.db.refresh(business)
 
-        logger.info("Email verified successfully | user_id=%s email=%s", str(user.id), user.email)
+        logger.info("Email verified successfully | user_id=%s email=%s", user.id, clean_email)
 
-        # Send Admin New Signup Notification Email now that merchant is email-verified
+        # Non-blocking notification to admin
         try:
             from app.services.email_service import EmailService
             bt_name = getattr(business.business_type, "name", "") if business and business.business_type else ""
-            sent, err_msg = EmailService.send_new_signup_notification(
+            EmailService.send_new_signup_notification(
                 business_name=business.name if business else "N/A",
                 owner_name=user.name,
                 owner_email=user.email,
                 business_type=bt_name,
-                signup_time=business.created_at or now_utc if business else now_utc,
+                signup_time=business.created_at or now if business else now,
                 business_id=str(business.id) if business else None,
             )
-            if sent:
-                logger.info("Admin signup notification email sent successfully for user ID %s (business ID: %s)", str(user.id), str(business.id) if business else "N/A")
-            else:
-                logger.warning("Failed to send admin signup notification email for user ID %s: %s", str(user.id), err_msg or "Unknown error")
         except Exception as email_err:
-            logger.warning("Non-blocking signup admin email notification error: %s", str(email_err))
+            logger.warning("Admin signup notification skipped: %s", str(email_err))
 
         return {
             "success": True,
+            "verified": True,
             "email_verified": True,
             "status": "ADMIN_PENDING",
-            "message": "Email verified successfully. Your registration request has been sent for admin approval.",
+            "message": "Email verified successfully! Your registration is now pending administrator approval.",
         }
 
-    def resend_verification(self, email: str) -> dict:
+    def verify_email(self, email: str, code: str) -> dict:
+        """Alias for verify_otp to support both frontend and API route patterns."""
+        return self.verify_otp(email=email, otp=code)
+
+    # ------------------------------------------------------------------
+    # Resend OTP
+    # ------------------------------------------------------------------
+
+    def resend_otp(self, email: str) -> dict:
         """
-        Resend a new 6-digit OTP code to unverified user email with 60-second rate limiting cooldown.
+        Enforces 60-second cooldown, invalidates older active OTPs, generates
+        a new 6-digit code, and dispatches via Brevo.
         """
         clean_email = (email or "").strip().lower()
-        logger.info("Resend verification code requested | email=%s", clean_email)
+        logger.info("Resend OTP request | email=%s", clean_email)
 
-        generic_response = {
-            "success": True,
-            "message": "A new verification code has been sent to your email.",
-        }
-
-        if not clean_email:
-            return generic_response
-
-        user = self.db.scalar(
-            select(User)
-            .join(Business, User.business_id == Business.id)
-            .where(
-                func.lower(User.email) == clean_email,
-                Business.is_deleted.is_(False),
-                User.status != "DELETED",
-            )
-        )
-
+        user = self.user_repo.get_by_email(clean_email)
         if not user:
             biz = self.db.scalar(
                 select(Business).where(
@@ -565,51 +618,85 @@ class AuthService:
                 )
 
         if not user:
-            logger.info("Resend verification: user not found for %s", clean_email)
-            return generic_response
+            logger.warning("Resend OTP rejected — user not found | email=%s", clean_email)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Account with this email address was not found.",
+            )
 
-        if user.email_verified:
-            return {
-                "success": True,
-                "message": "This email is already verified. You can proceed to sign in.",
-            }
+        if user.is_verified and user.email_verified:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Your email is already verified. No new code is required.",
+            )
 
-        now_utc = datetime.now(timezone.utc)
+        # Rate limiting: 60s cooldown from latest OTP record
+        now = datetime.now(timezone.utc)
+        latest_otp = (
+            self.db.query(EmailOTP)
+            .filter(EmailOTP.email == clean_email)
+            .order_by(EmailOTP.created_at.desc())
+            .first()
+        )
 
-        # Enforce 60-second cooldown
-        if user.verification_last_sent_at:
-            elapsed = (now_utc - user.verification_last_sent_at).total_seconds()
+        if latest_otp and latest_otp.created_at:
+            created_at = latest_otp.created_at
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            elapsed = (now - created_at).total_seconds()
             if elapsed < 60:
-                remaining = int(60 - elapsed)
+                cooldown_remaining = int(60 - elapsed)
+                logger.warning(
+                    "Resend OTP rejected — cooldown active | email=%s remaining=%ds",
+                    clean_email,
+                    cooldown_remaining,
+                )
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"Please wait {remaining} seconds before requesting another code.",
+                    detail=f"Please wait {cooldown_remaining} seconds before requesting a new code.",
                 )
 
-        otp = str(secrets.randbelow(900000) + 100000)
-        user.verification_code_hash = hash_otp(otp)
-        user.verification_code_expires_at = now_utc + timedelta(minutes=10)
+        # Invalidate any previous unused OTPs
+        self.db.query(EmailOTP).filter(
+            EmailOTP.email == clean_email,
+            EmailOTP.is_used == False,
+        ).update({"is_used": True})
+
+        # Generate new OTP
+        otp = generate_otp()
+        hashed = hash_otp(clean_email, otp)
+        expires_at = now + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
+
+        new_record = EmailOTP(
+            email=clean_email,
+            hashed_otp=hashed,
+            expires_at=expires_at,
+            attempts=0,
+            is_used=False,
+        )
+        self.db.add(new_record)
+
+        # Sync on user entity as well
+        user.verification_code_hash = hashed
+        user.verification_code_expires_at = expires_at
         user.verification_attempts = 0
-        user.verification_last_sent_at = now_utc
+        user.verification_last_sent_at = now
+
+        # Send via Brevo before commit
+        brevo = BrevoService()
+        brevo.send_otp_email(to_email=clean_email, otp=otp, to_name=user.name)
 
         self.db.commit()
-
-        try:
-            from app.services.email_service import EmailService
-            EmailService.send_verification_otp_email(
-                to_email=user.email,
-                owner_name=user.name,
-                otp_code=otp,
-                expires_in_minutes=10,
-            )
-            logger.info("Resent verification code to %s", user.email)
-        except Exception as email_err:
-            logger.warning("Failed to resend verification email: %s", str(email_err))
+        logger.info("Resend OTP dispatched successfully | email=%s", clean_email)
 
         return {
             "success": True,
-            "message": "A new verification code has been sent to your email.",
+            "message": "A new verification code has been sent to your email."
         }
+
+    def resend_verification(self, email: str) -> dict:
+        """Alias for resend_otp to support both frontend and API route patterns."""
+        return self.resend_otp(email=email)
 
     # ------------------------------------------------------------------
     # Login (Supports Owner Email OR Staff Auto-Generated Login ID)
@@ -633,7 +720,7 @@ class AuthService:
         if not identifier:
             raise _invalid
 
-        # 1. Detection: If identifier contains '@', lookup by email; else lookup by login_id (ignore soft-deleted)
+        # 1. Lookup by email or login_id
         if "@" in identifier:
             user = self.db.scalar(
                 select(User)
@@ -641,7 +728,6 @@ class AuthService:
                 .where(
                     func.lower(User.email) == identifier.lower(),
                     Business.is_deleted.is_(False),
-                    User.is_active.is_(True),
                     User.status != "DELETED",
                 )
             )
@@ -652,7 +738,6 @@ class AuthService:
                 .where(
                     func.lower(User.login_id) == identifier.lower(),
                     Business.is_deleted.is_(False),
-                    User.is_active.is_(True),
                     User.status != "DELETED",
                 )
             )
@@ -666,15 +751,15 @@ class AuthService:
             logger.warning("Login rejected — wrong password | identifier=%s", identifier)
             raise _invalid
 
-        # 2.5. Guard: Email verification check
-        if not user.email_verified:
+        # 3. Guard: Email verification check
+        if not (user.is_verified or user.email_verified):
             logger.warning("Login rejected — email not verified | user_id=%s email=%s", user.id, user.email)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Please verify your email address before logging in.",
+                detail="Please verify your email address before signing in.",
             )
 
-        # 3. Guard: active account and status ACTIVE
+        # 4. Guard: active account
         if not user.is_active or (user.status and user.status.upper() in ["INACTIVE", "DELETED"]):
             logger.warning("Login rejected — account inactive | user_id=%s", user.id)
             raise HTTPException(
@@ -682,7 +767,7 @@ class AuthService:
                 detail="This staff account has been deactivated by Business Owner.",
             )
 
-        # 4. Guard: business status must be ACTIVE
+        # 5. Guard: business status must be ACTIVE
         business = self.business_repo.get_by_id(user.business_id)
         if not business or business.is_deleted or business.status != "ACTIVE":
             status_val = business.status if (business and not business.is_deleted) else "DELETED"
@@ -714,11 +799,11 @@ class AuthService:
                     detail="Your business account is not active.",
                 )
 
-        # 5. Record last_login timestamp
+        # 6. Record last_login timestamp
         user.last_login = datetime.now(timezone.utc)
         self.db.commit()
 
-        # 6. Issue JWT access token
+        # 7. Issue JWT access token
         token = create_access_token(
             {
                 "sub": str(user.id),
@@ -728,7 +813,7 @@ class AuthService:
         )
         logger.info("Login successful | user_id=%s role=%s", user.id, user.role)
 
-        # 7. Register / update active device session
+        # 8. Register / update active device session
         try:
             from app.repositories.user_session_repository import UserSessionRepository
             session_repo = UserSessionRepository(self.db)
@@ -891,7 +976,6 @@ class AuthService:
 
         except Exception as exc:
             logger.error("Error during forgot_password processing: %s", str(exc))
-            # Always return generic message to caller
             return generic_response
 
         return generic_response
