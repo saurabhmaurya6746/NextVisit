@@ -117,6 +117,10 @@ class OrderService:
         stmt = select(RestaurantTable).where(RestaurantTable.id == data.table_id)
         table = self.db.scalar(stmt)
         if not table or not table.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Restaurant table '{data.table_id}' not found or inactive.",
+            )
         target_business_id = table.business_id
 
         # Customer details logic:
