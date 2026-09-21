@@ -12,6 +12,7 @@ from app.api.v1.admin_clients.router import router as admin_clients_router
 from app.api.v1.admin_dashboard.router import router as admin_dashboard_router
 from app.api.v1.admin_settings.router import router as admin_settings_router
 from app.api.v1.admin_subscriptions.router import router as admin_subscriptions_router
+from app.api.v1.credit_management.router import router as credit_management_router
 from app.api.v1.auth.router import router as auth_router
 from app.api.v1.automation.router import router as automation_router
 from app.api.v1.business.router import router as business_router
@@ -28,10 +29,23 @@ from app.api.v1.orders.router import router as orders_router
 from app.api.v1.services.router import router as services_router
 from app.api.v1.staff.router import router as staff_router
 from app.api.v1.dining_areas.router import router as dining_areas_router
+from app.api.v1.festivals.router import router as festivals_router
 from app.api.v1.setup.router import router as setup_router
 from app.api.v1.tables.router import router as tables_router
 from app.api.v1.uploads.router import router as uploads_router
 from app.api.v1.visits.router import router as visits_router
+from app.api.v1.qr.router import router as qr_router
+from app.api.v1.customer_recovery.router import router as customer_recovery_router
+from app.api.v1.review_booster.router import router as review_booster_router
+from app.api.v1.coupons.router import router as coupons_router
+from app.api.v1.reports.router import router as reports_router
+from app.api.v1.subscription.router import router as subscription_router
+from app.api.v1.salon.service_areas.router import router as salon_service_areas_router
+from app.api.v1.salon.chairs.router import router as salon_chairs_router
+from app.api.v1.salon.service_categories.router import router as salon_service_categories_router
+from app.api.v1.salon.invoices.router import router as salon_invoices_router
+from app.api.v1.salon.revenue.router import router as salon_revenue_router
+from app.api.v1.calendar.router import router as calendar_router
 from app.db.database import engine
 from app.models.base import Base
 
@@ -83,6 +97,11 @@ app.include_router(
 
 app.include_router(
     admin_subscriptions_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    credit_management_router,
     prefix="/api/v1",
 )
 
@@ -183,6 +202,71 @@ app.include_router(
 
 app.include_router(
     visits_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    qr_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    festivals_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    customer_recovery_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    review_booster_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    coupons_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    reports_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    subscription_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    salon_service_areas_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    salon_chairs_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    salon_service_categories_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    salon_invoices_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    salon_revenue_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    calendar_router,
     prefix="/api/v1",
 )
 

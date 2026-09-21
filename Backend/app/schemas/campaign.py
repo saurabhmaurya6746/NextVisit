@@ -59,9 +59,19 @@ class CampaignGenerateAudienceResponse(BaseModel):
 
 
 class CampaignAiGenerateRequest(BaseModel):
+    campaign_name: str | None = Field(default=None, max_length=150)
     campaign_type: str = Field(..., max_length=100)
+    target_segment: str | None = Field(default=None, max_length=100)
     title: str = Field(..., max_length=200)
     discount: str | None = Field(default=None, max_length=100)
+    message_content: str | None = Field(default=None, max_length=2000)
+    business_name: str | None = Field(default=None, max_length=150)
+    business_type: str | None = Field(default=None, max_length=100)
+    business_address: str | None = Field(default=None, max_length=200)
+    business_phone: str | None = Field(default=None, max_length=50)
+    language: str | None = Field(default=None, max_length=50)
+    length: str | None = Field(default=None, max_length=50)
+    tone: str | None = Field(default=None, max_length=50)
 
 
 class CampaignAiGenerateResponse(BaseModel):

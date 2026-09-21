@@ -1,8 +1,10 @@
+import logging
 import math
 from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.business import Business, BusinessStatus
@@ -10,6 +12,8 @@ from app.models.user import User
 from app.repositories.business_repository import BusinessRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.approval import PaginatedApprovalResponse
+
+logger = logging.getLogger(__name__)
 
 
 class MerchantApprovalService:
@@ -68,7 +72,7 @@ class MerchantApprovalService:
         elif business.status == BusinessStatus.REJECTED.value:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Business is already rejected.",
+                detail="Business was previously rejected. Please review manually.",
             )
         elif business.status == BusinessStatus.SUSPENDED.value:
             raise HTTPException(
@@ -80,14 +84,63 @@ class MerchantApprovalService:
             business.status = BusinessStatus.ACTIVE.value
             business.approved_at = datetime.now(timezone.utc)
 
-            # Ensure business users are active
+            # Ensure business users are active and email verified
             self.db.query(User).filter(User.business_id == business_id).update(
-                {"is_active": True}
+                {"is_active": True, "email_verified": True}
             )
 
             self.db.commit()
             self.db.refresh(business)
+
+            # Non-blocking User Approval Email Notification
+            try:
+                from app.services.email_service import EmailService
+
+                owner_user = (
+                    self.db.query(User)
+                    .filter(User.business_id == business_id)
+                    .filter(func.lower(User.role) == "owner")
+                    .first()
+                )
+                if not owner_user:
+                    owner_user = (
+                        self.db.query(User)
+                        .filter(User.business_id == business_id)
+                        .first()
+                    )
+
+                recipient_email = (
+                    owner_user.email.strip()
+                    if (owner_user and owner_user.email)
+                    else (business.email.strip() if business.email else None)
+                )
+                recipient_name = (
+                    owner_user.name.strip()
+                    if (owner_user and owner_user.name)
+                    else (business.owner_name.strip() if business.owner_name else "Merchant")
+                )
+
+                if recipient_email:
+                    sent, err_msg = EmailService.send_account_approved_email(
+                        owner_email=recipient_email,
+                        owner_name=recipient_name,
+                        business_name=business.name,
+                    )
+                    if sent:
+                        logger.info("Approval email sent successfully to %s", recipient_email)
+                    else:
+                        logger.error("Failed to send approval email: %s", err_msg or "Unknown error")
+                else:
+                    logger.warning(
+                        "Failed to send approval email: No recipient email found for business ID %s",
+                        str(business_id),
+                    )
+            except Exception as email_err:
+                logger.error("Failed to send approval email: %s", str(email_err))
+
             return business
+        except HTTPException:
+            raise
         except Exception as e:
             self.db.rollback()
             raise HTTPException(
@@ -131,10 +184,61 @@ class MerchantApprovalService:
 
             self.db.commit()
             self.db.refresh(business)
+
+            # Non-blocking User Rejection Email Notification
+            try:
+                from app.services.email_service import EmailService
+
+                owner_user = (
+                    self.db.query(User)
+                    .filter(User.business_id == business_id)
+                    .filter(func.lower(User.role) == "owner")
+                    .first()
+                )
+                if not owner_user:
+                    owner_user = (
+                        self.db.query(User)
+                        .filter(User.business_id == business_id)
+                        .first()
+                    )
+
+                recipient_email = (
+                    owner_user.email.strip()
+                    if (owner_user and owner_user.email)
+                    else (business.email.strip() if business.email else None)
+                )
+                recipient_name = (
+                    owner_user.name.strip()
+                    if (owner_user and owner_user.name)
+                    else (business.owner_name.strip() if business.owner_name else "Merchant")
+                )
+
+                if recipient_email:
+                    sent, err_msg = EmailService.send_account_rejected_email(
+                        owner_email=recipient_email,
+                        owner_name=recipient_name,
+                        business_name=business.name,
+                        reason=business.rejection_reason,
+                    )
+                    if sent:
+                        logger.info("Rejection email sent successfully to %s", recipient_email)
+                    else:
+                        logger.error("Failed to send rejection email: %s", err_msg or "Unknown error")
+                else:
+                    logger.warning(
+                        "Failed to send rejection email: No recipient email found for business ID %s",
+                        str(business_id),
+                    )
+            except Exception as email_err:
+                logger.error("Failed to send rejection email: %s", str(email_err))
+
             return business
+        except HTTPException:
+            raise
         except Exception as e:
             self.db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to reject business due to an internal error.",
             ) from e
+

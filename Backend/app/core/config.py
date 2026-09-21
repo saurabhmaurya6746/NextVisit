@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     BREVO_SENDER_EMAIL: str = "saurabhmauryajnp28@gmail.com"
     BREVO_SENDER_NAME: str = "Nextvisit"
     OTP_EXPIRE_MINUTES: int = 10
+    RESEND_API_KEY: str = ""
+    RESEND_FROM_EMAIL: str = "NextVisit <onboarding@resend.dev>"
+    NEXTVISIT_ADMIN_EMAIL: str = "saurabhmauryajnp28@gmail.com"
+    FRONTEND_URL: str = "http://localhost:5173"
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -18,5 +22,3 @@ class Settings(BaseSettings):
     )
 
 settings = Settings()
-
-

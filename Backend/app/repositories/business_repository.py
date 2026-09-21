@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
 from app.models.business import Business
 from app.repositories.base_repository import BaseRepository
@@ -15,7 +16,11 @@ class BusinessRepository(BaseRepository):
         return business
 
     def get_by_id(self, business_id: UUID) -> Business | None:
-        stmt = select(Business).where(Business.id == business_id)
+        stmt = (
+            select(Business)
+            .options(joinedload(Business.business_type))
+            .where(Business.id == business_id)
+        )
         return self.db.scalar(stmt)
 
     def update(self, business: Business) -> Business:
@@ -37,10 +42,18 @@ class BusinessRepository(BaseRepository):
     ) -> tuple[list[Business], int]:
         from sqlalchemy import func, or_
         from app.models.business import BusinessStatus
+        from app.models.user import User
 
         stmt = select(Business).where(
             Business.status == BusinessStatus.PENDING.value,
             Business.is_deleted == False,
+            Business.id.in_(
+                select(User.business_id).where(
+                    User.email_verified == True,
+                    func.lower(User.role) == "owner",
+                    User.status != "DELETED",
+                )
+            ),
         )
 
         if search and search.strip():

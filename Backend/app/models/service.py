@@ -27,6 +27,12 @@ class Service(BaseModel):
         nullable=False,
     )
 
+    category_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("salon_service_categories.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
@@ -40,7 +46,15 @@ class Service(BaseModel):
         nullable=False,
     )
 
+    service_category = relationship("SalonServiceCategory", lazy="joined")
+
     business = relationship(
         "Business",
         back_populates="services",
     )
+
+    @property
+    def category_name(self) -> str | None:
+        if self.service_category and self.service_category.name:
+            return self.service_category.name
+        return self.category

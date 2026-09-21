@@ -133,7 +133,11 @@ class ClientManagementService:
         loyalty = self.db.scalar(
             select(LoyaltySettings).where(LoyaltySettings.business_id == business_id)
         )
-        loyalty_enabled = loyalty.is_enabled if loyalty else False
+        loyalty_enabled = (
+            (loyalty.is_active if hasattr(loyalty, "is_active") else getattr(loyalty, "is_enabled", False))
+            if loyalty
+            else False
+        )
 
         # Business Settings
         b_settings = self.db.scalar(
@@ -152,6 +156,9 @@ class ClientManagementService:
                 "review_link": b_settings.review_link,
                 "booking_link": b_settings.booking_link,
             }
+
+        from app.services.subscription_limit_service import SubscriptionLimitService
+        sub_summary = SubscriptionLimitService(self.db).get_full_usage_summary(business_id)
 
         last_login = self._get_last_login_for_business(business_id)
         bt_resp = (
@@ -247,13 +254,23 @@ class ClientManagementService:
             )
 
         try:
+            import uuid as uuid_lib
+            suffix = uuid_lib.uuid4().hex[:8]
+
             business.is_deleted = True
             business.is_active = False
+            if business.email and not business.email.startswith("deleted_"):
+                business.email = f"deleted_{suffix}_{business.email}"
 
-            # Deactivate linked users
-            self.db.query(User).filter(User.business_id == business_id).update(
-                {"is_active": False}
-            )
+            # Deactivate and update emails/login_ids of all linked users (owner + staff)
+            linked_users = self.db.query(User).filter(User.business_id == business_id).all()
+            for user in linked_users:
+                user.is_active = False
+                user.status = "DELETED"
+                if user.email and not user.email.startswith("deleted_"):
+                    user.email = f"deleted_{suffix}_{user.email}"
+                if user.login_id and not user.login_id.startswith("deleted_"):
+                    user.login_id = f"deleted_{suffix}_{user.login_id}"
 
             self.db.commit()
             return {"message": "Client business soft-deleted successfully."}

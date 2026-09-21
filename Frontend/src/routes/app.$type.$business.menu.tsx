@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -70,8 +70,7 @@ function blankItem(categoryId: string) {
     category_id: categoryId,
     name: "",
     description: "",
-    price: 0,
-    gst_percentage: 0,
+    price: "",
     is_veg: true,
     is_available: true,
     display_order: 0,
@@ -81,7 +80,7 @@ function blankItem(categoryId: string) {
 // ---------------------------------------------------------------------------
 // Main Page
 // ---------------------------------------------------------------------------
-function MenuPage() {
+export default function MenuPage() {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [activeCatId, setActiveCatId] = useState<string>("all");
@@ -191,64 +190,67 @@ function MenuPage() {
     <PageTransition>
       <PageHeader
         title="Menu"
-        description={`${allItems.length} items · ${categories.length} categories`}
+        description={`${allItems.length} ${allItems.length === 1 ? "item" : "items"} · ${categories.length} ${categories.length === 1 ? "category" : "categories"}`}
         actions={
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto">
             <Button
               size="sm"
               variant="outline"
-              className="rounded-full"
+              className="rounded-full text-xs h-8 px-3 flex-1 sm:flex-none justify-center cursor-pointer"
               onClick={() => setCatDialog({ open: true, mode: "create", data: null })}
             >
-              <Tag className="mr-1.5 h-4 w-4" /> New Category
+              <Tag className="mr-1.5 h-3.5 w-3.5" /> New Category
             </Button>
             <Button
               size="sm"
-              className="rounded-full gradient-brand text-primary-foreground"
+              className="rounded-full gradient-brand text-primary-foreground text-xs h-8 px-3 flex-1 sm:flex-none justify-center cursor-pointer transition-transform hover:scale-105 active:scale-95"
               disabled={categories.length === 0}
               onClick={() =>
                 setItemDialog({ open: true, mode: "create", data: null, categoryId: categories[0]?.id ?? "" })
               }
             >
-              <Plus className="mr-1.5 h-4 w-4" /> Add Item
+              <Plus className="mr-1.5 h-3.5 w-3.5" /> Add Item
             </Button>
           </div>
         }
       />
 
-      {/* Search + category tabs */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[220px]">
+      {/* Search & Category Filter Chips Row */}
+      <div className="space-y-3 mb-4">
+        {/* Search Box */}
+        <div className="relative w-full">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search dishes…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            className="rounded-full pl-9"
+            className="rounded-full pl-9 h-9 text-xs"
           />
         </div>
-        <div className="flex flex-wrap gap-1.5">
+
+        {/* Category Horizontal Scroll Chips */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 no-scrollbar max-w-full">
           <button
             onClick={() => setActiveCatId("all")}
-            className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+            className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-xs transition-all cursor-pointer font-medium ${
               activeCatId === "all"
-                ? "gradient-brand text-primary-foreground border-transparent"
-                : "hover:border-primary"
+                ? "gradient-brand text-primary-foreground border-transparent shadow-2xs"
+                : "hover:border-primary bg-background text-muted-foreground hover:text-foreground"
             }`}
           >
-            All
+            All ({allItems.length})
           </button>
           {categories.map((c) => (
             <button
               key={c.id}
               onClick={() => setActiveCatId(c.id)}
-              className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+              className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-xs transition-all cursor-pointer font-medium ${
                 activeCatId === c.id
-                  ? "gradient-brand text-primary-foreground border-transparent"
-                  : "hover:border-primary"
+                  ? "gradient-brand text-primary-foreground border-transparent shadow-2xs"
+                  : "hover:border-primary bg-background text-muted-foreground hover:text-foreground"
               }`}
             >
-              {c.name}
+              {c.name} ({c.items?.length || 0})
             </button>
           ))}
         </div>
@@ -287,137 +289,152 @@ function MenuPage() {
 
       {/* Item list */}
       {!isLoading && !isError && categories.length > 0 && (
-        <Card className="rounded-2xl">
-          <CardContent className="p-3">
-            {filteredItems.length === 0 ? (
-              <div className="grid place-items-center py-12 text-center text-muted-foreground">
-                <BookOpen className="mb-2 h-8 w-8" />
-                <p className="text-sm">No dishes match. Try a different filter or add a new item.</p>
-              </div>
-            ) : (
-              <div className="grid gap-2 md:grid-cols-2">
-                {filteredItems.map((item) => {
-                  const cat = categories.find((c) => c.id === item.category_id);
-                  return (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between rounded-xl border p-3 hover:bg-muted/40 gap-2"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="truncate font-medium">{item.name}</p>
+        <div className="space-y-3">
+          {filteredItems.length === 0 ? (
+            <Card className="rounded-2xl p-8 text-center text-muted-foreground border bg-card">
+              <BookOpen className="mx-auto mb-2 h-8 w-8 text-muted-foreground/60" />
+              <p className="text-sm font-medium">No dishes match.</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Try a different search or filter.</p>
+            </Card>
+          ) : (
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              {filteredItems.map((item) => {
+                const cat = categories.find((c) => c.id === item.category_id);
+                return (
+                  <Card
+                    key={item.id}
+                    className="rounded-2xl border p-3.5 bg-card shadow-xs hover:border-primary/40 transition-all flex flex-col justify-between gap-2.5"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="font-semibold text-sm text-foreground break-words leading-tight">{item.name}</p>
                           {item.is_veg ? (
                             <Leaf className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                           ) : (
                             <span className="h-3 w-3 rounded-full bg-rose-500 shrink-0 inline-block" />
                           )}
-                          {cat && (
-                            <Badge variant="outline" className="rounded-full text-[10px] shrink-0">
+                        </div>
+                        {cat && (
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <Badge variant="outline" className="rounded-full text-[10px] font-medium py-0 px-2">
                               {cat.name}
                             </Badge>
-                          )}
-                          {!item.is_available && (
-                            <Badge variant="secondary" className="rounded-full text-[10px] shrink-0">
-                              Unavailable
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {fmt(item.price)}
-                          {item.gst_percentage > 0 && (
-                            <span className="ml-1 text-muted-foreground/60">
-                              +{item.gst_percentage}% GST
-                            </span>
-                          )}
-                        </p>
+                            {!item.is_available && (
+                              <Badge variant="secondary" className="rounded-full text-[10px] py-0 px-2">
+                                Unavailable
+                              </Badge>
+                            )}
+                          </div>
+                        )}
                         {item.description && (
-                          <p className="mt-0.5 text-xs text-muted-foreground/70 line-clamp-1">
+                          <p className="text-xs text-muted-foreground break-words line-clamp-2 leading-relaxed">
                             {item.description}
                           </p>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-border/40 gap-2">
+                      <span className="font-mono text-base font-bold text-foreground">
+                        {fmt(item.price)}
+                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <Switch
                           checked={item.is_available}
                           onCheckedChange={(v) =>
                             updateItemMut.mutate({ id: item.id, payload: { is_available: v } })
                           }
+                          aria-label="Toggle availability"
                         />
                         <Button
-                          size="sm"
+                          size="icon"
                           variant="ghost"
-                          className="rounded-full"
+                          className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground cursor-pointer"
                           onClick={() =>
                             setItemDialog({ open: true, mode: "edit", data: item, categoryId: item.category_id })
                           }
+                          aria-label="Edit item"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="text-destructive"
+                          className="h-8 w-8 rounded-full text-destructive hover:bg-destructive/10 cursor-pointer"
                           onClick={() => setDeleteItem(item)}
+                          aria-label="Delete item"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Category by section (only when viewing all) */}
       {!isLoading && !isError && categories.length > 0 && activeCatId === "all" && q === "" && (
-        <div className="mt-4 space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1">
-            Manage Categories
-          </p>
-          {categories.map((cat) => (
-            <div key={cat.id} className="flex items-center justify-between rounded-xl border p-3 hover:bg-muted/40">
-              <div className="flex items-center gap-3">
-                <div>
-                  <p className="font-medium text-sm">{cat.name}</p>
-                  <p className="text-xs text-muted-foreground">{cat.items.length} items</p>
+        <section className="mt-8 space-y-3">
+          <div className="flex items-center gap-2 px-1">
+            <Tag className="h-4 w-4 text-primary" />
+            <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              Manage Categories
+            </h3>
+          </div>
+          <div className="space-y-2.5">
+            {categories.map((cat) => (
+              <Card
+                key={cat.id}
+                className="flex flex-wrap sm:flex-nowrap items-center justify-between rounded-2xl border p-3.5 bg-card shadow-xs gap-3 hover:border-primary/30 transition-all"
+              >
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-semibold text-sm text-foreground break-words">{cat.name}</p>
+                    {!cat.is_active && (
+                      <Badge variant="secondary" className="rounded-full text-[10px]">Hidden</Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{cat.items.length} {cat.items.length === 1 ? "item" : "items"}</p>
                 </div>
-                {!cat.is_active && (
-                  <Badge variant="secondary" className="rounded-full text-[10px]">Hidden</Badge>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="rounded-full text-xs"
-                  onClick={() =>
-                    setItemDialog({ open: true, mode: "create", data: null, categoryId: cat.id })
-                  }
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Item
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => setCatDialog({ open: true, mode: "edit", data: cat })}
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="text-destructive"
-                  onClick={() => setDeleteCat(cat)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
+                <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="rounded-full text-xs h-7 px-2.5 cursor-pointer"
+                    onClick={() =>
+                      setItemDialog({ open: true, mode: "create", data: null, categoryId: cat.id })
+                    }
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Add Item
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 rounded-full text-muted-foreground hover:text-foreground cursor-pointer"
+                    onClick={() => setCatDialog({ open: true, mode: "edit", data: cat })}
+                    aria-label="Edit category"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 rounded-full text-destructive hover:bg-destructive/10 cursor-pointer"
+                    onClick={() => setDeleteCat(cat)}
+                    aria-label="Delete category"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </section>
       )}
 
       {/* Category Dialog */}
@@ -598,8 +615,7 @@ function ItemDialog({ open, mode, initial, defaultCategoryId, categories, onClos
           category_id: initial.category_id,
           name: initial.name,
           description: initial.description ?? "",
-          price: initial.price,
-          gst_percentage: initial.gst_percentage,
+          price: initial.price !== undefined && initial.price !== null ? String(initial.price) : "",
           is_veg: initial.is_veg,
           is_available: initial.is_available,
           display_order: initial.display_order,
@@ -630,14 +646,19 @@ function ItemDialog({ open, mode, initial, defaultCategoryId, categories, onClos
       toast.error("Please select a category");
       return;
     }
-    if (form.price < 0) {
+    const parsedPrice = Number(form.price);
+    if (form.price === "" || isNaN(parsedPrice) || parsedPrice < 0) {
       toast.error("Price must be 0 or more");
       return;
     }
     onSave({
-      ...form,
+      category_id: form.category_id,
       name: form.name.trim(),
       description: form.description?.trim() || undefined,
+      price: parsedPrice,
+      is_veg: form.is_veg,
+      is_available: form.is_available,
+      display_order: form.display_order,
     });
   }
 
@@ -676,28 +697,16 @@ function ItemDialog({ open, mode, initial, defaultCategoryId, categories, onClos
               </SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label className="text-xs">Price (₹) *</Label>
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                value={form.price}
-                onChange={(e) => setForm({ ...form, price: Number(e.target.value) || 0 })}
-              />
-            </div>
-            <div>
-              <Label className="text-xs">GST %</Label>
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                step="0.5"
-                value={form.gst_percentage}
-                onChange={(e) => setForm({ ...form, gst_percentage: Number(e.target.value) || 0 })}
-              />
-            </div>
+          <div>
+            <Label className="text-xs">Price (₹) *</Label>
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              placeholder="0"
+              value={form.price}
+              onChange={(e) => setForm({ ...form, price: e.target.value })}
+            />
           </div>
           <div>
             <Label className="text-xs">Description (optional)</Label>

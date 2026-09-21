@@ -1,5 +1,6 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ArrowRight } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
+import { ArrowRight, Loader2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,58 +18,53 @@ export const Route = createFileRoute("/login/")({
   component: UnifiedLogin,
 });
 
-// Demo credentials → role routing.
-const DEMO: Record<string, { role: string; type?: "restaurant" | "salon"; adminTarget?: string }> = {
-  "admin@nextvisit.com": { role: "Super Admin", adminTarget: "/admin" },
-  "demo@restaurant.com": { role: "Restaurant Owner", type: "restaurant" },
-  "demo@salon.com": { role: "Salon Owner", type: "salon" },
-};
-
-function appTargetFor(type: "restaurant" | "salon", nameOverride?: string) {
-  const profile = readProfile(type) as { name?: string };
-  const name = nameOverride || profile?.name || type;
-  const business = slugify(name);
-  return { url: `/app/${type}/${business}/dashboard`, slug: business, name };
-}
-
-function UnifiedLogin() {
+export default function UnifiedLogin() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (loading || transitioning) return;
     setLoading(true);
 
+    const cleanEmail = email.trim();
+
     try {
-      if (email.toLowerCase().includes("admin")) {
-        console.log("[LOGIN/INDEX] Calling adminLoginApi for super admin...");
-        await adminLoginApi(email, password);
-        toast.success(`Welcome back — signing you into Super Admin`);
-        window.location.href = "/admin";
-        return;
+      // 1. If email contains 'admin', try Super Admin login first
+      if (cleanEmail.toLowerCase().includes("admin")) {
+        try {
+          console.log("[LOGIN/INDEX] Calling adminLoginApi for super admin...");
+          const session = await adminLoginApi(cleanEmail, password);
+          setTransitioning(true);
+          toast.success(`Welcome back — signing you into Super Admin`);
+          window.location.href = "/admin";
+          return;
+        } catch (adminErr) {
+          console.log("[LOGIN/INDEX] Super Admin auth attempt skipped/failed, proceeding to merchant/staff login...", adminErr);
+        }
       }
 
-      console.log("[LOGIN/INDEX] Calling loginApi with:", { email, password });
-      const session = await loginApi(email, password);
-      const type: "restaurant" | "salon" = email.toLowerCase().includes("salon") ? "salon" : "restaurant";
-      const slug = slugify(session.businessName || type);
+      // 2. Otherwise/Fallback: Business Owner or Staff login
+      console.log("[LOGIN/INDEX] Calling loginApi with:", { cleanEmail, password });
+      const session = await loginApi(cleanEmail, password);
+      setTransitioning(true);
+      const type: "restaurant" | "salon" = session.businessType || "restaurant";
+      const slug = session.businessSlug || slugify(session.businessName || type);
       setBusinessType(type);
-      setSession({
-        ...session,
-        businessType: type,
-        businessSlug: slug,
-      });
       toast.success(`Welcome back — signing you into NextVisit`);
       window.location.href = `/app/${type}/${slug}/dashboard`;
     } catch (err: any) {
       console.error("[LOGIN/INDEX] loginApi error:", err);
-      toast.error(err.message || "Incorrect email or password.");
-    } finally {
+      toast.error(err.message || "Incorrect Email / Staff ID or password.");
       setLoading(false);
+      setTransitioning(false);
     }
   };
+
+  const isBusy = loading || transitioning;
 
   return (
     <div className="relative flex min-h-screen flex-col bg-background">
@@ -83,19 +79,68 @@ function UnifiedLogin() {
             <h1 className="font-display text-2xl font-semibold">Sign in to NextVisit</h1>
             <p className="mt-1 text-sm text-muted-foreground">Enter your credentials to access your dashboard.</p>
           </div>
-          <form onSubmit={submit} className="mt-8 space-y-4">
-            <div className="space-y-1.5"><Label htmlFor="email">Email</Label><Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@business.com" /></div>
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
-                <button type="button" onClick={() => toast("Password reset link sent if the email exists.")} className="text-xs text-muted-foreground hover:text-foreground">Forgot password?</button>
+
+          {transitioning ? (
+            <div className="mt-8 rounded-2xl border bg-card/60 backdrop-blur-sm p-8 text-center space-y-3 shadow-sm animate-in fade-in-50 duration-200">
+              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Loader2 className="h-5 w-5 animate-spin" />
               </div>
-              <PasswordInput id="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-foreground">Signing you in…</p>
+                <p className="text-xs text-muted-foreground">Preparing your dashboard</p>
+              </div>
             </div>
-            <Button type="submit" disabled={loading} className="w-full rounded-full gradient-brand text-primary-foreground shadow-glow">
-              {loading ? "Signing in…" : (<>Sign in <ArrowRight className="ml-1.5 h-4 w-4" /></>)}
-            </Button>
-          </form>
+          ) : (
+            <form onSubmit={submit} className="mt-8 space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="email">Email / Staff Login ID</Label>
+                <Input
+                  id="email"
+                  type="text"
+                  required
+                  disabled={isBusy}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="owner@business.com or ST001"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Password</Label>
+                  <Link
+                    to="/forgot-password"
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
+                <PasswordInput
+                  id="password"
+                  required
+                  disabled={isBusy}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+              <Button
+                type="submit"
+                disabled={isBusy}
+                className="w-full rounded-full gradient-brand text-primary-foreground shadow-glow"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Signing in…
+                  </>
+                ) : (
+                  <>
+                    Sign in <ArrowRight className="ml-1.5 h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </form>
+          )}
+
           <p className="mt-8 text-center text-xs text-muted-foreground">
             New here? <Link to="/signup" className="text-primary hover:underline">Create an account</Link>
           </p>

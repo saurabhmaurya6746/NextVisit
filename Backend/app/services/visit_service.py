@@ -41,6 +41,43 @@ class VisitService:
         )
         return self.repo.get_all_by_business(current_user.business_id)
 
+    def get_paginated_visits(
+        self,
+        current_user: User,
+        page: int = 1,
+        limit: int = 10,
+        search: str | None = None,
+        status: str | None = None,
+        payment_status: str | None = None,
+        staff_id: UUID | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        booking_source: str | None = None,
+        sort: str | None = "newest",
+    ) -> dict:
+        logger.info(
+            "Fetching paginated visits | business_id=%s page=%s limit=%s search=%s status=%s sort=%s",
+            current_user.business_id,
+            page,
+            limit,
+            search,
+            status,
+            sort,
+        )
+        return self.repo.get_paginated_by_business(
+            business_id=current_user.business_id,
+            page=page,
+            limit=limit,
+            search=search,
+            status=status,
+            payment_status=payment_status,
+            staff_id=staff_id,
+            date_from=date_from,
+            date_to=date_to,
+            booking_source=booking_source,
+            sort=sort,
+        )
+
     def list_open_visits(self, current_user: User) -> list[Visit]:
         logger.info(
             "Listing open visits | business_id=%s requested_by=%s",
@@ -129,9 +166,17 @@ class VisitService:
             subtotal += total_price
             valid_service_items.append((service, item, unit_price, total_price))
 
-        # 4. Calculate total_amount
+        # 4. Calculate GST tax & total_amount
+        from sqlalchemy import select
+        from app.models.business_settings import BusinessSettings
+
+        settings_stmt = select(BusinessSettings).where(BusinessSettings.business_id == current_user.business_id)
+        biz_settings = self.db.scalar(settings_stmt)
+        tax_pct = float(biz_settings.tax_percentage) if (biz_settings and biz_settings.tax_percentage is not None) else 0.0
+
         discount = data.discount if data.discount else 0.0
-        total_amount = max(0.0, subtotal - discount)
+        tax_amount = round((subtotal * max(0.0, tax_pct)) / 100.0, 2)
+        total_amount = max(0.0, subtotal + tax_amount - discount)
 
         # 5. Create Visit object
         now_ts = datetime.now(timezone.utc)
@@ -197,6 +242,9 @@ class VisitService:
                 visit.payment_method = data.payment_method
             if data.notes:
                 visit.notes = data.notes
+            if data.discount is not None and data.discount >= 0:
+                visit.discount = data.discount
+                visit.total_amount = max(0.0, (visit.subtotal or 0.0) - visit.discount)
 
         now_ts = datetime.now(timezone.utc)
         visit.status = VisitStatus.COMPLETED
@@ -212,6 +260,17 @@ class VisitService:
                 customer.first_visit_at = now_ts
             customer.last_visit_at = now_ts
             self.customer_repo.update(customer)
+
+            # Automatic VIP recalculation
+            try:
+                from app.services.customer_service import CustomerService
+                cs = CustomerService(self.db)
+                v_set = cs.get_or_create_vip_settings(visit.business_id)
+                is_vip, _ = cs.evaluate_customer_vip_status(customer, v_set)
+                if is_vip:
+                    customer.status = "VIP"
+            except Exception as ex:
+                logger.warning("Failed to evaluate VIP status on visit completion: %s", ex)
 
         # Loyalty points calculation & CustomerLoyalty update
         earned_points = 0
@@ -258,4 +317,54 @@ class VisitService:
             visit.total_amount,
             earned_points,
         )
+        return visit
+
+    def update_visit_services(self, current_user: User, visit_id: UUID, items: list[dict]) -> Visit:
+        visit = self.get_visit(current_user, visit_id)
+        if visit.status == VisitStatus.COMPLETED or visit.status == VisitStatus.CANCELLED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot modify services for a completed or cancelled visit.",
+            )
+
+        # Clear existing VisitServices and recalculate
+        visit.services.clear()
+        subtotal = 0.0
+
+        for item in items:
+            sname = item.get("name", "Service")
+            sprice = float(item.get("price", 0.0))
+            sid_val = item.get("id") or item.get("service_id")
+
+            service_obj = None
+            if sid_val and isinstance(sid_val, UUID):
+                service_obj = self.service_repo.get_by_id(sid_val)
+
+            if not service_obj:
+                service_obj = self.service_repo.get_by_name(current_user.business_id, sname)
+
+            if service_obj:
+                vs = VisitServiceModel(
+                    service_id=service_obj.id,
+                    quantity=1,
+                    unit_price=sprice or service_obj.price,
+                    total_price=sprice or service_obj.price,
+                )
+                visit.services.append(vs)
+                subtotal += sprice or service_obj.price
+
+        from sqlalchemy import select
+        from app.models.business_settings import BusinessSettings
+
+        settings_stmt = select(BusinessSettings).where(BusinessSettings.business_id == current_user.business_id)
+        biz_settings = self.db.scalar(settings_stmt)
+        tax_pct = float(biz_settings.tax_percentage) if (biz_settings and biz_settings.tax_percentage is not None) else 0.0
+        tax_amount = round((subtotal * max(0.0, tax_pct)) / 100.0, 2)
+
+        visit.subtotal = subtotal
+        visit.total_amount = max(0.0, subtotal + tax_amount - (visit.discount or 0.0))
+        self.repo.update(visit)
+        self.db.commit()
+        self.db.refresh(visit)
+        logger.info("Visit services updated | visit_id=%s new_subtotal=%.2f total=%.2f", visit.id, visit.subtotal, visit.total_amount)
         return visit

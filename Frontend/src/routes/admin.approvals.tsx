@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { Check, X, Eye, Search, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/page-header";
@@ -28,7 +28,7 @@ export function notifyAdminDataChanged() {
   }
 }
 
-function ApprovalsPage() {
+export default function ApprovalsPage() {
   const [items, setItems] = useState<BusinessApprovalModel[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [activeCount, setActiveCount] = useState(0);

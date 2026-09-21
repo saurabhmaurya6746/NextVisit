@@ -37,6 +37,25 @@ def verify_password(
     )
 
 
+def hash_otp(otp: str) -> str:
+    """Return a salted bcrypt hash of the OTP string."""
+    return bcrypt.hashpw(
+        otp.encode("utf-8"),
+        bcrypt.gensalt(rounds=10),
+    ).decode("utf-8")
+
+
+def verify_otp(plain_otp: str, hashed_otp: str) -> bool:
+    """Return True if *plain_otp* matches *hashed_otp*."""
+    try:
+        return bcrypt.checkpw(
+            plain_otp.encode("utf-8"),
+            hashed_otp.encode("utf-8"),
+        )
+    except Exception:
+        return False
+
+
 def create_access_token(
     data: dict[str, Any],
 ) -> str:

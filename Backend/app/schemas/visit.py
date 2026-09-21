@@ -11,6 +11,18 @@ class VisitServiceItemCreate(BaseModel):
     quantity: int = Field(default=1, gt=0)
 
 
+class VisitServiceInput(BaseModel):
+    name: str = Field(..., max_length=150)
+    price: float = Field(..., ge=0)
+    duration: int = Field(default=30, gt=0)
+    id: UUID | None = None
+    service_id: UUID | None = None
+
+
+class VisitServicesUpdatePayload(BaseModel):
+    services: list[VisitServiceInput]
+
+
 class VisitCreate(BaseModel):
     customer_id: UUID
     staff_id: UUID | None = None
@@ -23,6 +35,7 @@ class VisitCreate(BaseModel):
 class VisitComplete(BaseModel):
     payment_method: PaymentMethod | None = None
     notes: str | None = Field(default=None, max_length=1000)
+    discount: float | None = Field(default=0.0, ge=0)
 
 
 class VisitServiceResponse(BaseModel):
@@ -56,3 +69,15 @@ class VisitResponse(BaseModel):
     updated_at: datetime
     earned_points: int = 0
     services: list[VisitServiceResponse] = []
+
+
+class PaginatedVisitsResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    items: list[VisitResponse]
+    page: int
+    limit: int
+    total: int
+    total_pages: int
+    has_next: bool
+    has_previous: bool

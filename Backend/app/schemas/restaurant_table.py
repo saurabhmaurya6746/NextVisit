@@ -47,3 +47,4 @@ class TableMapResponse(BaseModel):
     item_count: int = 0
     order_source: str | None = None
     last_updated: datetime | str | None = None
+    releasing_in_seconds: int = 0

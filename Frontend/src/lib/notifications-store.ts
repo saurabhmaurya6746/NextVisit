@@ -101,11 +101,26 @@ export function pushNotification(n: Omit<AppNotification, "id" | "at" | "read">,
   return item;
 }
 
-export function pushQrNotification(n: { orderId: string; table: string; customerName?: string; items: number; total: number }) {
+export function pushQrNotification(n: {
+  orderId: string;
+  table: string;
+  customerName?: string;
+  items: number;
+  total: number;
+  orderNumber?: string;
+}) {
+  const time = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+  const lines: string[] = [
+    `Table: ${n.table}`,
+    n.customerName ? `Customer: ${n.customerName}` : "Customer: Guest",
+    n.orderNumber ? `Order: ${n.orderNumber}` : "",
+    `Amount: \u20b9${n.total.toFixed(2)}`,
+    `Time: ${time}`,
+  ].filter(Boolean);
   return pushNotification({
     type: "qr_order",
-    title: "New QR Order",
-    body: `${n.table} · ${n.items} items · ₹${n.total}${n.customerName ? ` · ${n.customerName}` : ""}`,
+    title: "\ud83d\udd14 New QR Order Received",
+    body: lines.join(" \u00b7 "),
     orderId: n.orderId,
     table: n.table,
   });

@@ -1,18 +1,23 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_super_admin
 from app.db.database import get_db
 from app.models.admin import Admin
 from app.schemas.subscription import (
+    AdjustPurchasedCreditsRequest,
+    BusinessAiUsageResponse,
     BusinessSubscriptionAssignRequest,
     BusinessSubscriptionItemResponse,
+    PaginatedSubscriptionUpgradeRequestsResponse,
     SubscriptionPlanCreate,
     SubscriptionPlanResponse,
     SubscriptionPlanUpdate,
+    SubscriptionUpgradeRejectRequest,
+    SubscriptionUpgradeRequestResponse,
 )
 from app.services.subscription_service import SubscriptionService
 
@@ -33,10 +38,7 @@ def list_plans(
     current_admin: Admin = Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
-    """
-    Returns all platform subscription plans (FREE, STARTER, PROFESSIONAL, ENTERPRISE, etc.).
-    Requires Super Admin authorization.
-    """
+    """Returns all platform subscription plans (FREE, STARTER, PROFESSIONAL, ENTERPRISE, etc.)."""
     return SubscriptionService(db).list_plans()
 
 
@@ -51,10 +53,7 @@ def create_plan(
     current_admin: Admin = Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
-    """
-    Creates a new platform subscription plan.
-    Requires Super Admin authorization.
-    """
+    """Creates a new platform subscription plan."""
     return SubscriptionService(db).create_plan(payload)
 
 
@@ -69,11 +68,21 @@ def update_plan(
     current_admin: Admin = Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
-    """
-    Updates details of a subscription plan.
-    Requires Super Admin authorization.
-    """
+    """Updates details of a subscription plan."""
     return SubscriptionService(db).update_plan(plan_id, payload)
+
+
+@router.delete(
+    "/plans/{plan_id}",
+    summary="Delete a subscription plan",
+)
+def delete_plan(
+    plan_id: UUID,
+    current_admin: Admin = Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Deletes a subscription plan if not assigned to active merchants."""
+    return SubscriptionService(db).delete_plan(plan_id)
 
 
 @router.patch(
@@ -87,10 +96,7 @@ def assign_business_subscription(
     current_admin: Admin = Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
-    """
-    Assigns or updates a merchant's subscription plan, trial days, or expiration date.
-    Requires Super Admin authorization.
-    """
+    """Assigns or updates a merchant's subscription plan, trial days, or expiration date."""
     return SubscriptionService(db).assign_business_subscription(
         business_id, payload
     )
@@ -105,8 +111,135 @@ def list_business_subscriptions(
     current_admin: Admin = Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
-    """
-    Returns a list of all businesses with their active subscription plan, trial end, and expiry details.
-    Requires Super Admin authorization.
-    """
+    """Returns a list of all businesses with their active subscription plan, trial end, and expiry details."""
     return SubscriptionService(db).list_business_subscriptions()
+
+
+# ── Super Admin Upgrade Requests Workflow ──────────────────────────────────
+
+@router.get(
+    "/requests",
+    response_model=PaginatedSubscriptionUpgradeRequestsResponse,
+    summary="List merchant subscription upgrade requests",
+)
+def list_upgrade_requests(
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=100),
+    status: str = Query("ALL", description="PENDING, APPROVED, REJECTED, CANCELLED, or ALL"),
+    search: str = Query("", description="Search by business, owner name, email or plan"),
+    current_admin: Admin = Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Paginated list of merchant subscription upgrade requests with status and search filters."""
+    return SubscriptionService(db).list_admin_upgrade_requests(
+        page=page, limit=limit, status_filter=status, search=search
+    )
+
+
+@router.post(
+    "/requests/{request_id}/approve",
+    response_model=SubscriptionUpgradeRequestResponse,
+    summary="Approve merchant subscription upgrade request",
+)
+def approve_upgrade_request(
+    request_id: UUID,
+    current_admin: Admin = Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Approves upgrade request, updates business plan, updates limits, and generates invoice."""
+    return SubscriptionService(db).approve_upgrade_request(current_admin, request_id)
+
+
+@router.post(
+    "/requests/{request_id}/reject",
+    response_model=SubscriptionUpgradeRequestResponse,
+    summary="Reject merchant subscription upgrade request",
+)
+def reject_upgrade_request(
+    request_id: UUID,
+    payload: SubscriptionUpgradeRejectRequest,
+    current_admin: Admin = Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Rejects upgrade request with a reason."""
+    return SubscriptionService(db).reject_upgrade_request(
+        current_admin, request_id, payload.reason
+    )
+
+
+# ── Super Admin AI Usage Management ─────────────────────────────────────────
+
+@router.get(
+    "/ai-usage",
+    summary="List AI credit usage for all businesses (Super Admin)",
+)
+def list_all_ai_usage(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    search: str = Query("", description="Search by business name, owner, or email"),
+    business_type: str | None = Query(None, description="Filter by business type: restaurant | salon | all"),
+    plan: str | None = Query(None, description="Filter by plan name"),
+    status: str | None = Query(None, description="Filter by status: normal | warning | limit reached | all"),
+    current_admin: Admin = Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Returns paginated & filtered AI credit usage across all businesses for Super Admin monitoring."""
+    from app.services.subscription_limit_service import SubscriptionLimitService
+    return SubscriptionLimitService(db).get_all_businesses_ai_usage(
+        page=page,
+        limit=limit,
+        search=search,
+        business_type_filter=business_type,
+        plan_filter=plan,
+        status_filter=status,
+    )
+
+
+@router.post(
+    "/business/{business_id}/reset-monthly-credits",
+    summary="Reset monthly AI credits for a specific business",
+)
+def reset_business_monthly_credits(
+    business_id: UUID,
+    current_admin: Admin = Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Resets the monthly AI used credits for a specific merchant back to 0."""
+    from app.services.subscription_limit_service import SubscriptionLimitService
+    return SubscriptionLimitService(db).reset_business_monthly_credits(business_id, current_admin=current_admin)
+
+
+@router.post(
+    "/business/{business_id}/adjust-credits",
+    summary="Add or remove purchased AI credits for a business",
+)
+def adjust_purchased_credits(
+    business_id: UUID,
+    payload: AdjustPurchasedCreditsRequest,
+    current_admin: Admin = Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Adjusts purchased (non-expiring) AI credits for a merchant. Requires reason."""
+    from app.services.subscription_limit_service import SubscriptionLimitService
+    return SubscriptionLimitService(db).adjust_purchased_credits(
+        business_id=business_id,
+        amount=payload.amount,
+        reason=payload.reason,
+        notes=payload.notes,
+        current_admin=current_admin,
+    )
+
+
+@router.get(
+    "/business/{business_id}/ai-audit-logs",
+    summary="Get AI credit adjustment audit logs for a business",
+)
+def get_ai_audit_logs(
+    business_id: UUID,
+    current_admin: Admin = Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Returns audit log history of all AI credit adjustments for a business."""
+    from app.services.subscription_limit_service import SubscriptionLimitService
+    return SubscriptionLimitService(db).get_business_ai_audit_logs(business_id)
+

@@ -10,6 +10,7 @@ class ServiceCreate(BaseModel):
     price: float = Field(..., ge=0)
     duration_minutes: int = Field(..., gt=0)
     category: str | None = Field(default=None, max_length=100)
+    category_id: UUID | None = None
     is_active: bool = True
 
 
@@ -19,6 +20,7 @@ class ServiceUpdate(BaseModel):
     price: float | None = Field(default=None, ge=0)
     duration_minutes: int | None = Field(default=None, gt=0)
     category: str | None = Field(default=None, max_length=100)
+    category_id: UUID | None = None
     is_active: bool | None = None
 
 
@@ -32,6 +34,8 @@ class ServiceResponse(BaseModel):
     price: float
     duration_minutes: int
     category: str | None
+    category_id: UUID | None = None
+    category_name: str | None = None
     is_active: bool
     created_at: datetime
     updated_at: datetime

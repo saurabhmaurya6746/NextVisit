@@ -429,7 +429,7 @@ function LoyaltyStep({ loyalty, setLoyalty }: { loyalty: LoyaltySettings; setLoy
 // ---------------- Step 5: QR ----------------
 function QrStep({ tableNames, businessSlug }: { tableNames: string[]; businessSlug: string }) {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
-  function urlFor(t: string) { return `${origin}/qr/${businessSlug}/${encodeURIComponent(t)}`; }
+  function urlFor(t: string) { return `${origin}/restaurant/qr/${businessSlug}/${encodeURIComponent(t)}`; }
   function printAll() {
     const w = window.open("", "_blank"); if (!w) return;
     const html = `<html><head><title>Table QR Codes</title>

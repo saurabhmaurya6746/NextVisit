@@ -2,14 +2,19 @@ import { useEffect, useState } from "react";
 import { slugify } from "./app-nav";
 
 export type Role = "admin" | "business";
+export type UserRole = "SUPERADMIN" | "OWNER" | "STAFF" | "MANAGER";
 
 export type Session = {
   role: Role;
+  userRole?: UserRole;
   email: string;
+  loginId?: string;
+  name?: string;
   clientId?: string;
   businessType?: "restaurant" | "salon";
   businessSlug?: string;
   businessName?: string;
+  permissions?: string[];
   token?: string;
 };
 
@@ -17,18 +22,33 @@ const KEY_SESSION = "growthos:session";
 const KEY_TOKEN = "growthos:token";
 const EVT = "growthos:session-changed";
 
-export const API_BASE_URL = "http://localhost:8000";
+function getApiBaseUrl(): string {
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  if (typeof window !== "undefined") {
+    const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+    if (isLocalhost) {
+      return envUrl || "http://localhost:8000";
+    }
+    // On remote/production domains (e.g. *.onrender.com), strictly disallow localhost/127.0.0.1 URLs
+    // to prevent Android/Chrome Private Network Access (Local Network) permission dialogs
+    if (envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1")) {
+      return envUrl;
+    }
+    return "https://nextvisit-backend.onrender.com";
+  }
+  return envUrl || "https://nextvisit-backend.onrender.com";
+}
+
+export const API_BASE_URL = getApiBaseUrl();
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
   const token = localStorage.getItem(KEY_TOKEN);
-  console.log("[AUTH] getToken() retrieved:", token ? `${token.substring(0, 15)}...` : "null");
   return token;
 }
 
 export function setToken(token: string) {
   if (typeof window === "undefined") return;
-  console.log("[AUTH] setToken() saving growthos:token to localStorage:", token ? `${token.substring(0, 15)}...` : "null");
   localStorage.setItem(KEY_TOKEN, token);
 }
 
@@ -43,7 +63,6 @@ export function getSession(): Session | null {
 }
 
 export function setSession(s: Session) {
-  console.log("[AUTH] setSession() saving session:", s);
   localStorage.setItem(KEY_SESSION, JSON.stringify(s));
   if (s.token) {
     setToken(s.token);
@@ -52,9 +71,11 @@ export function setSession(s: Session) {
 }
 
 export function clearSession() {
-  console.log("[AUTH] clearSession() called - removing tokens");
   localStorage.removeItem(KEY_SESSION);
   localStorage.removeItem(KEY_TOKEN);
+  localStorage.removeItem("growthos:profile:restaurant");
+  localStorage.removeItem("growthos:profile:salon");
+  localStorage.removeItem("nextvisit:authenticated_business");
   window.dispatchEvent(new Event(EVT));
 }
 
@@ -72,6 +93,21 @@ export function useSession(): Session | null {
   return s;
 }
 
+/**
+ * Checks if current user has permission to access a specific module.
+ * Owner and SuperAdmin bypass all permission checks (100% full access).
+ */
+export function hasModulePermission(session: Session | null, moduleKey: string): boolean {
+  if (!session) return false;
+  // SuperAdmin and Business Owner always bypass permission checking
+  if (session.role === "admin" || !session.userRole || session.userRole === "OWNER" || session.userRole === "SUPERADMIN") {
+    return true;
+  }
+  // Staff accounts check permissions array
+  const perms = session.permissions || [];
+  return perms.includes("*") || perms.includes(moduleKey);
+}
+
 export async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const url = path.startsWith("http") ? path : `${API_BASE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
   const token = getToken();
@@ -84,16 +120,17 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
     headers.set("Content-Type", "application/json");
   }
 
-  console.log(`[AUTH] apiFetch ${options.method || "GET"} -> ${url}`);
-  console.log(`[AUTH] Authorization Header:`, headers.get("Authorization"));
-
   const res = await fetch(url, { ...options, headers });
 
-  console.log(`[AUTH] apiFetch response status for ${url}: ${res.status}`);
-
-  if ((res.status === 401 || res.status === 403) && !url.includes("/login")) {
-    console.warn(`[AUTH] Unauthenticated (${res.status}) on ${url}. Redirecting to login.`);
-    if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+  if (
+    (res.status === 401 || res.status === 403) &&
+    !url.includes("/login") &&
+    typeof window !== "undefined" &&
+    !window.location.pathname.startsWith("/login") &&
+    !window.location.pathname.startsWith("/qr")
+  ) {
+    if (res.status === 401) {
+      console.warn(`[AUTH] Unauthenticated (${res.status}) on ${url}. Redirecting to login.`);
       clearSession();
       window.location.href = "/login";
     }
@@ -102,39 +139,58 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   return res;
 }
 
-export async function loginApi(email: string, password: string): Promise<Session> {
-  console.log("[AUTH] loginApi() starting with email:", email);
+export async function loginApi(emailOrLoginId: string, password: string): Promise<Session> {
+  clearSession();
 
   const res = await apiFetch("/api/v1/auth/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email: emailOrLoginId, password }),
   });
-
-  console.log("[AUTH] POST /api/v1/auth/login response status:", res.status);
 
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    console.error("[AUTH] loginApi() failed with error payload:", errData);
-    throw new Error(errData.detail || "Incorrect email or password.");
+    throw new Error(errData.detail || "Incorrect login ID/email or password.");
   }
 
   const data = await res.json();
-  console.log("[AUTH] POST /api/v1/auth/login success, received access_token:", data.access_token ? `${data.access_token.substring(0, 15)}...` : "NONE");
-
   const token = data.access_token;
   setToken(token);
 
-  console.log("[AUTH] Fetching user profile via getMeApi()...");
   const user = await getMeApi(token);
-  console.log("[AUTH] GET /api/v1/auth/me response profile:", user);
+
+  let bizName = user.name;
+  let bizType: "restaurant" | "salon" = "restaurant";
+  try {
+    const bizRes = await fetch(`${API_BASE_URL}/api/v1/business`, {
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+    if (bizRes.ok) {
+      const bizData = await bizRes.json();
+      if (bizData?.name) bizName = bizData.name;
+      const rawType = (bizData?.type || bizData?.business_type?.name || "").toLowerCase();
+      if (rawType.includes("salon")) {
+        bizType = "salon";
+      } else if (rawType.includes("restaurant")) {
+        bizType = "restaurant";
+      } else if (bizName.toLowerCase().includes("salon")) {
+        bizType = "salon";
+      }
+    }
+  } catch (e) {
+    console.warn("[AUTH] Failed to prefetch business info during login:", e);
+  }
 
   const session: Session = {
     role: "business",
-    email: user.email,
+    userRole: (user.role as UserRole) || "OWNER",
+    email: user.email || user.login_id || emailOrLoginId,
+    loginId: user.login_id,
+    name: user.name,
     clientId: user.business_id,
-    businessName: user.name,
-    businessType: "restaurant",
-    businessSlug: slugify(user.name || "restaurant"),
+    businessName: bizName,
+    businessType: bizType,
+    businessSlug: slugify(bizName || bizType),
+    permissions: user.permissions || [],
     token: token,
   };
 
@@ -144,7 +200,6 @@ export async function loginApi(email: string, password: string): Promise<Session
 
 export async function getMeApi(explicitToken?: string) {
   const token = explicitToken || getToken();
-  console.log("[AUTH] getMeApi() executing with token:", token ? `${token.substring(0, 15)}...` : "null");
 
   const res = await fetch(`${API_BASE_URL}/api/v1/auth/me`, {
     headers: {
@@ -152,8 +207,6 @@ export async function getMeApi(explicitToken?: string) {
       "Content-Type": "application/json",
     },
   });
-
-  console.log("[AUTH] GET /api/v1/auth/me response status:", res.status);
 
   if (!res.ok) {
     throw new Error("Failed to fetch user profile");
@@ -163,18 +216,13 @@ export async function getMeApi(explicitToken?: string) {
 }
 
 export async function adminLoginApi(email: string, password: string): Promise<Session> {
-  console.log("[AUTH] adminLoginApi() starting with email:", email);
-
   const res = await apiFetch("/api/v1/admin/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
 
-  console.log("[AUTH] POST /api/v1/admin/auth/login response status:", res.status);
-
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    console.error("[AUTH] adminLoginApi() failed with error payload:", errData);
     const msg = typeof errData.detail === "string" ? errData.detail : "Incorrect admin email or password.";
     throw new Error(msg);
   }
@@ -183,13 +231,14 @@ export async function adminLoginApi(email: string, password: string): Promise<Se
   const token = data.access_token;
   setToken(token);
 
-  console.log("[AUTH] Fetching admin profile via getAdminMeApi()...");
   const adminUser = await getAdminMeApi(token);
 
   const session: Session = {
     role: "admin",
+    userRole: "SUPERADMIN",
     email: adminUser.email,
     businessName: adminUser.name || "Super Admin",
+    permissions: ["*"],
     token: token,
   };
 
@@ -214,74 +263,107 @@ export async function getAdminMeApi(explicitToken?: string) {
 }
 
 export async function getBusinessTypesApi() {
-  console.log("[AUTH] getBusinessTypesApi() fetching...");
   const res = await fetch(`${API_BASE_URL}/api/v1/business-types`);
-  console.log("[AUTH] GET /api/v1/business-types status:", res.status);
-  if (!res.ok) {
-    return [];
-  }
+  if (!res.ok) return [];
   return await res.json();
 }
 
-export async function registerApi(payload: any) {
-  console.log("[AUTH] registerApi() starting with payload:", payload);
+export interface RegisterResponse {
+  success: boolean;
+  requires_email_verification: boolean;
+  email: string;
+  message: string;
+}
 
+export async function registerApi(payload: any): Promise<RegisterResponse> {
   const res = await apiFetch("/api/v1/auth/register", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 
-  console.log("[AUTH] POST /api/v1/auth/register response status:", res.status);
-
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    console.error("[AUTH] registerApi() failed:", errData);
     throw new Error(errData.detail || "Registration failed. Please check your details.");
   }
 
-  const data = await res.json();
-  console.log("[AUTH] registerApi() succeeded:", data);
-
-  if (data.access_token) {
-    setToken(data.access_token);
-  }
-  return data;
+  return await res.json();
 }
 
-export async function verifyOtpApi(email: string, otp: string) {
-  console.log("[AUTH] verifyOtpApi() verifying OTP for:", email);
+export interface VerifyEmailResponse {
+  success: boolean;
+  email_verified: boolean;
+  status: string;
+  message: string;
+}
 
-  const res = await apiFetch("/api/v1/auth/verify-otp", {
+export interface ResendVerificationResponse {
+  success: boolean;
+  message: string;
+}
+
+export async function verifyEmailApi(email: string, code: string): Promise<VerifyEmailResponse> {
+  const res = await apiFetch("/api/v1/auth/verify-email", {
     method: "POST",
-    body: JSON.stringify({ email, otp }),
+    body: JSON.stringify({ email: email.trim(), code: code.trim() }),
   });
-
-  console.log("[AUTH] POST /api/v1/auth/verify-otp response status:", res.status);
 
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    console.error("[AUTH] verifyOtpApi() failed:", errData);
-    throw new Error(errData.detail || "Verification failed. Invalid or expired OTP.");
+    const msg = typeof errData.detail === "string" ? errData.detail : "Email verification failed. Please try again.";
+    throw new Error(msg);
   }
 
   return await res.json();
 }
 
-export async function resendOtpApi(email: string) {
-  console.log("[AUTH] resendOtpApi() requesting new OTP for:", email);
-
-  const res = await apiFetch("/api/v1/auth/resend-otp", {
+export async function resendVerificationApi(email: string): Promise<ResendVerificationResponse> {
+  const res = await apiFetch("/api/v1/auth/resend-verification", {
     method: "POST",
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email: email.trim() }),
   });
-
-  console.log("[AUTH] POST /api/v1/auth/resend-otp response status:", res.status);
 
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    console.error("[AUTH] resendOtpApi() failed:", errData);
-    throw new Error(errData.detail || "Failed to resend verification code.");
+    const msg = typeof errData.detail === "string" ? errData.detail : "Failed to resend verification code. Please try again.";
+    throw new Error(msg);
   }
 
   return await res.json();
 }
+
+export async function forgotPasswordApi(email: string): Promise<{ message: string }> {
+  const res = await apiFetch("/api/v1/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email: email.trim() }),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to request password reset. Please try again.");
+  }
+
+  return await res.json();
+}
+
+export async function resetPasswordApi(payload: {
+  token: string;
+  password: string;
+  confirm_password: string;
+}): Promise<{ message: string }> {
+  const res = await apiFetch("/api/v1/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    const msg = typeof errData.detail === "string" ? errData.detail : "This password reset link is invalid or has expired.";
+    throw new Error(msg);
+  }
+
+  return await res.json();
+}
+
+export const verifyOtpApi = verifyEmailApi;
+export const resendOtpApi = resendVerificationApi;
+

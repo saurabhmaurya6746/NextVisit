@@ -1,4 +1,5 @@
-import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import { Outlet } from "react-router-dom";
+import { redirect, createFileRoute } from "@/lib/route-compat";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AdminSidebar } from "@/components/admin-sidebar";
 import { Topbar } from "@/components/topbar";
@@ -20,28 +21,33 @@ export const Route = createFileRoute("/admin")({
   component: AdminLayout,
 });
 
-function AdminLayout() {
+export function AdminLayout() {
   const [loading, setLoading] = useState(!adminLoaderShown);
   return (
     <>
       {loading && (
         <AppLoader
-          emoji="⚡"
-          name="NextVisit Admin"
-          onDone={() => { adminLoaderShown = true; setLoading(false); }}
+          onDone={() => {
+            adminLoaderShown = true;
+            setLoading(false);
+          }}
         />
       )}
-    <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-background">
-        <AdminSidebar />
-        <SidebarInset className="min-w-0">
-          <Topbar userName="Saurabh Maurya" userRole="Super Admin" initials="SM" />
-          <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6 lg:p-8">
-            <Outlet />
-          </main>
-        </SidebarInset>
-      </div>
-    </SidebarProvider>
+      <SidebarProvider>
+        <div className="flex min-h-screen w-full bg-background">
+          <AdminSidebar />
+          <SidebarInset className="min-w-0">
+            <Topbar
+              userName="NextVisit"
+              userRole="Super Administrator"
+              initials="NV"
+            />
+            <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6 lg:p-8">
+              <Outlet />
+            </main>
+          </SidebarInset>
+        </div>
+      </SidebarProvider>
     </>
   );
 }

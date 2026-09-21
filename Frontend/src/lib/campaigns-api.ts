@@ -238,26 +238,53 @@ export async function markLogFailedApi(
   return await res.json();
 }
 
+export interface GenerateCampaignAiMessageParams {
+  campaign_name?: string;
+  campaign_type: string;
+  target_segment?: string;
+  title: string;
+  discount?: string;
+  message_content?: string;
+  business_name?: string;
+  business_type?: string;
+  business_address?: string;
+  business_phone?: string;
+  language?: string;
+  tone?: string;
+  length?: string;
+}
+
 /**
  * Gemini AI Message Generator Utility (Routed through Backend FastAPI)
  */
 export async function generateCampaignMessageWithGemini(
-  campaignType: string,
-  offerTitle: string,
-  discountValue?: string
+  params: GenerateCampaignAiMessageParams | string,
+  legacyTitle?: string,
+  legacyDiscount?: string
 ): Promise<string> {
+  const bodyData =
+    typeof params === "string"
+      ? {
+          campaign_type: params,
+          title: legacyTitle || "",
+          discount: legacyDiscount,
+        }
+      : params;
+
   const res = await apiFetch("/api/v1/campaigns/generate-ai-message", {
     method: "POST",
-    body: JSON.stringify({
-      campaign_type: campaignType,
-      title: offerTitle,
-      discount: discountValue,
-    }),
+    body: JSON.stringify(bodyData),
   });
 
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    const err = new Error(parseErrorDetail(errData, `Failed to generate AI message (HTTP ${res.status})`));
+    const detailMsg = parseErrorDetail(errData, `Failed to generate AI message (HTTP ${res.status})`);
+    console.error("AI campaign generation failed", {
+      error: detailMsg,
+      payload: bodyData,
+      responseStatus: res.status,
+    });
+    const err = new Error(detailMsg);
     (err as any).status = res.status;
     throw err;
   }

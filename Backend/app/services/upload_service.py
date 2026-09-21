@@ -93,6 +93,16 @@ class UploadService:
         content = file.file.read()
 
         # 4. Prepare directory and save file
+        settings = self.settings_service.get_settings(current_user)
+        if settings and settings.payment_qr_image:
+            old_path = settings.payment_qr_image
+            if os.path.exists(old_path):
+                try:
+                    os.remove(old_path)
+                    logger.info("Cleaned up old Payment QR file: %s", old_path)
+                except Exception as e:
+                    logger.warning("Could not delete old Payment QR file %s: %s", old_path, e)
+
         dir_path = os.path.join("uploads", str(current_user.business_id), "payment-qr")
         os.makedirs(dir_path, exist_ok=True)
 
@@ -122,3 +132,20 @@ class UploadService:
             payment_qr_image=relative_filepath,
             message="Payment QR image uploaded successfully.",
         )
+
+    def delete_payment_qr(self, current_user: User) -> dict:
+        settings = self.settings_service.get_settings(current_user)
+        if settings and settings.payment_qr_image:
+            old_path = settings.payment_qr_image
+            if os.path.exists(old_path):
+                try:
+                    os.remove(old_path)
+                    logger.info("Deleted Payment QR file: %s", old_path)
+                except Exception as e:
+                    logger.warning("Could not delete physical QR file %s: %s", old_path, e)
+
+            self.settings_service.update_settings(
+                current_user,
+                BusinessSettingsUpdate(payment_qr_image=None),
+            )
+        return {"message": "Payment QR deleted successfully."}

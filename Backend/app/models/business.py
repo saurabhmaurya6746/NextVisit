@@ -98,6 +98,12 @@ class Business(BaseModel):
     )
     
     business_type = relationship("BusinessType")
+
+    @property
+    def type(self) -> str:
+        if self.business_type and self.business_type.name:
+            return self.business_type.name.upper()
+        return "RESTAURANT"
     subscription_plan = relationship("SubscriptionPlan")
     users = relationship(
         "User",
@@ -146,6 +152,12 @@ class Business(BaseModel):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    vip_settings = relationship(
+        "VipSettings",
+        back_populates="business",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
     dining_areas = relationship(
         "DiningArea",
         back_populates="business",
@@ -163,4 +175,10 @@ class Business(BaseModel):
         back_populates="business",
         cascade="all, delete-orphan",
         order_by="MenuItem.display_order",
+    )
+    salon_service_areas = relationship(
+        "SalonServiceArea",
+        back_populates="business",
+        cascade="all, delete-orphan",
+        order_by="SalonServiceArea.display_order",
     )

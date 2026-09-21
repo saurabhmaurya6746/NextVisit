@@ -1,5 +1,20 @@
 import { apiFetch } from "./auth";
 
+export function formatApiErrorMessage(errData: any, fallback: string): string {
+  if (!errData) return fallback;
+  if (typeof errData.detail === "string" && errData.detail) return errData.detail;
+  if (Array.isArray(errData.detail) && errData.detail.length > 0) {
+    return errData.detail
+      .map((item: any) => (typeof item === "string" ? item : item?.msg || JSON.stringify(item)))
+      .join("; ");
+  }
+  if (typeof errData.detail === "object" && errData.detail !== null) {
+    return JSON.stringify(errData.detail);
+  }
+  if (typeof errData.message === "string" && errData.message) return errData.message;
+  return fallback;
+}
+
 // 1. Admin Dashboard API
 export interface AdminDashboardKpis {
   total_clients: number;
@@ -20,6 +35,7 @@ export interface AdminDashboardKpis {
 export interface RevenueGrowthPoint {
   month: string;
   revenue: number;
+  clients?: number;
 }
 
 export interface ClientGrowthPoint {
@@ -27,10 +43,17 @@ export interface ClientGrowthPoint {
   count: number;
 }
 
+export interface CampaignDistributionResponse {
+  active: number;
+  redeemed: number;
+  expired: number;
+}
+
 export interface AdminDashboardAnalytics {
   revenue_growth: RevenueGrowthPoint[];
   client_growth: ClientGrowthPoint[];
-  coupon_usage: any[];
+  campaign?: CampaignDistributionResponse;
+  coupon_usage?: any[];
 }
 
 export interface RecentActivityItem {
@@ -38,7 +61,18 @@ export interface RecentActivityItem {
   type: string;
   title: string;
   description: string;
-  timestamp: string;
+  created_at: string;
+  timestamp?: string;
+  business_name?: string | null;
+  user_name?: string | null;
+  activity_type: string;
+}
+
+export interface PaginatedActivityResponse {
+  items: RecentActivityItem[];
+  total: number;
+  page: number;
+  size: number;
 }
 
 export interface AdminDashboardSummary {
@@ -52,10 +86,13 @@ export interface AdminDashboardSummary {
 }
 
 export interface AdminDashboardResponse {
+  statistics?: AdminDashboardKpis;
+  charts?: AdminDashboardAnalytics;
   kpis: AdminDashboardKpis;
   analytics: AdminDashboardAnalytics;
   summary: AdminDashboardSummary;
   recent_activity: RecentActivityItem[];
+  pending_approvals?: number;
 }
 
 export async function getAdminDashboardApi(): Promise<AdminDashboardResponse> {
@@ -64,7 +101,84 @@ export async function getAdminDashboardApi(): Promise<AdminDashboardResponse> {
     const errData = await res.json().catch(() => ({}));
     throw new Error(errData.detail || "Failed to fetch admin dashboard");
   }
+  const data = await res.json();
+  // Ensure backward compatible fields exist
+  return {
+    ...data,
+    kpis: data.statistics || data.kpis,
+    analytics: data.charts || data.analytics,
+  };
+}
+
+export async function getRevenueChartApi(): Promise<RevenueGrowthPoint[]> {
+  const res = await apiFetch("/api/v1/admin/dashboard/revenue-chart");
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to fetch revenue chart");
+  }
   return await res.json();
+}
+
+export async function getClientGrowthApi(): Promise<ClientGrowthPoint[]> {
+  const res = await apiFetch("/api/v1/admin/dashboard/client-growth");
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to fetch client growth chart");
+  }
+  return await res.json();
+}
+
+export async function getCampaignChartApi(): Promise<CampaignDistributionResponse> {
+  const res = await apiFetch("/api/v1/admin/dashboard/campaign-chart");
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to fetch campaign chart");
+  }
+  return await res.json();
+}
+
+export async function getActivityLogsApi(
+  page: number = 1,
+  size: number = 10,
+  activityType?: string,
+  search?: string,
+  dateRange?: string,
+  startDate?: string,
+  endDate?: string
+): Promise<PaginatedActivityResponse> {
+  const params = new URLSearchParams();
+  params.append("page", page.toString());
+  params.append("size", size.toString());
+  if (activityType && activityType !== "ALL") params.append("activity_type", activityType);
+  if (search) params.append("search", search);
+  if (dateRange && dateRange !== "all") params.append("date_range", dateRange);
+  if (startDate) params.append("start_date", startDate);
+  if (endDate) params.append("end_date", endDate);
+
+  const res = await apiFetch(`/api/v1/admin/dashboard/activity?${params.toString()}`);
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to fetch activity logs");
+  }
+  return await res.json();
+}
+
+export async function getPlatformHealthSummaryApi(): Promise<PlatformHealthSummary> {
+  const res = await apiFetch("/api/v1/admin/dashboard/health-summary");
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to fetch platform health summary");
+  }
+  return await res.json();
+}
+
+export interface PlatformHealthSummary {
+  total_clients: number;
+  active_trials: number;
+  expired_clients: number;
+  active_campaigns: number;
+  total_customers: number;
+  total_revenue: number;
 }
 
 // 2. Admin Approvals APIs
@@ -181,6 +295,8 @@ export interface ClientStatsModel {
   visit_count: number;
   campaign_count: number;
   loyalty_enabled: boolean;
+  ai_monthly_used_credits?: number;
+  ai_monthly_plan_credits?: number;
 }
 
 export interface ClientDetailModel {
@@ -228,7 +344,7 @@ export async function listAdminClientsApi(
   const res = await apiFetch(`/api/v1/admin/clients?${params.toString()}`);
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to fetch clients list");
+    throw new Error(formatApiErrorMessage(errData, "Failed to fetch clients list"));
   }
   return await res.json();
 }
@@ -237,7 +353,7 @@ export async function getAdminClientDetailApi(businessId: string): Promise<Clien
   const res = await apiFetch(`/api/v1/admin/clients/${businessId}`);
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to fetch client detail");
+    throw new Error(formatApiErrorMessage(errData, "Failed to fetch client detail"));
   }
   return await res.json();
 }
@@ -252,7 +368,7 @@ export async function updateAdminClientStatusApi(
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to update client status");
+    throw new Error(formatApiErrorMessage(errData, "Failed to update client status"));
   }
   return await res.json();
 }
@@ -263,7 +379,7 @@ export async function deleteAdminClientApi(businessId: string): Promise<{ messag
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to delete client");
+    throw new Error(formatApiErrorMessage(errData, "Failed to delete client"));
   }
   return await res.json();
 }
@@ -274,7 +390,7 @@ export async function impersonateAdminClientApi(businessId: string): Promise<{ a
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to impersonate merchant");
+    throw new Error(formatApiErrorMessage(errData, "Failed to impersonate merchant"));
   }
   return await res.json();
 }
@@ -287,8 +403,10 @@ export interface SubscriptionPlanModel {
   trial_days: number;
   max_customers: number;
   max_staff: number;
+  max_active_devices: number;
   max_campaigns_per_month: number;
   storage_limit_gb: number;
+  monthly_ai_credits: number;
   features: Record<string, any> | null;
   is_active: boolean;
   created_at: string;
@@ -309,12 +427,20 @@ export interface BusinessSubscriptionItemModel {
 }
 
 export async function listSubscriptionPlansApi(): Promise<SubscriptionPlanModel[]> {
-  const res = await apiFetch("/api/v1/admin/subscriptions/plans");
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to fetch subscription plans");
+  try {
+    const res = await apiFetch("/api/v1/admin/subscriptions/plans");
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) throw new Error("Permission denied. Super Admin access required.");
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "Unable to load subscription plans.");
+    }
+    return await res.json();
+  } catch (err: any) {
+    if (err.name === "TypeError" || err.message?.includes("fetch")) {
+      throw new Error("Unable to load subscription plans. Server unavailable or network error.");
+    }
+    throw err;
   }
-  return await res.json();
 }
 
 export async function createSubscriptionPlanApi(payload: Partial<SubscriptionPlanModel>): Promise<SubscriptionPlanModel> {
@@ -324,7 +450,7 @@ export async function createSubscriptionPlanApi(payload: Partial<SubscriptionPla
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to create subscription plan");
+    throw new Error(errData.detail || "Unable to create subscription plan");
   }
   return await res.json();
 }
@@ -336,7 +462,18 @@ export async function updateSubscriptionPlanApi(planId: string, payload: Partial
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to update subscription plan");
+    throw new Error(errData.detail || "Unable to update subscription plan");
+  }
+  return await res.json();
+}
+
+export async function deleteSubscriptionPlanApi(planId: string): Promise<{ message: string }> {
+  const res = await apiFetch(`/api/v1/admin/subscriptions/plans/${planId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Unable to delete subscription plan");
   }
   return await res.json();
 }
@@ -351,16 +488,100 @@ export async function assignBusinessSubscriptionApi(
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to assign subscription");
+    throw new Error(errData.detail || "Unable to assign subscription plan");
   }
   return await res.json();
 }
 
 export async function listBusinessSubscriptionsApi(): Promise<BusinessSubscriptionItemModel[]> {
-  const res = await apiFetch("/api/v1/admin/subscriptions/business");
+  try {
+    const res = await apiFetch("/api/v1/admin/subscriptions/business");
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) throw new Error("Permission denied. Super Admin access required.");
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "Unable to load business subscriptions.");
+    }
+    return await res.json();
+  } catch (err: any) {
+    if (err.name === "TypeError" || err.message?.includes("fetch")) {
+      throw new Error("Unable to load business subscriptions. Server unavailable or network error.");
+    }
+    throw err;
+  }
+}
+
+export interface AdminUpgradeRequestItem {
+  id: string;
+  business_id: string;
+  business_name: string;
+  owner_name: string;
+  email: string;
+  current_plan: SubscriptionPlanModel | null;
+  requested_plan: SubscriptionPlanModel;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+  reason: string | null;
+  requested_at: string;
+  approved_by: string | null;
+  approved_at: string | null;
+  rejected_by: string | null;
+  rejected_at: string | null;
+}
+
+export interface PaginatedAdminUpgradeRequests {
+  items: AdminUpgradeRequestItem[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+}
+
+export async function listAdminUpgradeRequestsApi(
+  page = 1,
+  limit = 10,
+  status = "ALL",
+  search = ""
+): Promise<PaginatedAdminUpgradeRequests> {
+  try {
+    const params = new URLSearchParams();
+    params.set("page", page.toString());
+    params.set("limit", limit.toString());
+    if (status) params.set("status", status);
+    if (search) params.set("search", search);
+
+    const res = await apiFetch(`/api/v1/admin/subscriptions/requests?${params.toString()}`);
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) throw new Error("Permission denied. Super Admin access required.");
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "Unable to load subscription requests.");
+    }
+    return await res.json();
+  } catch (err: any) {
+    if (err.name === "TypeError" || err.message?.includes("fetch")) {
+      throw new Error("Unable to load upgrade requests. Server unavailable or network error.");
+    }
+    throw err;
+  }
+}
+
+export async function approveUpgradeRequestApi(requestId: string): Promise<AdminUpgradeRequestItem> {
+  const res = await apiFetch(`/api/v1/admin/subscriptions/requests/${requestId}/approve`, {
+    method: "POST",
+  });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || "Failed to fetch business subscriptions");
+    throw new Error(errData.detail || "Failed to approve upgrade request");
+  }
+  return await res.json();
+}
+
+export async function rejectUpgradeRequestApi(requestId: string, reason: string): Promise<AdminUpgradeRequestItem> {
+  const res = await apiFetch(`/api/v1/admin/subscriptions/requests/${requestId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to reject upgrade request");
   }
   return await res.json();
 }
@@ -371,6 +592,7 @@ export interface PlatformSettingsModel {
   platform_name: string;
   logo_url: string | null;
   support_email: string;
+  support_phone: string | null;
   default_plan: string;
   trial_days: number;
   default_currency: string;
@@ -390,6 +612,15 @@ export async function getPlatformSettingsApi(): Promise<PlatformSettingsModel> {
   return await res.json();
 }
 
+export async function getPublicPlatformSettingsApi(): Promise<PlatformSettingsModel> {
+  const res = await apiFetch("/api/v1/admin/settings/public");
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to fetch public platform settings");
+  }
+  return await res.json();
+}
+
 export async function updatePlatformSettingsApi(payload: Partial<PlatformSettingsModel>): Promise<PlatformSettingsModel> {
   const res = await apiFetch("/api/v1/admin/settings", {
     method: "PUT",
@@ -401,3 +632,114 @@ export async function updatePlatformSettingsApi(payload: Partial<PlatformSetting
   }
   return await res.json();
 }
+
+// 6. Super Admin AI Usage APIs
+export interface BusinessAiUsageModel {
+  business_id: string;
+  business_name: string;
+  business_type: string;
+  owner_name: string;
+  email: string;
+  plan_name: string;
+  monthly_plan_credits: number;
+  monthly_used_credits: number;
+  monthly_remaining_credits: number;
+  purchased_remaining_credits: number;
+  total_remaining_credits: number;
+  limit_reached: boolean;
+  reset_date: string;
+  last_ai_activity: string;
+  status: string; // "Normal" | "Warning" | "Limit Reached"
+}
+
+export interface PaginatedAiUsageResponse {
+  items: BusinessAiUsageModel[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+}
+
+export interface AiCreditAuditLogModel {
+  id: string;
+  business_id: string;
+  admin_id: string | null;
+  admin_name: string | null;
+  action: string;
+  amount: number;
+  reason: string;
+  notes: string | null;
+  previous_balance: number;
+  new_balance: number;
+  created_at: string;
+}
+
+export async function getAdminAiUsageApi(
+  page = 1,
+  limit = 20,
+  search = "",
+  businessType = "all",
+  plan = "all",
+  status = "all"
+): Promise<PaginatedAiUsageResponse> {
+  try {
+    const params = new URLSearchParams();
+    params.set("page", page.toString());
+    params.set("limit", limit.toString());
+    if (search) params.set("search", search);
+    if (businessType && businessType !== "all") params.set("business_type", businessType);
+    if (plan && plan !== "all") params.set("plan", plan);
+    if (status && status !== "all") params.set("status", status);
+
+    const res = await apiFetch(`/api/v1/admin/subscriptions/ai-usage?${params.toString()}`);
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) throw new Error("Permission denied. Super Admin access required.");
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "Unable to load AI usage data.");
+    }
+    return await res.json();
+  } catch (err: any) {
+    if (err.name === "TypeError" || err.message?.includes("fetch")) {
+      throw new Error("Unable to load AI usage data. Server unavailable or network error.");
+    }
+    throw err;
+  }
+}
+
+export async function resetBusinessMonthlyCreditsApi(businessId: string): Promise<{ message: string; business_id: string }> {
+  const res = await apiFetch(`/api/v1/admin/subscriptions/business/${businessId}/reset-monthly-credits`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to reset monthly credits");
+  }
+  return await res.json();
+}
+
+export async function adjustBusinessPurchasedCreditsApi(
+  businessId: string,
+  amount: number,
+  reason: string,
+  notes?: string
+): Promise<{ message: string; business_id: string; previous_credits: number; new_total_credits: number }> {
+  const res = await apiFetch(`/api/v1/admin/subscriptions/business/${businessId}/adjust-credits`, {
+    method: "POST",
+    body: JSON.stringify({ amount, reason, notes }),
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to adjust purchased credits");
+  }
+  return await res.json();
+}
+
+export async function getBusinessAiAuditLogsApi(businessId: string): Promise<AiCreditAuditLogModel[]> {
+  const res = await apiFetch(`/api/v1/admin/subscriptions/business/${businessId}/ai-audit-logs`);
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to fetch AI audit logs");
+  }
+  return await res.json();
+}
+

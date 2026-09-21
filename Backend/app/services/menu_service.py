@@ -40,9 +40,17 @@ class MenuService:
         return cat
 
     def create_category(self, current_user: User, data: MenuCategoryCreate) -> MenuCategory:
+        name_clean = data.name.strip()
+        existing = self.repo.get_category_by_name(current_user.business_id, name_clean)
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Menu category '{name_clean}' already exists.",
+            )
+
         category = MenuCategory(
             business_id=current_user.business_id,
-            name=data.name.strip(),
+            name=name_clean,
             display_order=data.display_order,
             is_active=data.is_active,
         )
@@ -53,9 +61,19 @@ class MenuService:
     def update_category(self, current_user: User, category_id: uuid.UUID, data: MenuCategoryUpdate) -> MenuCategory:
         cat = self.get_category(current_user, category_id)
         update_dict = data.model_dump(exclude_unset=True)
+
+        if "name" in update_dict and update_dict["name"] is not None:
+            new_name = update_dict["name"].strip()
+            if new_name.lower() != cat.name.lower():
+                existing = self.repo.get_category_by_name(current_user.business_id, new_name)
+                if existing:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Menu category '{new_name}' already exists.",
+                    )
+            update_dict["name"] = new_name
+
         for key, val in update_dict.items():
-            if key == "name" and val is not None:
-                val = val.strip()
             setattr(cat, key, val)
         return self.repo.update_category(cat)
 
@@ -94,10 +112,20 @@ class MenuService:
                 detail=f"Menu category '{data.category_id}' not found for your business.",
             )
 
+        name_clean = data.name.strip()
+        existing = self.repo.get_item_by_name_and_category(
+            current_user.business_id, data.category_id, name_clean
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Menu item '{name_clean}' already exists in category '{cat.name}'.",
+            )
+
         item = MenuItem(
             category_id=data.category_id,
             business_id=current_user.business_id,
-            name=data.name.strip(),
+            name=name_clean,
             description=data.description,
             price=data.price,
             gst_percentage=data.gst_percentage,
@@ -113,6 +141,7 @@ class MenuService:
         item = self.get_item(current_user, item_id)
         update_dict = data.model_dump(exclude_unset=True)
 
+        target_cat_id = update_dict.get("category_id", item.category_id)
         if "category_id" in update_dict and update_dict["category_id"] is not None:
             cat = self.repo.get_category_by_id(update_dict["category_id"], current_user.business_id)
             if not cat:
@@ -121,9 +150,21 @@ class MenuService:
                     detail=f"Target category '{update_dict['category_id']}' not found.",
                 )
 
+        target_name = update_dict.get("name", item.name)
+        if target_name is not None:
+            target_name = target_name.strip()
+            if target_name.lower() != item.name.lower() or target_cat_id != item.category_id:
+                existing = self.repo.get_item_by_name_and_category(
+                    current_user.business_id, target_cat_id, target_name
+                )
+                if existing and existing.id != item.id:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Menu item '{target_name}' already exists in target category.",
+                    )
+            update_dict["name"] = target_name
+
         for key, val in update_dict.items():
-            if key == "name" and val is not None:
-                val = val.strip()
             setattr(item, key, val)
         return self.repo.update_item(item)
 

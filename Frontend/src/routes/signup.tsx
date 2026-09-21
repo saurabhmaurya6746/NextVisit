@@ -1,6 +1,7 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { useState, useEffect, type FormEvent } from "react";
-import { CheckCircle2, Clock, Mail, RefreshCw, ShieldCheck } from "lucide-react";
+import { Check, CheckCircle2, Clock, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,28 +9,58 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { BrandLogo } from "@/components/brand-logo";
 import { toast } from "sonner";
-import { getBusinessTypesApi, registerApi, verifyOtpApi, resendOtpApi } from "@/lib/auth";
+import { getBusinessTypesApi, registerApi } from "@/lib/auth";
 import { PasswordInput } from "@/components/ui/password-input";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { useFormValidation } from "@/hooks/use-form-validation";
+import { ValidatedField } from "@/components/ui/validated-field";
 
 export const Route = createFileRoute("/signup")({
   head: () => ({ meta: [{ title: "Create account — NextVisit" }] }),
   component: SignupPage,
 });
 
-function SignupPage() {
-  const navigate = useNavigate();
-  const [step, setStep] = useState<"form" | "verify" | "approved_pending">("form");
-  const [loading, setLoading] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [resending, setResending] = useState(false);
-  const [otp, setOtp] = useState("");
-  const [cooldown, setCooldown] = useState(60);
+interface SignupDraft {
+  business: string;
+  owner: string;
+  type: string;
+  phone: string;
+  email: string;
+  password?: string;
+  confirm?: string;
+  country: string;
+  city: string;
+  terms: boolean;
+  selectedTypeId?: string;
+}
 
-  const [businessTypes, setBusinessTypes] = useState<Array<{ id: string; name: string }>>([]);
-  const [selectedTypeId, setSelectedTypeId] = useState<string>("");
+// In-memory module store: preserves sensitive password fields during active in-app navigation (e.g. viewing Terms)
+// without writing passwords to persistent browser storage.
+let inMemorySignupDraft: SignupDraft | null = null;
 
-  const [form, setForm] = useState({
+export const getInitialSignupDraft = (): SignupDraft => {
+  if (inMemorySignupDraft) {
+    return { ...inMemorySignupDraft };
+  }
+  try {
+    const saved = sessionStorage.getItem("nextvisit_signup_draft");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return {
+        business: parsed.business || "",
+        owner: parsed.owner || "",
+        type: parsed.type || "Restaurant",
+        phone: parsed.phone || "",
+        email: parsed.email || "",
+        password: "", // Passwords are never read from storage
+        confirm: "",
+        country: parsed.country || "India",
+        city: parsed.city || "",
+        terms: !!parsed.terms,
+        selectedTypeId: parsed.selectedTypeId || "",
+      };
+    }
+  } catch {}
+  return {
     business: "",
     owner: "",
     type: "Restaurant",
@@ -40,33 +71,164 @@ function SignupPage() {
     country: "India",
     city: "",
     terms: false,
-  });
+    selectedTypeId: "",
+  };
+};
+
+export const clearSignupDraft = () => {
+  inMemorySignupDraft = null;
+  try {
+    sessionStorage.removeItem("nextvisit_signup_draft");
+  } catch {}
+};
+
+export default function SignupPage() {
+  const navigate = useNavigate();
+  const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [businessTypes, setBusinessTypes] = useState<Array<{ id: string; name: string }>>([]);
+
+  const initialDraft = getInitialSignupDraft();
+  const [selectedTypeId, setSelectedTypeId] = useState<string>(initialDraft.selectedTypeId || "");
+
+  const {
+    values: form,
+    errors,
+    setErrors,
+    touched,
+    setTouched,
+    handleChange,
+    handleBlur,
+    validateAll,
+    validateField,
+    registerRef,
+  } = useFormValidation(
+    {
+      business: initialDraft.business,
+      owner: initialDraft.owner,
+      type: initialDraft.type,
+      phone: initialDraft.phone,
+      email: initialDraft.email,
+      password: initialDraft.password || "",
+      confirm: initialDraft.confirm || "",
+      country: initialDraft.country,
+      city: initialDraft.city,
+      terms: initialDraft.terms,
+    },
+    {
+      business: { required: true, requiredMessage: "Business name is required" },
+      owner: { required: true, requiredMessage: "Owner name is required" },
+      phone: { required: true, isPhone: true, requiredMessage: "10-digit mobile number required" },
+      email: { required: true, isEmail: true, requiredMessage: "Valid email is required" },
+      password: {
+        required: true,
+        requiredMessage: "Password is required",
+        custom: (val) => {
+          if (!val) return "Password is required";
+          if (val.length < 8) return "Password must be at least 8 characters";
+          if (!/[A-Z]/.test(val)) return "Password must contain at least one uppercase letter";
+          if (!/[a-z]/.test(val)) return "Password must contain at least one lowercase letter";
+          if (!/[0-9]/.test(val)) return "Password must contain at least one number";
+          if (!/[^A-Za-z0-9]/.test(val)) return "Password must contain at least one special character";
+          return null;
+        },
+      },
+      confirm: {
+        required: true,
+        requiredMessage: "Confirm password is required",
+        custom: (val) => (val !== form.password ? "Passwords do not match." : null),
+      },
+      country: { required: true, requiredMessage: "Country is required" },
+      city: { required: true, requiredMessage: "City is required" },
+      terms: { required: true, requiredMessage: "You must accept the terms" },
+    }
+  );
+
+  const passwordRequirements = [
+    { label: "At least 8 characters", met: form.password.length >= 8 },
+    { label: "One uppercase letter", met: /[A-Z]/.test(form.password) },
+    { label: "One lowercase letter", met: /[a-z]/.test(form.password) },
+    { label: "One number", met: /[0-9]/.test(form.password) },
+    { label: "One special character", met: /[^A-Za-z0-9]/.test(form.password) },
+  ];
+
+  const isPasswordValid = passwordRequirements.every((r) => r.met);
 
   useEffect(() => {
     getBusinessTypesApi().then((types) => {
       if (Array.isArray(types) && types.length > 0) {
         setBusinessTypes(types);
-        setSelectedTypeId(types[0].id);
+        const draft = getInitialSignupDraft();
+        if (draft.selectedTypeId && types.some((t) => t.id === draft.selectedTypeId)) {
+          setSelectedTypeId(draft.selectedTypeId);
+        } else {
+          const matched = types.find((t) => t.name.toLowerCase() === form.type.toLowerCase());
+          setSelectedTypeId(matched?.id || types[0].id);
+        }
       }
     }).catch(() => {});
   }, []);
 
-  // 60-second cooldown timer for resending OTP
+  // Update in-memory state for client-side routing, and non-sensitive fields to sessionStorage
   useEffect(() => {
-    if (step !== "verify" || cooldown <= 0) return;
-    const timer = setInterval(() => {
-      setCooldown((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [step, cooldown]);
+    inMemorySignupDraft = {
+      ...form,
+      selectedTypeId,
+    };
+    try {
+      const nonSensitive = {
+        business: form.business,
+        owner: form.owner,
+        type: form.type,
+        phone: form.phone,
+        email: form.email,
+        country: form.country,
+        city: form.city,
+        terms: form.terms,
+        selectedTypeId,
+      };
+      sessionStorage.setItem("nextvisit_signup_draft", JSON.stringify(nonSensitive));
+    } catch {}
+  }, [form, selectedTypeId]);
 
-  const set = (k: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const handlePasswordChange = (val: string) => {
+    handleChange("password", val);
+    setTouched((prev) => ({ ...prev, password: true }));
+    if (touched.confirm || form.confirm) {
+      if (form.confirm && val !== form.confirm) {
+        setErrors((prev) => ({ ...prev, confirm: "Passwords do not match." }));
+      } else if (form.confirm && val === form.confirm) {
+        setErrors((prev) => ({ ...prev, confirm: undefined }));
+      }
+    }
+  };
+
+  const handleConfirmChange = (val: string) => {
+    handleChange("confirm", val);
+    setTouched((prev) => ({ ...prev, confirm: true }));
+    if (val !== form.password) {
+      setErrors((prev) => ({ ...prev, confirm: "Passwords do not match." }));
+    } else {
+      setErrors((prev) => ({ ...prev, confirm: undefined }));
+    }
+  };
+
+  const handleLeaveSignup = () => {
+    clearSignupDraft();
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (form.password !== form.confirm) return toast.error("Passwords don't match");
-    if (form.password.length < 6) return toast.error("Password must be at least 6 characters");
-    if (!form.terms) return toast.error("Please accept the Terms to continue");
+    if (!validateAll() || !isPasswordValid || form.password !== form.confirm) {
+      if (form.password !== form.confirm) {
+        toast.error("Passwords do not match.");
+      } else if (!isPasswordValid) {
+        toast.error("Please satisfy all password requirements.");
+      } else {
+        toast.error("Please correct the highlighted fields before submitting.");
+      }
+      return;
+    }
 
     setLoading(true);
 
@@ -74,30 +236,33 @@ function SignupPage() {
       const typeId = selectedTypeId || businessTypes.find(t => t.name.toLowerCase() === form.type.toLowerCase())?.id || businessTypes[0]?.id;
       if (!typeId) {
         toast.error("Invalid business type. Please refresh and try again.");
+        setLoading(false);
         return;
       }
 
-      await registerApi({
+      const res = await registerApi({
         business: {
           business_type_id: typeId,
-          business_name: form.business,
-          phone: form.phone,
-          country: form.country,
+          business_name: form.business.trim(),
+          phone: form.phone.trim(),
+          country: form.country.trim(),
           currency: "INR",
           timezone: "Asia/Kolkata",
-          address: form.city || "Default Address",
+          address: form.city.trim() || "Default Address",
         },
         owner: {
-          owner_name: form.owner,
-          owner_email: form.email,
+          owner_name: form.owner.trim(),
+          owner_email: form.email.trim(),
           password: form.password,
         },
       });
 
-      toast.success("Registration code sent to your email!");
-      setStep("verify");
-      setCooldown(60);
-      setOtp("");
+      toast.success(res.message || "Verification code sent to your email!");
+      const targetEmail = form.email.trim();
+      clearSignupDraft();
+      navigate(`/verify-email?email=${encodeURIComponent(targetEmail)}`, {
+        state: { email: targetEmail },
+      });
     } catch (err: any) {
       toast.error(err.message || "Registration failed. Please try again.");
     } finally {
@@ -105,164 +270,63 @@ function SignupPage() {
     }
   };
 
-  const handleVerify = async (e?: FormEvent) => {
-    if (e) e.preventDefault();
-    if (otp.length < 6) {
-      toast.error("Please enter the complete 6-digit code");
-      return;
-    }
-
-    setVerifying(true);
-    try {
-      await verifyOtpApi(form.email, otp);
-      toast.success("Email verified successfully!");
-      setStep("approved_pending");
-    } catch (err: any) {
-      toast.error(err.message || "Invalid or expired verification code.");
-    } finally {
-      setVerifying(false);
-    }
-  };
-
-  const handleResend = async () => {
-    if (cooldown > 0 || resending) return;
-    setResending(true);
-    try {
-      await resendOtpApi(form.email);
-      toast.success("A new verification code has been sent!");
-      setCooldown(60);
-      setOtp("");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to resend verification code.");
-    } finally {
-      setResending(false);
-    }
-  };
-
   return (
     <div className="grid min-h-screen place-items-center bg-background p-6">
       <div className="w-full max-w-xl">
         <div className="mb-8 flex items-center justify-between">
-          <Link to="/"><BrandLogo /></Link>
-          <Link to="/login" className="text-xs text-muted-foreground hover:text-foreground">← Back to sign in</Link>
+          <Link to="/" onClick={handleLeaveSignup}><BrandLogo /></Link>
+          <Link to="/login" onClick={handleLeaveSignup} className="text-xs text-muted-foreground hover:text-foreground">← Back to sign in</Link>
         </div>
-
-        {/* Step 1: Verification Successful -> Pending Admin Approval */}
-        {step === "approved_pending" && (
+        {submitted ? (
           <div className="rounded-2xl border bg-card p-8 text-center shadow-elegant">
             <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full bg-success/15 text-success">
               <CheckCircle2 className="h-7 w-7" />
             </div>
             <h1 className="font-display text-2xl font-semibold">Account Created Successfully</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Your email <span className="font-medium text-foreground">{form.email}</span> has been verified. Your account is currently under review. We'll notify you after approval.
+              Your account is currently under review. Our team will review your application and contact you within 12 hours at <span className="font-medium text-foreground">{form.email}</span>.
             </p>
             <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-warning/15 px-3 py-1 text-xs font-medium text-warning">
               <Clock className="h-3.5 w-3.5" /> Pending Approval
             </div>
-            <Button className="mt-6 w-full rounded-full gradient-brand text-primary-foreground" onClick={() => navigate({ to: "/login" })}>
-              Back to sign in
+            <Button className="mt-6 w-full rounded-full gradient-brand text-primary-foreground" onClick={() => navigate("/login")}>
+              Back to Sign In
             </Button>
           </div>
-        )}
-
-        {/* Step 2: Email OTP Verification Screen */}
-        {step === "verify" && (
-          <div className="rounded-2xl border bg-card p-8 text-center shadow-elegant">
-            <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full bg-primary/10 text-primary">
-              <Mail className="h-7 w-7" />
-            </div>
-            <h1 className="font-display text-2xl font-semibold">Verify your email address</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              We've sent a 6-digit verification code to <span className="font-semibold text-foreground">{form.email}</span>. Please enter it below to confirm your account.
-            </p>
-
-            <form onSubmit={handleVerify} className="mt-8 flex flex-col items-center space-y-6">
-              <div className="flex justify-center">
-                <InputOTP
-                  maxLength={6}
-                  value={otp}
-                  onChange={(val) => {
-                    setOtp(val);
-                    if (val.length === 6) {
-                      // Optionally auto-trigger verification when 6 digits are typed
-                    }
-                  }}
-                >
-                  <InputOTPGroup>
-                    <InputOTPSlot index={0} />
-                    <InputOTPSlot index={1} />
-                    <InputOTPSlot index={2} />
-                    <InputOTPSlot index={3} />
-                    <InputOTPSlot index={4} />
-                    <InputOTPSlot index={5} />
-                  </InputOTPGroup>
-                </InputOTP>
-              </div>
-
-              <Button
-                type="submit"
-                disabled={verifying || otp.length < 6}
-                className="w-full rounded-full gradient-brand text-primary-foreground shadow-glow"
-              >
-                {verifying ? "Verifying code..." : "Verify code"}
-              </Button>
-
-              <div className="flex flex-col items-center gap-2 pt-2 text-xs text-muted-foreground">
-                {cooldown > 0 ? (
-                  <p>Resend code in <span className="font-medium text-foreground">{cooldown}s</span></p>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleResend}
-                    disabled={resending}
-                    className="h-auto p-1 text-xs text-primary hover:text-primary/80 hover:bg-transparent"
-                  >
-                    {resending ? (
-                      <span className="inline-flex items-center gap-1"><RefreshCw className="h-3 w-3 animate-spin" /> Sending...</span>
-                    ) : (
-                      "Didn't receive a code? Resend OTP"
-                    )}
-                  </Button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => setStep("form")}
-                  className="mt-2 text-xs text-muted-foreground hover:text-foreground underline underline-offset-4"
-                >
-                  ← Wrong email address? Go back
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* Step 3: Registration Form */}
-        {step === "form" && (
+        ) : (
           <>
             <h1 className="font-display text-3xl font-semibold">Create your business account</h1>
             <p className="mt-1 text-sm text-muted-foreground">New accounts need admin approval before you can sign in.</p>
             <form onSubmit={submit} className="mt-8 space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="business">Business name</Label>
-                  <Input id="business" required value={form.business} onChange={(e) => set("business")(e.target.value)} placeholder="Aroma Bistro" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="owner">Owner name</Label>
-                  <Input id="owner" required value={form.owner} onChange={(e) => set("owner")(e.target.value)} placeholder="Priya Sharma" />
-                </div>
+                <ValidatedField label="Business name" required error={errors.business} touched={touched.business}>
+                  <Input
+                    ref={registerRef("business")}
+                    value={form.business}
+                    onChange={(e) => handleChange("business", e.target.value)}
+                    onBlur={() => handleBlur("business")}
+                    autoComplete="organization"
+                    placeholder="Aroma Bistro"
+                  />
+                </ValidatedField>
+                <ValidatedField label="Owner name" required error={errors.owner} touched={touched.owner}>
+                  <Input
+                    ref={registerRef("owner")}
+                    value={form.owner}
+                    onChange={(e) => handleChange("owner", e.target.value)}
+                    onBlur={() => handleBlur("owner")}
+                    autoComplete="name"
+                    placeholder="Priya Sharma"
+                  />
+                </ValidatedField>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label>Business type</Label>
+                  <Label className="text-xs font-semibold">Business type <span className="text-destructive font-bold">*</span></Label>
                   <Select
                     value={form.type}
                     onValueChange={(v) => {
-                      set("type")(v);
+                      handleChange("type", v);
                       const matched = businessTypes.find((bt) => bt.name.toLowerCase() === v.toLowerCase());
                       if (matched) setSelectedTypeId(matched.id);
                     }}
@@ -284,57 +348,123 @@ function SignupPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input id="phone" required value={form.phone} onChange={(e) => set("phone")(e.target.value)} placeholder="+91 98765 43210" />
-                </div>
+                <ValidatedField label="Phone Number" required error={errors.phone} touched={touched.phone}>
+                  <Input
+                    ref={registerRef("phone")}
+                    value={form.phone}
+                    onChange={(e) => handleChange("phone", e.target.value)}
+                    onBlur={() => handleBlur("phone")}
+                    maxLength={10}
+                    type="tel"
+                    autoComplete="tel"
+                    placeholder="10-digit mobile number"
+                  />
+                </ValidatedField>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" required value={form.email} onChange={(e) => set("email")(e.target.value)} placeholder="you@business.com" />
+              <ValidatedField label="Email Address" required error={errors.email} touched={touched.email}>
+                <Input
+                  ref={registerRef("email")}
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => handleChange("email", e.target.value)}
+                  onBlur={() => handleBlur("email")}
+                  autoComplete="email"
+                  placeholder="you@business.com"
+                />
+              </ValidatedField>
+              <div className="space-y-2">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <ValidatedField label="Password" required error={errors.password} touched={touched.password}>
+                    <PasswordInput
+                      ref={registerRef("password")}
+                      value={form.password}
+                      onChange={(e) => handlePasswordChange(e.target.value)}
+                      onBlur={() => handleBlur("password")}
+                      autoComplete="new-password"
+                    />
+                  </ValidatedField>
+                  <ValidatedField label="Confirm password" required error={errors.confirm} touched={touched.confirm}>
+                    <PasswordInput
+                      ref={registerRef("confirm")}
+                      value={form.confirm}
+                      onChange={(e) => handleConfirmChange(e.target.value)}
+                      onBlur={() => handleBlur("confirm")}
+                      autoComplete="new-password"
+                    />
+                  </ValidatedField>
+                </div>
+                <div className="rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground">
+                  <p className="font-medium text-foreground mb-1.5">Password must contain:</p>
+                  <ul className="grid gap-1.5 sm:grid-cols-2">
+                    {passwordRequirements.map((req, i) => (
+                      <li
+                        key={i}
+                        className={`flex items-center gap-1.5 transition-colors ${
+                          req.met ? "text-success font-medium" : "text-muted-foreground"
+                        }`}
+                      >
+                        {req.met ? (
+                          <Check className="h-3.5 w-3.5 text-success shrink-0 stroke-[2.5]" />
+                        ) : (
+                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/40 mx-1 shrink-0" />
+                        )}
+                        <span>{req.label}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="password">Password</Label>
-                  <PasswordInput
-                    id="password"
-                    required
-                    value={form.password}
-                    onChange={(e) => set("password")(e.target.value)}
+                <ValidatedField label="Country" required error={errors.country} touched={touched.country}>
+                  <Input
+                    ref={registerRef("country")}
+                    value={form.country}
+                    onChange={(e) => handleChange("country", e.target.value)}
+                    onBlur={() => handleBlur("country")}
+                    autoComplete="country-name"
+                    placeholder="India"
                   />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="confirm">Confirm password</Label>
-                  <PasswordInput
-                    id="confirm"
-                    required
-                    value={form.confirm}
-                    onChange={(e) => set("confirm")(e.target.value)}
+                </ValidatedField>
+                <ValidatedField label="City" required error={errors.city} touched={touched.city}>
+                  <Input
+                    ref={registerRef("city")}
+                    value={form.city}
+                    onChange={(e) => handleChange("city", e.target.value)}
+                    onBlur={() => handleBlur("city")}
+                    autoComplete="address-level2"
+                    placeholder="Mumbai"
                   />
-                </div>
+                </ValidatedField>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="country">Country</Label>
-                  <Input id="country" required value={form.country} onChange={(e) => set("country")(e.target.value)} placeholder="India" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="city">City</Label>
-                  <Input id="city" required value={form.city} onChange={(e) => set("city")(e.target.value)} placeholder="Mumbai" />
-                </div>
-              </div>
-              <label className="flex items-start gap-2 rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
-                <Checkbox checked={form.terms} onCheckedChange={(v) => setForm((f) => ({ ...f, terms: !!v }))} className="mt-0.5" />
-                <span>I accept the <Link to="/docs" className="text-primary hover:underline">Terms</Link> and <Link to="/docs" className="text-primary hover:underline">Privacy Policy</Link>.</span>
-              </label>
+              <ValidatedField error={errors.terms} touched={touched.terms}>
+                <label className="flex items-start gap-2 rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
+                  <Checkbox
+                    checked={form.terms}
+                    onCheckedChange={(v) => handleChange("terms", !!v)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    I accept the{" "}
+                    <Link to="/terms" state={{ from: "signup" }} className="text-primary hover:underline">
+                      Terms &amp; Conditions
+                    </Link>{" "}
+                    and{" "}
+                    <Link to="/docs" className="text-primary hover:underline">
+                      Privacy Policy
+                    </Link>
+                    .
+                  </span>
+                </label>
+              </ValidatedField>
               <p className="rounded-lg bg-primary/5 p-3 text-xs text-muted-foreground">
                 ✅ Once approved, you'll get a 14-day full-access free trial — no card required.
               </p>
-              <Button type="submit" disabled={loading} className="w-full rounded-full gradient-brand text-primary-foreground shadow-glow">
+              <Button type="submit" disabled={loading} className="w-full rounded-full gradient-brand text-primary-foreground shadow-glow gap-2">
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 {loading ? "Creating account..." : "Create account"}
               </Button>
               <p className="text-center text-xs text-muted-foreground">
-                Already have an account? <Link to="/login" className="text-primary hover:underline">Sign in</Link>
+                Already have an account? <Link to="/login" onClick={handleLeaveSignup} className="text-primary hover:underline">Sign in</Link>
               </p>
             </form>
           </>

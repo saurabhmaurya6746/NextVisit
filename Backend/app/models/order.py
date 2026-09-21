@@ -1,7 +1,8 @@
+from datetime import datetime
 import enum
 import uuid
 
-from sqlalchemy import DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String
+from sqlalchemy import DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,6 +24,9 @@ class OrderStatus(str, enum.Enum):
 
 class Order(BaseModel):
     __tablename__ = "orders"
+    __table_args__ = (
+        UniqueConstraint("business_id", "order_number", name="uq_business_order_number"),
+    )
 
     business_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -62,6 +66,8 @@ class Order(BaseModel):
     total_amount: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
 
     notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    visit_token: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    last_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -92,7 +98,7 @@ class OrderItem(BaseModel):
 
     menu_item_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("services.id", ondelete="SET NULL"),
+        ForeignKey("menu_items.id", ondelete="SET NULL"),
         nullable=True,
     )
 
@@ -112,4 +118,4 @@ class OrderItem(BaseModel):
 
     order = relationship("Order", back_populates="items")
     service = relationship("Service", foreign_keys=[service_id])
-    menu_item = relationship("Service", foreign_keys=[menu_item_id])
+    menu_item = relationship("MenuItem", foreign_keys=[menu_item_id])

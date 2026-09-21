@@ -14,6 +14,7 @@ export interface AppointmentService {
 export interface Appointment {
   id: string;
   code?: string;
+  businessKey?: string;
   /** Primary service name (back-compat) — derived from services[0] when present. */
   service: string;
   /** Multi-service list (new). */
@@ -24,6 +25,13 @@ export interface Appointment {
   customerId?: string;
   customerName?: string;
   customerPhone?: string;
+  customerGender?: string;
+  customerDob?: string;
+  customerAnniversary?: string;
+  serviceAreaId?: string;
+  serviceAreaName?: string;
+  chairId?: string;
+  chairName?: string;
   notes?: string;
   price: number;
   duration?: number;
@@ -31,6 +39,11 @@ export interface Appointment {
   paymentStatus?: PaymentStatus;
   paidAt?: string;
   visitCounted?: boolean;
+  isWalkIn?: boolean;
+  advancePaid?: number;
+  couponCode?: string;
+  couponDiscount?: number;
+  discountDescription?: string;
 }
 
 const KEY = "growthos:appointments";
@@ -45,68 +58,74 @@ function read(): Appointment[] {
       status: (a.status as AppointmentStatus) || "pending",
       paymentStatus: (a.paymentStatus || (a.paidAt ? "paid" : "unpaid")) as PaymentStatus,
       services: a.services && a.services.length ? a.services : (a.service ? [{ name: a.service, price: a.price || 0, duration: a.duration || 30 }] : []),
+      couponCode: a.couponCode || (a as any).coupon_code || (a as any).applied_coupon_code,
+      couponDiscount: a.couponDiscount ?? (a as any).coupon_discount ?? (a as any).discount ?? 0,
+      discountDescription: a.discountDescription || (a as any).discount_description,
     }));
   } catch { return []; }
 }
 function write(a: Appointment[]) {
-  localStorage.setItem(KEY, JSON.stringify(a));
-  window.dispatchEvent(new Event("growthos:appointments-changed"));
-}
-
-function nextApptCode(): string {
-  if (typeof window === "undefined") return "APP-00000";
-  const n = (parseInt(localStorage.getItem(CODE_KEY) || "0", 10) || 0) + 1;
-  localStorage.setItem(CODE_KEY, String(n));
-  return `APP-${String(n).padStart(5, "0")}`;
-}
-
-export function apptCode(a: Appointment) {
-  if (a.code) return a.code;
-  const tail = a.id.replace(/[^A-Z0-9]/gi, "").toUpperCase().slice(-5).padStart(5, "0");
-  return `APP-${tail}`;
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem(KEY, JSON.stringify(a)); } catch {}
 }
 
 export function useAppointments() {
-  const [a, setA] = useState<Appointment[]>(() => read());
+  const [list, setList] = useState<Appointment[]>(read);
+
   useEffect(() => {
-    const on = () => setA(read());
-    window.addEventListener("growthos:appointments-changed", on);
-    window.addEventListener("storage", on);
-    return () => {
-      window.removeEventListener("growthos:appointments-changed", on);
-      window.removeEventListener("storage", on);
-    };
+    function handleStorage(e: StorageEvent) {
+      if (e.key === KEY) setList(read());
+    }
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
   }, []);
-  return a;
+
+  return list;
 }
 
-export function getAppointment(id: string) {
-  return read().find((a) => a.id === id) || null;
+export function getAppointment(id: string): Appointment | undefined {
+  return read().find((a) => a.id === id);
 }
 
-export function saveAppointment(input: Omit<Appointment, "id" | "code">) {
-  const services = input.services && input.services.length ? input.services : [{ name: input.service, price: input.price || 0, duration: input.duration || 30 }];
-  const price = services.reduce((s, x) => s + (x.price || 0), 0);
-  const duration = services.reduce((s, x) => s + (x.duration || 0), 0);
-  const appt: Appointment = {
-    ...input,
-    services,
-    service: services[0]?.name || input.service,
-    price,
-    duration,
-    id: `A-${Date.now().toString(36).toUpperCase()}`,
-    code: nextApptCode(),
-    status: input.status || "pending",
-    paymentStatus: input.paymentStatus || "unpaid",
-  };
-  write([appt, ...read()]);
+export function getNextApptCode(): string {
+  if (typeof window === "undefined") return "APP-00001";
+  try {
+    const raw = localStorage.getItem(CODE_KEY);
+    let next = raw ? parseInt(raw, 10) : 1;
+    if (isNaN(next) || next < 1) next = 1;
+    localStorage.setItem(CODE_KEY, String(next + 1));
+    return `APP-${String(next).padStart(5, "0")}`;
+  } catch {
+    return "APP-00001";
+  }
+}
+
+export function apptCode(a?: Partial<Appointment> | null): string {
+  if (!a) return "APP-00000";
+  if (a.code) return a.code;
+  if (a.id) {
+    if (a.id.startsWith("apt-")) {
+      const digits = a.id.replace(/\D/g, "");
+      return `APP-${digits ? digits.slice(-5) : "00001"}`;
+    }
+    const clean = a.id.replace(/-/g, "").toUpperCase();
+    return `APP-${clean.slice(0, 5)}`;
+  }
+  return "APP-00000";
+}
+
+export function saveAppointment(a: Appointment) {
+  const list = read();
+  const idx = list.findIndex((x) => x.id === a.id);
+  if (idx >= 0) list[idx] = a;
+  else list.unshift(a);
+  write(list);
   pushNotification({
-    type: "staff_order",
-    title: "New Appointment",
-    body: `${appt.code} · ${appt.customerName || appt.customerPhone || "Walk-in"} · ${services.map((s) => s.name).join(", ")}`,
-    orderId: appt.id,
+    type: "appointment_created",
+    title: "New Salon Appointment",
+    message: `Appointment #${apptCode(a)} for ${a.customerName || "Walk-in"} created.`,
   }, { sound: true });
-  return appt;
+  return a;
 }
 
 export function updateAppointment(id: string, patch: Partial<Appointment>) {
@@ -119,7 +138,12 @@ export function updateAppointment(id: string, patch: Partial<Appointment>) {
   return merged;
 }
 
-export function markAppointmentPaid(id: string, payment: ApptPayment, customer?: { id?: string; name?: string; phone?: string }) {
+export function markAppointmentPaid(
+  id: string,
+  payment: ApptPayment,
+  customer?: { id?: string; name?: string; phone?: string },
+  couponDetails?: { code?: string; discount?: number; description?: string }
+) {
   const list = read();
   const idx = list.findIndex((a) => a.id === id);
   if (idx < 0) return null;
@@ -134,6 +158,9 @@ export function markAppointmentPaid(id: string, payment: ApptPayment, customer?:
     customerName: customer?.name ?? a.customerName,
     customerPhone: customer?.phone ?? a.customerPhone,
     visitCounted: a.visitCounted ? true : true,
+    couponCode: couponDetails?.code ?? a.couponCode,
+    couponDiscount: couponDetails?.discount ?? a.couponDiscount,
+    discountDescription: couponDetails?.description ?? a.discountDescription,
   };
   list[idx] = patched;
   write(list);

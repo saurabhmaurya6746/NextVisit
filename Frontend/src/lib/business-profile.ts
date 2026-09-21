@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { BusinessType } from "./business-type";
+import { getBusinessProfileApi, type BusinessProfile as ApiBusinessProfile } from "./business-settings-api";
+import { getSession, getToken } from "./auth";
 
 export interface RestaurantProfile {
   name: string;
@@ -19,6 +22,7 @@ export interface RestaurantProfile {
   hours: string;
   paidHoldMs: number;
 }
+
 export interface SalonProfile {
   name: string;
   logo: string;
@@ -93,4 +97,74 @@ export function useProfile<T extends BusinessType>(t: T) {
     };
   }, [t]);
   return p as T extends "restaurant" ? RestaurantProfile : SalonProfile;
+}
+
+// ---------------------------------------------------------------------------
+// HELPER: Generate Initials with strict fallback rules
+// ---------------------------------------------------------------------------
+export function getInitials(name?: string | null): string {
+  if (!name || typeof name !== "string") return "NV";
+  const clean = name.trim();
+  if (!clean || clean.toLowerCase() === "unknown" || clean.toLowerCase() === "null" || clean.toLowerCase() === "undefined") {
+    return "NV";
+  }
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "NV";
+  if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+// ---------------------------------------------------------------------------
+// DYNAMIC AUTHENTICATED BUSINESS HOOK
+// ---------------------------------------------------------------------------
+export function useAuthenticatedBusiness() {
+  const session = getSession();
+  const token = getToken();
+
+  const { data, isLoading, refetch } = useQuery<ApiBusinessProfile | null>({
+    queryKey: ["authenticated-business", session?.clientId],
+    queryFn: async () => {
+      if (!token || session?.role !== "business") return null;
+      try {
+        return await getBusinessProfileApi();
+      } catch (err) {
+        console.warn("[BUSINESS PROFILE] Failed to load business profile:", err);
+        return null;
+      }
+    },
+    enabled: !!token && session?.role === "business",
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  // Calculate fallbacks strictly according to rules:
+  // Never show Unknown, Null, Undefined, or empty strings.
+  const rawName = data?.name || session?.businessName;
+  const name =
+    rawName &&
+    rawName !== "null" &&
+    rawName !== "undefined" &&
+    rawName !== "Unknown"
+      ? rawName
+      : "NextVisit";
+
+  const rawCountry = data?.country;
+  const country =
+    rawCountry &&
+    rawCountry !== "null" &&
+    rawCountry !== "undefined"
+      ? rawCountry
+      : "India";
+
+  const logoUrl = data?.logo_url || undefined;
+  const initials = getInitials(name);
+
+  return {
+    business: data,
+    isLoading,
+    name,
+    country,
+    logoUrl,
+    initials,
+    refetch,
+  };
 }

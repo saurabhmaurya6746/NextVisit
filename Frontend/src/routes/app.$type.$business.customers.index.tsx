@@ -1,8 +1,9 @@
 import { AppLink } from "@/lib/app-nav";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Search, Plus, Download, Upload, Filter, LayoutGrid, List as ListIcon, MessageCircle, Phone, Edit, Archive, Users } from "lucide-react";
+import { Search, Plus, Download, Upload, Filter, LayoutGrid, List as ListIcon, MessageCircle, Phone, Edit, Archive, Users, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, ArrowUpDown, Trash2, Loader2, FileText, FileSpreadsheet, FileCode, ChevronDown } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { CustomerCard } from "@/components/customer-card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -24,26 +26,62 @@ import { openWhatsApp } from "@/lib/celebration-utils";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
-  listCustomersApi,
+  listPaginatedCustomersApi,
   createCustomerApi,
   updateCustomerApi,
+  deleteCustomerApi,
+  exportCustomersApi,
+  importCustomersApi,
   type CustomerModel,
+  type CustomerImportResponse,
 } from "@/lib/customers-api";
 
 export const Route = createFileRoute("/app/$type/$business/customers/")({ component: CustomersPage });
 
 const VIEW_KEY = "growthos:customers-view";
+const sanitizePhoneInput = (v: string) => (v || "").replace(/\D/g, "").slice(0, 10);
 
-function CustomersPage() {
+export default function CustomersPage() {
+  const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
+  const [sortBy, setSortBy] = useState("newest");
+  const [page, setPage] = useState(1);
+  const [limit] = useState(10);
   const [view, setView] = useState<"card" | "list">("card");
   const [toArchive, setToArchive] = useState<string | null>(null);
+  const [toDelete, setToDelete] = useState<CustomerModel | null>(null);
 
-  // Live backend data states
-  const [customers, setCustomers] = useState<CustomerModel[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Server-side Paginated Query
+  const {
+    data: paginatedResult,
+    isLoading: loading,
+    isError,
+    error: queryErr,
+    refetch: loadCustomers,
+  } = useQuery({
+    queryKey: ["customers-paginated", { page, limit, q, sortBy, status }],
+    queryFn: () =>
+      listPaginatedCustomersApi({
+        page,
+        limit,
+        search: q,
+        sort: sortBy,
+        filter: status,
+      }),
+    staleTime: 5000,
+  });
+
+  const customers = paginatedResult?.items || [];
+  const total = paginatedResult?.total || 0;
+  const totalPages = paginatedResult?.total_pages || 1;
+  const hasNext = paginatedResult?.has_next || false;
+  const hasPrevious = paginatedResult?.has_previous || false;
+
+  const fromItem = total > 0 ? (page - 1) * limit + 1 : 0;
+  const toItem = Math.min(page * limit, total);
+
+  const error = isError ? (queryErr as any)?.message || "Failed to load customers" : null;
 
   // Add Customer modal state
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -66,25 +104,6 @@ function CustomersPage() {
   const [editAddress, setEditAddress] = useState("");
   const [editNotes, setEditNotes] = useState("");
 
-  const loadCustomers = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await listCustomersApi();
-      setCustomers(data);
-    } catch (err: any) {
-      console.error("[CUSTOMERS] Failed to fetch customers:", err);
-      setError(err.message || "Failed to load customers from backend.");
-      toast.error("Failed to load customers");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadCustomers();
-  }, []);
-
   useEffect(() => {
     const v = localStorage.getItem(VIEW_KEY);
     if (v === "card" || v === "list") setView(v);
@@ -94,40 +113,43 @@ function CustomersPage() {
     localStorage.setItem(VIEW_KEY, view);
   }, [view]);
 
-  const activeCustomers = customers.filter((c) => c.isActive);
-
-  const filtered = activeCustomers.filter((c) => {
-    const matchesStatus = status === "all" || c.status === status;
-    const matchesQuery = c.name.toLowerCase().includes(q.toLowerCase()) || c.phone.includes(q);
-    return matchesStatus && matchesQuery;
-  });
-
   const target = toArchive ? customers.find((c) => c.id === toArchive) : null;
 
   function handleWhatsApp(c: CustomerModel) {
-    const msg = `Hi ${c.name.split(" ")[0]} 👋 — quick note from Aroma Bistro.`;
-    openWhatsApp(c.phone, msg);
-    logWhatsApp({ customerId: c.id, kind: "manual", message: msg });
-    toast.success(`WhatsApp opened for ${c.name}`);
+    const firstName = c.name ? c.name.split(" ")[0] : "Customer";
+    const msg = `Hi ${firstName} 👋 — thank you for connecting with us!`;
+    const success = openWhatsApp(c.phone, msg);
+    if (success) {
+      logWhatsApp({ customerId: c.id, kind: "manual", message: msg });
+      toast.success(`WhatsApp chat opened for ${c.name}`);
+    }
   }
 
   const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nameInput.trim() || !phoneInput.trim()) {
-      toast.error("Name and Phone are required.");
+    const cleanName = nameInput.trim();
+    const cleanPhone = sanitizePhoneInput(phoneInput);
+    const cleanEmail = emailInput.trim();
+
+    if (!cleanName) {
+      toast.error("Full Name is required.");
+      return;
+    }
+    if (cleanPhone.length !== 10) {
+      toast.error("Please enter a valid 10-digit mobile number.");
       return;
     }
     const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (emailInput.trim() && !EMAIL_REGEX.test(emailInput.trim())) {
-      toast.error("Please enter a valid email address (e.g. name@example.com).");
+    if (cleanEmail && !EMAIL_REGEX.test(cleanEmail)) {
+      toast.error("Please enter a valid email address.");
       return;
     }
     setAddLoading(true);
     try {
       const newCust = await createCustomerApi({
-        name: nameInput.trim(),
-        phone: phoneInput.trim(),
-        email: emailInput.trim() || undefined,
+        name: cleanName,
+        phone: cleanPhone,
+        email: cleanEmail || undefined,
         birth_date: birthDateInput || undefined,
         anniversary_date: anniversaryInput || undefined,
       });
@@ -138,6 +160,7 @@ function CustomersPage() {
       setEmailInput("");
       setBirthDateInput("");
       setAnniversaryInput("");
+      qc.invalidateQueries({ queryKey: ["customers-paginated"] });
       await loadCustomers();
     } catch (err: any) {
       console.error("[CUSTOMERS] Create error:", err);
@@ -159,33 +182,41 @@ function CustomersPage() {
     setEditNotes(c.notes || "");
   };
 
-  const handleSaveEditCustomer = async (e: React.FormEvent) => {
+  const handleUpdateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingCustomer) return;
-    if (!editName.trim() || !editPhone.trim()) {
-      toast.error("Name and Phone are required.");
+    const cleanName = editName.trim();
+    const cleanPhone = sanitizePhoneInput(editPhone);
+    const cleanEmail = editEmail.trim();
+
+    if (!cleanName) {
+      toast.error("Full Name is required.");
+      return;
+    }
+    if (cleanPhone.length !== 10) {
+      toast.error("Please enter a valid 10-digit mobile number.");
       return;
     }
     const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (editEmail.trim() && !EMAIL_REGEX.test(editEmail.trim())) {
+    if (cleanEmail && !EMAIL_REGEX.test(cleanEmail)) {
       toast.error("Please enter a valid email address.");
       return;
     }
-
     setEditLoading(true);
     try {
-      const updated = await updateCustomerApi(editingCustomer.id, {
-        name: editName.trim(),
-        phone: editPhone.trim(),
-        email: editEmail.trim() || undefined,
-        gender: editGender.trim() || undefined,
+      await updateCustomerApi(editingCustomer.id, {
+        name: cleanName,
+        phone: cleanPhone,
+        email: cleanEmail || undefined,
+        gender: editGender || undefined,
         birth_date: editBirthDate || undefined,
         anniversary_date: editAnniversary || undefined,
         address: editAddress.trim() || undefined,
         notes: editNotes.trim() || undefined,
       });
-      toast.success(`Customer ${updated.name} updated successfully!`);
+      toast.success(`Customer ${cleanName} updated!`);
       setEditingCustomer(null);
+      qc.invalidateQueries({ queryKey: ["customers-paginated"] });
       await loadCustomers();
     } catch (err: any) {
       console.error("[CUSTOMERS] Update error:", err);
@@ -200,7 +231,8 @@ function CustomersPage() {
     try {
       await updateCustomerApi(toArchive, { is_active: false });
       toast.success("Customer archived");
-      setCustomers((prev) => prev.filter((c) => c.id !== toArchive));
+      qc.invalidateQueries({ queryKey: ["customers-paginated"] });
+      await loadCustomers();
     } catch (err: any) {
       console.error("[CUSTOMERS] Archive error:", err);
       toast.error("Failed to archive customer");
@@ -209,20 +241,101 @@ function CustomersPage() {
     }
   };
 
+  const [exportingFormat, setExportingFormat] = useState<string | null>(null);
+
+  const handleExport = async (fmt: "pdf" | "xlsx" | "csv") => {
+    setExportingFormat(fmt);
+    try {
+      await exportCustomersApi({
+        search: q,
+        filter: status,
+        sort: sortBy,
+        format: fmt,
+      });
+      const fmtLabel = fmt === "xlsx" ? "Excel" : fmt.toUpperCase();
+      toast.success(`Customers exported as ${fmtLabel} successfully!`);
+    } catch (err: any) {
+      console.error("[CUSTOMERS] Export error:", err);
+      toast.error(err.message || `Failed to export customers as ${fmt}`);
+    } finally {
+      setExportingFormat(null);
+    }
+  };
+
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importSummary, setImportSummary] = useState<CustomerImportResponse | null>(null);
+
+  const handleDownloadSampleTemplate = () => {
+    const csvContent = "Customer Name,Phone,Email,Gender,Birthday,Anniversary,Notes\nRahul Sharma,9876543210,rahul@example.com,Male,1990-05-15,2018-11-20,VIP Salon Client\nPriya Patel,9876543211,priya@example.com,Female,1992-08-10,,Regular Client\n";
+    const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "customers_import_template.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast.success("Sample template downloaded!");
+  };
+
+  const handleDoImport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!importFile) {
+      toast.error("Please select a CSV or Excel file to import.");
+      return;
+    }
+    setImporting(true);
+    setImportSummary(null);
+    try {
+      const res = await importCustomersApi(importFile);
+      setImportSummary(res);
+      qc.invalidateQueries({ queryKey: ["customers-paginated"] });
+      await loadCustomers();
+      if (res.imported_count > 0) {
+        toast.success(`Successfully imported ${res.imported_count} customers!`);
+      } else {
+        toast.warning(res.message || "Import completed with no new customers added.");
+      }
+    } catch (err: any) {
+      console.error("[CUSTOMERS] Import error:", err);
+      toast.error(err.message || "Failed to import customers file.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleDeleteCustomer = async () => {
+    if (!toDelete) return;
+    try {
+      await deleteCustomerApi(toDelete.id);
+      toast.success(`Customer ${toDelete.name} deleted successfully!`);
+      qc.invalidateQueries({ queryKey: ["customers-paginated"] });
+      await loadCustomers();
+    } catch (err: any) {
+      console.error("[CUSTOMERS] Delete error:", err);
+      toast.error(err.message || "Failed to delete customer");
+    } finally {
+      setToDelete(null);
+    }
+  };
+
   return (
     <PageTransition>
       <PageHeader
         title="Customers"
-        description={`${activeCustomers.length} active customer${activeCustomers.length === 1 ? "" : "s"} · Live backend connected`}
+        description={`Showing ${fromItem}–${toItem} of ${total} customers · Server-side Paginated`}
         actions={
-          <>
-            <div className="inline-flex rounded-full border p-0.5">
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto">
+            <div className="inline-flex rounded-full border p-0.5 bg-muted/30 shrink-0">
               <button
                 type="button"
                 onClick={() => setView("card")}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all",
-                  view === "card" ? "gradient-brand text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer",
+                  view === "card" ? "gradient-brand text-primary-foreground shadow-2xs" : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <LayoutGrid className="h-3.5 w-3.5" /> Card
@@ -231,35 +344,134 @@ function CustomersPage() {
                 type="button"
                 onClick={() => setView("list")}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all",
-                  view === "list" ? "gradient-brand text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer",
+                  view === "list" ? "gradient-brand text-primary-foreground shadow-2xs" : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <ListIcon className="h-3.5 w-3.5" /> List
               </button>
             </div>
-            <Button variant="outline" size="sm" className="rounded-full transition-transform hover:scale-105 active:scale-95" onClick={() => toast("CSV imported")}><Upload className="mr-1.5 h-4 w-4" /> Import</Button>
-            <Button variant="outline" size="sm" className="rounded-full transition-transform hover:scale-105 active:scale-95" onClick={() => toast("Exported")}><Download className="mr-1.5 h-4 w-4" /> Export</Button>
-            <Button size="sm" className="rounded-full gradient-brand text-primary-foreground transition-transform hover:scale-105 active:scale-95" onClick={() => setIsAddOpen(true)}>
-              <Plus className="mr-1.5 h-4 w-4" /> Add customer
-            </Button>
-          </>
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap flex-1 sm:flex-none justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full text-xs h-8 px-3 cursor-pointer"
+                onClick={() => {
+                  setImportFile(null);
+                  setImportSummary(null);
+                  setIsImportOpen(true);
+                }}
+              >
+                <Upload className="mr-1.5 h-3.5 w-3.5" /> Import
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!!exportingFormat || loading}
+                    className="rounded-full text-xs h-8 px-3 cursor-pointer"
+                  >
+                    {exportingFormat ? (
+                      <>
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Exporting...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="mr-1.5 h-3.5 w-3.5" /> Export <ChevronDown className="ml-1 h-3 w-3 opacity-60" />
+                      </>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52 rounded-xl p-1.5 shadow-lg">
+                  <DropdownMenuItem
+                    className="rounded-lg cursor-pointer py-2 text-xs font-medium"
+                    onClick={() => handleExport("pdf")}
+                  >
+                    <FileText className="mr-2 h-4 w-4 text-rose-500" />
+                    <span>PDF Report (.pdf)</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="rounded-lg cursor-pointer py-2 text-xs font-medium"
+                    onClick={() => handleExport("xlsx")}
+                  >
+                    <FileSpreadsheet className="mr-2 h-4 w-4 text-emerald-500" />
+                    <span>Excel Sheet (.xlsx)</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="rounded-lg cursor-pointer py-2 text-xs font-medium"
+                    onClick={() => handleExport("csv")}
+                  >
+                    <FileCode className="mr-2 h-4 w-4 text-blue-500" />
+                    <span>CSV File (.csv)</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                size="sm"
+                className="rounded-full gradient-brand text-primary-foreground text-xs h-8 px-3 cursor-pointer transition-transform hover:scale-105 active:scale-95"
+                onClick={() => setIsAddOpen(true)}
+              >
+                <Plus className="mr-1.5 h-3.5 w-3.5" /> Add customer
+              </Button>
+            </div>
+          </div>
         }
       />
-      <div className="mb-4 grid gap-2 sm:flex sm:items-center">
+      <div className="mb-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search by name or phone…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
+          <Input
+            placeholder="Search by name, phone or email…"
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setPage(1);
+            }}
+            className="pl-9 h-9 text-xs rounded-full"
+          />
         </div>
-        <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger className="w-full sm:w-40"><Filter className="mr-1.5 h-3.5 w-3.5" /><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All customers</SelectItem>
-            <SelectItem value="VIP">VIP</SelectItem>
-            <SelectItem value="Regular">Regular</SelectItem>
-            <SelectItem value="New">New</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select
+            value={status}
+            onValueChange={(val) => {
+              setStatus(val);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="flex-1 sm:w-36 h-9 rounded-full text-xs">
+              <Filter className="mr-1.5 h-3.5 w-3.5 shrink-0" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All customers</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+              <SelectItem value="VIP">VIP</SelectItem>
+              <SelectItem value="New">New</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={sortBy}
+            onValueChange={(val) => {
+              setSortBy(val);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="flex-1 sm:w-40 h-9 rounded-full text-xs">
+              <ArrowUpDown className="mr-1.5 h-3.5 w-3.5 shrink-0" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="newest">Newest First</SelectItem>
+              <SelectItem value="oldest">Oldest First</SelectItem>
+              <SelectItem value="highest_spend">Highest Spend</SelectItem>
+              <SelectItem value="most_visits">Most Visits</SelectItem>
+              <SelectItem value="name_asc">Name (A-Z)</SelectItem>
+              <SelectItem value="name_desc">Name (Z-A)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {loading ? (
@@ -269,18 +481,27 @@ function CustomersPage() {
           title="Error loading customers"
           description={error}
           icon={<Users className="h-7 w-7 text-destructive" />}
-          action={<Button variant="outline" className="rounded-full" onClick={loadCustomers}>Retry</Button>}
+          action={<Button variant="outline" className="rounded-full" onClick={() => loadCustomers()}>Retry</Button>}
         />
-      ) : filtered.length === 0 ? (
+      ) : customers.length === 0 ? (
         <EmptyState
-          title="No customers match your filters"
-          description="Try clearing filters or adding a new customer."
+          title="No customers found"
+          description={q ? "No customers match your search query." : "No customers yet. Add your first customer."}
           icon={<Users className="h-7 w-7" />}
-          action={<Button variant="outline" className="rounded-full" onClick={() => { setQ(""); setStatus("all"); }}>Clear filters</Button>}
+          action={<Button variant="outline" className="rounded-full" onClick={() => { setQ(""); setStatus("all"); setPage(1); }}>Clear search</Button>}
         />
       ) : view === "card" ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filtered.map((c, i) => <CustomerCard key={c.id} c={c} index={i} onEdit={() => openEditModal(c)} />)}
+          {customers.map((c, i) => (
+            <CustomerCard
+              key={c.id}
+              c={c}
+              index={i}
+              onEdit={() => openEditModal(c)}
+              onDelete={() => setToDelete(c)}
+              onWhatsApp={() => handleWhatsApp(c)}
+            />
+          ))}
         </div>
       ) : (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="rounded-2xl border bg-card shadow-elegant overflow-hidden">
@@ -301,7 +522,7 @@ function CustomersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((c) => (
+                {customers.map((c) => (
                   <TableRow key={c.id} className="group">
                     <TableCell>
                       <AppLink path="customers/$id" params={{ id: c.id }} className="flex items-center gap-2 font-medium hover:text-primary">
@@ -322,7 +543,7 @@ function CustomersPage() {
                         <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full" title="WhatsApp" onClick={() => handleWhatsApp(c)}><MessageCircle className="h-3.5 w-3.5" /></Button>
                         <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full" title="Call" onClick={() => window.open(`tel:${c.phone.replace(/[^\d+]/g, "")}`)}><Phone className="h-3.5 w-3.5" /></Button>
                         <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full" title="Edit Customer" onClick={() => openEditModal(c)}><Edit className="h-3.5 w-3.5" /></Button>
-                        <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full text-destructive" title="Archive" onClick={() => setToArchive(c.id)}><Archive className="h-3.5 w-3.5" /></Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full text-destructive" title="Delete Customer" onClick={() => setToDelete(c)}><Trash2 className="h-3.5 w-3.5" /></Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -331,6 +552,60 @@ function CustomersPage() {
             </Table>
           </div>
         </motion.div>
+      )}
+
+      {/* SERVER-SIDE PAGINATION CONTROLS */}
+      {!loading && !error && total > 0 && (
+        <div className="mt-4 flex flex-col items-center justify-between gap-3 rounded-2xl border bg-card p-3.5 shadow-xs sm:flex-row">
+          <p className="text-xs text-muted-foreground font-medium text-center sm:text-left">
+            Showing <strong className="text-foreground">{fromItem}–{toItem}</strong> of <strong className="text-foreground">{total}</strong> customers
+          </p>
+          <div className="flex items-center gap-1.5 flex-wrap justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-full px-2.5 text-xs cursor-pointer"
+              onClick={() => setPage(1)}
+              disabled={page === 1}
+              title="First Page"
+            >
+              <ChevronsLeft className="h-3.5 w-3.5 mr-0.5" /> <span className="hidden xs:inline">First</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-full px-2.5 text-xs cursor-pointer"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={!hasPrevious}
+              title="Previous Page"
+            >
+              <ChevronLeft className="h-3.5 w-3.5 mr-0.5" /> <span className="hidden xs:inline">Prev</span>
+            </Button>
+            <span className="px-2 text-xs font-semibold text-foreground shrink-0">
+              {page} / {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-full px-2.5 text-xs cursor-pointer"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={!hasNext}
+              title="Next Page"
+            >
+              <span className="hidden xs:inline">Next</span> <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-full px-2.5 text-xs cursor-pointer"
+              onClick={() => setPage(totalPages)}
+              disabled={page === totalPages}
+              title="Last Page"
+            >
+              <span className="hidden xs:inline">Last</span> <ChevronsRight className="h-3.5 w-3.5 ml-0.5" />
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* Add Customer Modal */}
@@ -346,7 +621,14 @@ function CustomersPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="cust-phone">Phone Number *</Label>
-              <Input id="cust-phone" placeholder="e.g. +91 98765 43210" value={phoneInput} onChange={(e) => setPhoneInput(e.target.value)} required />
+              <Input
+                id="cust-phone"
+                placeholder="10-digit mobile number"
+                value={phoneInput}
+                onChange={(e) => setPhoneInput(sanitizePhoneInput(e.target.value))}
+                maxLength={10}
+                required
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="cust-email">Email Address</Label>
@@ -378,18 +660,38 @@ function CustomersPage() {
           <DialogHeader>
             <DialogTitle>Edit Customer Profile</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSaveEditCustomer} className="space-y-3 py-2">
+          <form onSubmit={handleUpdateCustomer} className="space-y-3 py-2">
             <div className="space-y-1.5">
               <Label htmlFor="edit-cust-name">Full Name *</Label>
               <Input id="edit-cust-name" value={editName} onChange={(e) => setEditName(e.target.value)} required />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-cust-phone">Phone Number *</Label>
-              <Input id="edit-cust-phone" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} required />
+              <Input
+                id="edit-cust-phone"
+                value={editPhone}
+                onChange={(e) => setEditPhone(sanitizePhoneInput(e.target.value))}
+                maxLength={10}
+                required
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-cust-email">Email Address</Label>
               <Input id="edit-cust-email" type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-cust-gender">Gender</Label>
+              <Select value={editGender} onValueChange={setEditGender}>
+                <SelectTrigger id="edit-cust-gender" className="w-full">
+                  <SelectValue placeholder="Select gender..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Male">Male</SelectItem>
+                  <SelectItem value="Female">Female</SelectItem>
+                  <SelectItem value="Other">Other</SelectItem>
+                  <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -422,12 +724,111 @@ function CustomersPage() {
       <ConfirmDialog
         open={!!toArchive}
         onOpenChange={(o) => !o && setToArchive(null)}
-        title={`Archive ${target?.name ?? "customer"}?`}
+        title="Archive Customer?"
         description="They will be hidden from active customer lists. You can restore them anytime."
         confirmLabel="Archive customer"
         destructive
         onConfirm={handleArchive}
       />
+
+      <ConfirmDialog
+        open={!!toDelete}
+        onOpenChange={(o) => !o && setToDelete(null)}
+        title={`Delete ${toDelete?.name || "Customer"}?`}
+        description="Are you sure you want to permanently delete this customer record from the backend database? This action cannot be undone."
+        confirmLabel="Delete customer"
+        destructive
+        onConfirm={handleDeleteCustomer}
+      />
+
+      {/* Import Customers Modal */}
+      <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import Customers</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="flex items-center justify-between rounded-xl border bg-muted/40 p-3 text-xs">
+              <span className="text-muted-foreground">Need a sample format? Download our pre-formatted CSV template:</span>
+              <Button type="button" variant="outline" size="sm" className="h-7 text-xs rounded-full" onClick={handleDownloadSampleTemplate}>
+                <Download className="mr-1 h-3 w-3" /> Template
+              </Button>
+            </div>
+
+            <form onSubmit={handleDoImport} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="import-file-input">Select CSV or Excel File (.csv, .xlsx)</Label>
+                <Input
+                  id="import-file-input"
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                  disabled={importing}
+                />
+              </div>
+
+              {importFile && (
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-2.5 text-xs text-primary font-medium flex items-center justify-between">
+                  <span>Selected file: {importFile.name} ({(importFile.size / 1024).toFixed(1)} KB)</span>
+                </div>
+              )}
+
+              {importSummary && (
+                <div className="space-y-3 rounded-xl border bg-card p-3.5 text-xs">
+                  <div className="font-semibold text-foreground border-b pb-1.5">Import Results Summary</div>
+                  <div className="grid grid-cols-4 gap-2 text-center">
+                    <div className="rounded-lg bg-muted p-2">
+                      <div className="text-muted-foreground">Total</div>
+                      <div className="text-sm font-bold text-foreground">{importSummary.total_rows}</div>
+                    </div>
+                    <div className="rounded-lg bg-emerald-500/10 text-emerald-600 p-2">
+                      <div className="font-medium">Imported</div>
+                      <div className="text-sm font-bold">{importSummary.imported_count}</div>
+                    </div>
+                    <div className="rounded-lg bg-amber-500/10 text-amber-600 p-2">
+                      <div className="font-medium">Duplicates</div>
+                      <div className="text-sm font-bold">{importSummary.duplicate_count}</div>
+                    </div>
+                    <div className="rounded-lg bg-rose-500/10 text-rose-600 p-2">
+                      <div className="font-medium">Failed</div>
+                      <div className="text-sm font-bold">{importSummary.failed_count}</div>
+                    </div>
+                  </div>
+
+                  {importSummary.errors && importSummary.errors.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      <div className="font-medium text-destructive">Skipped / Failed Row Details:</div>
+                      <div className="max-h-36 overflow-y-auto rounded-lg border bg-background p-2 space-y-1 text-[11px]">
+                        {importSummary.errors.map((err, idx) => (
+                          <div key={idx} className="flex items-start gap-1.5 border-b last:border-0 pb-1 text-muted-foreground">
+                            <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">Row {err.row}</Badge>
+                            <span>{err.field ? `[${err.field}]: ` : ""}{err.reason}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsImportOpen(false)}>
+                  Close
+                </Button>
+                <Button type="submit" disabled={importing || !importFile} className="gradient-brand text-primary-foreground">
+                  {importing ? (
+                    <>
+                      <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> Importing...
+                    </>
+                  ) : (
+                    "Start Import"
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          </div>
+        </DialogContent>
+      </Dialog>
     </PageTransition>
   );
 }

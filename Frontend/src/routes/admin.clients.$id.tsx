@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { Link, useParams } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { useEffect, useState } from "react";
 import {
   ArrowLeft,
@@ -40,15 +41,15 @@ import {
 } from "@/lib/admin-api";
 import { setToken, setSession } from "@/lib/auth";
 import { slugify } from "@/lib/app-nav";
-import { setBusinessType } from "@/lib/business-type";
+import { setBusinessType, resolveBusinessType } from "@/lib/business-type";
 import { pushNotification } from "@/lib/notifications-store";
 
 export const Route = createFileRoute("/admin/clients/$id")({
   component: ClientDetail,
 });
 
-function ClientDetail() {
-  const { id } = Route.useParams();
+export default function ClientDetail() {
+  const { id } = useParams<{ id?: string }>();
   const [client, setClient] = useState<ClientDetailModel | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -131,22 +132,28 @@ function ClientDetail() {
   };
 
   const impersonate = async () => {
+    if (!client) return;
     try {
       const res = await impersonateAdminClientApi(client.id);
       setToken(res.access_token);
-      const slug = slugify(client.name);
-      setBusinessType("restaurant");
+      const businessType = resolveBusinessType(
+        { business_type: client.business_type, name: client.name },
+        null,
+        null
+      );
+      const slug = slugify(client.name || businessType);
+      setBusinessType(businessType);
       setSession({
         role: "business",
-        email: client.email,
+        email: client.email || `impersonate@${slug}.com`,
         clientId: res.business_id,
-        businessName: res.business_name,
-        businessType: "restaurant",
+        businessName: res.business_name || client.name,
+        businessType: businessType,
         businessSlug: slug,
         token: res.access_token,
       });
       toast.success(`Logged in as ${client.owner_name}`);
-      window.location.href = `/app/restaurant/${slug}/dashboard`;
+      window.location.href = `/app/${businessType}/${slug}/dashboard`;
     } catch (err: any) {
       toast.error(err.message || "Failed to impersonate merchant");
     }
@@ -303,8 +310,8 @@ function ClientDetail() {
               <Progress value={Math.min(100, (client.stats.service_count / 20) * 100)} />
             </div>
             <div>
-              <div className="mb-1.5 flex justify-between"><span>WhatsApp Campaigns</span><span className="font-medium">{client.stats.campaign_count}</span></div>
-              <Progress value={Math.min(100, (client.stats.campaign_count / 50) * 100)} />
+              <div className="mb-1.5 flex justify-between"><span>AI Credits Used</span><span className="font-medium">{client.stats.ai_monthly_used_credits ?? 0}</span></div>
+              <Progress value={Math.min(100, Math.round(((client.stats.ai_monthly_used_credits ?? 0) / (client.stats.ai_monthly_plan_credits || 100)) * 100))} />
             </div>
             <div>
               <div className="mb-1.5 flex justify-between"><span>Loyalty Program</span><span className="font-medium">{client.stats.loyalty_enabled ? "Enabled" : "Disabled"}</span></div>

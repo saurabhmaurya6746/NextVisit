@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@/lib/route-compat";
 import { useState, useEffect, useCallback } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,7 +35,7 @@ const tiers = [
   { name: "Diamond", icon: Gem, color: "from-primary/40 to-accent/30 text-primary", min: 1000, max: 9999 },
 ];
 
-function LoyaltyPage() {
+export default function LoyaltyPage() {
   // 1. ALL HOOKS CALLED UNCONDITIONALLY AT TOP-LEVEL
   const [settings, setSettings] = useState<BackendLoyaltySettings | null>(null);
   const [loading, setLoading] = useState(true);

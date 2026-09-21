@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { Link } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { Store, ClipboardCheck, Settings as SettingsIcon, ArrowRight, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/page-header";
@@ -19,7 +20,7 @@ import {
 
 export const Route = createFileRoute("/admin/settings")({ component: SettingsPage });
 
-function SettingsPage() {
+export default function SettingsPage() {
   const [settings, setSettings] = useState<PlatformSettingsModel | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -98,6 +99,12 @@ function SettingsPage() {
               label="Support Email"
               value={settings.support_email}
               onChange={(v) => setSettings({ ...settings, support_email: v })}
+            />
+            <Field
+              label="Support Phone"
+              value={settings.support_phone || ""}
+              onChange={(v) => setSettings({ ...settings, support_phone: v })}
+              placeholder="+91 98765 43210"
             />
           </CardContent>
         </Card>

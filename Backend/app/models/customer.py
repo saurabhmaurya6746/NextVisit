@@ -84,3 +84,40 @@ class Customer(BaseModel):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    campaign_logs = relationship(
+        "CampaignLog",
+        back_populates="customer",
+        cascade="all, delete-orphan",
+    )
+    coupon_redemptions = relationship(
+        "CouponRedemption",
+        back_populates="customer",
+        cascade="all, delete-orphan",
+    )
+
+    @property
+    def loyalty_points(self) -> int:
+        if hasattr(self, "loyalty") and self.loyalty is not None:
+            return self.loyalty.current_points
+        return int((self.total_spent or 0.0) // 10)
+
+    @property
+    def status(self) -> str:
+        v = self.visit_count or 0
+        s = self.total_spent or 0.0
+        # Check attached business.vip_settings if available
+        if hasattr(self, "business") and self.business is not None and getattr(self.business, "vip_settings", None) is not None:
+            v_set = self.business.vip_settings
+            conds = []
+            if v_set.min_lifetime_spend > 0:
+                conds.append(s >= v_set.min_lifetime_spend)
+            if v_set.min_visits > 0:
+                conds.append(v >= v_set.min_visits)
+            if conds:
+                is_v = any(conds) if str(v_set.rule_logic).upper() == "ANY" else all(conds)
+                if is_v:
+                    return "VIP"
+        # Default fallback
+        if v > 1:
+            return "Returning"
+        return "New"

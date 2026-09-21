@@ -24,6 +24,12 @@ class PlatformSettings(BaseModel):
         nullable=False,
     )
 
+    support_phone: Mapped[str | None] = mapped_column(
+        String(50),
+        default="+91 98765 43210",
+        nullable=True,
+    )
+
     default_plan: Mapped[str] = mapped_column(
         String(50),
         default="STARTER",

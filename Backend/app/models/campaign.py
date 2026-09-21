@@ -22,6 +22,7 @@ class CampaignType(str, enum.Enum):
     RECOVERY = "RECOVERY"
     FESTIVAL = "FESTIVAL"
     VIP = "VIP"
+    REVIEW = "REVIEW"
     CUSTOM = "CUSTOM"
 
 
@@ -121,9 +122,59 @@ class CampaignLog(BaseModel):
         nullable=True,
     )
 
+    # Generated AI Message & Coupon details
+    sent_message: Mapped[str | None] = mapped_column(
+        String(2000),
+        nullable=True,
+    )
+
+    coupon_code: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    sent_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
+    # Review Booster Tracking Fields
+    visit_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("visits.id"),
+        nullable=True,
+    )
+
+    tracking_token: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
+
+    clicked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
     campaign = relationship(
         "Campaign",
         back_populates="logs",
     )
 
-    customer = relationship("Customer")
+    customer = relationship("Customer", back_populates="campaign_logs")
+    visit = relationship("Visit")
+    reviewer = relationship("User", foreign_keys=[reviewed_by])
+    sender = relationship("User", foreign_keys=[sent_by_user_id])
+

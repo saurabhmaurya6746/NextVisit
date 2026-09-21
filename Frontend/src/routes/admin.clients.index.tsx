@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { Link } from "react-router-dom";
+import { createFileRoute } from "@/lib/route-compat";
 import { Plus, Search, MoreHorizontal, Loader2, Check, X, Eye, LogIn, PauseCircle, PlayCircle, Trash2, ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/page-header";
@@ -23,7 +24,7 @@ import {
 } from "@/lib/admin-api";
 import { setToken, setSession } from "@/lib/auth";
 import { slugify } from "@/lib/app-nav";
-import { setBusinessType } from "@/lib/business-type";
+import { setBusinessType, resolveBusinessType } from "@/lib/business-type";
 
 export const Route = createFileRoute("/admin/clients/")({ component: ClientsPage });
 
@@ -34,7 +35,7 @@ const statusStyle: Record<string, string> = {
   SUSPENDED: "bg-destructive/15 text-destructive border-destructive/30",
 };
 
-function ClientsPage() {
+export default function ClientsPage() {
   const [clients, setClients] = useState<ClientListItemModel[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -143,23 +144,28 @@ function ClientsPage() {
     }
   };
 
-  const impersonate = async (id: string, name: string) => {
+  const impersonate = async (client: ClientListItemModel) => {
     try {
-      const res = await impersonateAdminClientApi(id);
+      const res = await impersonateAdminClientApi(client.id);
       setToken(res.access_token);
-      const slug = slugify(name);
-      setBusinessType("restaurant");
+      const businessType = resolveBusinessType(
+        { business_type: client.business_type, name: client.name },
+        null,
+        null
+      );
+      const slug = slugify(client.name || businessType);
+      setBusinessType(businessType);
       setSession({
         role: "business",
-        email: `impersonate@${slug}.com`,
+        email: client.email || `impersonate@${slug}.com`,
         clientId: res.business_id,
-        businessName: res.business_name,
-        businessType: "restaurant",
+        businessName: res.business_name || client.name,
+        businessType: businessType,
         businessSlug: slug,
         token: res.access_token,
       });
-      toast.success(`Logging in as ${name} (Impersonation mode)`);
-      window.location.href = `/app/restaurant/${slug}/dashboard`;
+      toast.success(`Logging in as ${client.name} (Impersonation mode)`);
+      window.location.href = `/app/${businessType}/${slug}/dashboard`;
     } catch (err: any) {
       toast.error(err.message || "Failed to impersonate client");
     }
@@ -218,7 +224,7 @@ function ClientsPage() {
                   clients.map((c) => (
                     <TableRow key={c.id} className="group">
                       <TableCell>
-                        <Link to="/admin/clients/$id" params={{ id: c.id }} className="font-medium text-foreground hover:text-primary">
+                        <Link to={`/admin/clients/${c.id}`} className="font-medium text-foreground hover:text-primary">
                           {c.name}
                         </Link>
                         <div className="text-xs text-muted-foreground">{c.country}</div>
@@ -251,7 +257,7 @@ function ClientsPage() {
                             {/* Status Specific Actions */}
                             {c.status === "ACTIVE" && (
                               <>
-                                <DropdownMenuItem onClick={() => impersonate(c.id, c.name)}>
+                                <DropdownMenuItem onClick={() => impersonate(c)}>
                                   <LogIn className="mr-2 h-4 w-4" /> Login as Client
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleUpdateStatus(c.id, "SUSPENDED", c.name)}>

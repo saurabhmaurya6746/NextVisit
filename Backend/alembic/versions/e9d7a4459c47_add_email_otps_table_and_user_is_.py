@@ -1,7 +1,7 @@
 """add_email_otps_table_and_user_is_verified
 
 Revision ID: e9d7a4459c47
-Revises: 0b1fe2e97458
+Revises: i1j2k3l4m5n6
 Create Date: 2026-09-19 13:04:58.098706
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'e9d7a4459c47'
-down_revision: Union[str, Sequence[str], None] = '0b1fe2e97458'
+down_revision: Union[str, Sequence[str], None] = 'i1j2k3l4m5n6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

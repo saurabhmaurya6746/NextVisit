@@ -24,6 +24,7 @@ class BusinessSettingsRepository(BaseRepository):
         return settings
 
     def update(self, settings: BusinessSettings) -> BusinessSettings:
+        self.db.add(settings)
         self.db.flush()
         self.db.refresh(settings)
         return settings
