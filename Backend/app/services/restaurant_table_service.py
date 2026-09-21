@@ -104,11 +104,11 @@ class RestaurantTableService:
                         "capacity": t.capacity,
                         "display_order": t.display_order,
                         "is_active": t.is_active,
-                        "status": active_order.status.value,
+                        "status": "OCCUPIED",
                         "current_order_id": active_order.id,
                         "pending_amount": float(active_order.total_amount),
                         "item_count": sum(it.quantity for it in active_order.items),
-                        "order_source": active_order.order_source.value,
+                        "order_source": active_order.order_source.value if active_order.order_source else None,
                         "last_updated": active_order.updated_at or active_order.created_at,
                     }
                 else:

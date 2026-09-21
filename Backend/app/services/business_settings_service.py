@@ -20,7 +20,7 @@ class BusinessSettingsService:
         self.repo = BusinessSettingsRepository(db)
 
     def init_default_settings_for_business(
-        self, business_id: UUID
+        self, business_id: UUID, commit: bool = True
     ) -> BusinessSettings:
         settings = self.repo.get_by_business(business_id)
         if not settings:
@@ -34,8 +34,9 @@ class BusinessSettingsService:
                 default_discount=0.0,
             )
             self.repo.create(settings)
-            self.db.commit()
-            self.db.refresh(settings)
+            if commit:
+                self.db.commit()
+                self.db.refresh(settings)
             logger.info(
                 "Initialized default business settings | business_id=%s",
                 business_id,

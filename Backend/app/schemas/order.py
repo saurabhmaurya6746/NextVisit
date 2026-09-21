@@ -1,7 +1,16 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 from app.models.order import OrderSource, OrderStatus
+
+
+class CustomerInlineCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=150)
+    phone: str = Field(..., min_length=1, max_length=20)
+    email: str | None = Field(default=None, max_length=150)
+    birth_date: date | None = None
+    anniversary_date: date | None = None
+    notes: str | None = Field(default=None, max_length=1000)
 
 
 class OrderItemCreate(BaseModel):
@@ -46,6 +55,7 @@ class OrderItemResponse(BaseModel):
 class OrderCreate(BaseModel):
     table_id: UUID
     customer_id: UUID | None = None
+    customer_details: CustomerInlineCreate | None = None
     order_source: OrderSource = OrderSource.POS
     status: OrderStatus = OrderStatus.OPEN
     notes: str | None = Field(default=None, max_length=1000)

@@ -247,3 +247,41 @@ export async function registerApi(payload: any) {
   }
   return data;
 }
+
+export async function verifyOtpApi(email: string, otp: string) {
+  console.log("[AUTH] verifyOtpApi() verifying OTP for:", email);
+
+  const res = await apiFetch("/api/v1/auth/verify-otp", {
+    method: "POST",
+    body: JSON.stringify({ email, otp }),
+  });
+
+  console.log("[AUTH] POST /api/v1/auth/verify-otp response status:", res.status);
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    console.error("[AUTH] verifyOtpApi() failed:", errData);
+    throw new Error(errData.detail || "Verification failed. Invalid or expired OTP.");
+  }
+
+  return await res.json();
+}
+
+export async function resendOtpApi(email: string) {
+  console.log("[AUTH] resendOtpApi() requesting new OTP for:", email);
+
+  const res = await apiFetch("/api/v1/auth/resend-otp", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+
+  console.log("[AUTH] POST /api/v1/auth/resend-otp response status:", res.status);
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    console.error("[AUTH] resendOtpApi() failed:", errData);
+    throw new Error(errData.detail || "Failed to resend verification code.");
+  }
+
+  return await res.json();
+}

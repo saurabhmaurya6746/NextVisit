@@ -74,6 +74,24 @@ def get_customer(
     return CustomerService(db).get_customer(current_user, customer_id)
 
 
+@router.get(
+    "/phone/{phone}",
+    response_model=CustomerResponse,
+    summary="Get a customer by phone number",
+)
+def get_customer_by_phone(
+    phone: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns details of a customer matching phone number in the authenticated business.
+    Returns HTTP 404 if not found.
+    Requires a valid Bearer JWT.
+    """
+    return CustomerService(db).get_customer_by_phone(current_user, phone)
+
+
 @router.post(
     "",
     response_model=CustomerResponse,

@@ -37,6 +37,12 @@ class User(BaseModel):
         default=True,
     )
 
+    is_verified: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
     business = relationship(
         "Business",
         back_populates="users",

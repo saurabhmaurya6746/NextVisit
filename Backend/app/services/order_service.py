@@ -3,8 +3,10 @@ import uuid
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.models.customer import Customer
 from app.models.order import Order, OrderItem, OrderStatus
 from app.models.user import User
+from app.repositories.customer_repository import CustomerRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.restaurant_table_repository import RestaurantTableRepository
 from app.schemas.order import OrderCreate, OrderItemCreate, OrderItemUpdate, OrderUpdate
@@ -18,6 +20,7 @@ class OrderService:
         self.db = db
         self.order_repo = OrderRepository(db)
         self.table_repo = RestaurantTableRepository(db)
+        self.customer_repo = CustomerRepository(db)
 
     def list_orders(
         self,
@@ -71,6 +74,37 @@ class OrderService:
                 detail=f"Restaurant table '{data.table_id}' not found.",
             )
 
+        # Customer details logic:
+        # Case 1: Existing customer passed by ID or phone lookup
+        # Case 2: New customer passed via customer_details -> create automatically
+        # Case 3: Guest customer -> customer_id remains None
+        customer_id = data.customer_id
+
+        if not customer_id and data.customer_details:
+            phone = data.customer_details.phone.strip()
+            existing_cust = self.customer_repo.get_by_phone(current_user.business_id, phone)
+            if existing_cust:
+                customer_id = existing_cust.id
+            else:
+                new_cust = Customer(
+                    business_id=current_user.business_id,
+                    name=data.customer_details.name.strip(),
+                    phone=phone,
+                    email=data.customer_details.email.strip() if data.customer_details.email else None,
+                    birth_date=data.customer_details.birth_date,
+                    anniversary_date=data.customer_details.anniversary_date,
+                    notes=data.customer_details.notes.strip() if data.customer_details.notes else None,
+                )
+                created_cust = self.customer_repo.create(new_cust)
+                customer_id = created_cust.id
+        elif customer_id:
+            cust = self.customer_repo.get_by_id(customer_id)
+            if not cust or cust.business_id != current_user.business_id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Customer '{customer_id}' not found for your business.",
+                )
+
         # Generate sequential order number
         count = self.order_repo.count_orders_today(current_user.business_id)
         order_number = f"ORD-{count + 1001}"
@@ -98,7 +132,7 @@ class OrderService:
         order = Order(
             business_id=current_user.business_id,
             table_id=data.table_id,
-            customer_id=data.customer_id,
+            customer_id=customer_id,
             order_number=order_number,
             order_source=data.order_source,
             status=data.status,
@@ -114,9 +148,10 @@ class OrderService:
         created = self.order_repo.create(order)
         self._recalculate_order(created)
         logger.info(
-            "Temporary order created: order_number=%s, table=%s, total=%f",
+            "Temporary order created: order_number=%s, table=%s, customer=%s, total=%f",
             created.order_number,
             table.table_name,
+            customer_id,
             created.total_amount,
         )
         return created

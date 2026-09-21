@@ -23,6 +23,7 @@ from .service import Service
 from .subscription_plan import SubscriptionPlan
 from .user import User
 from .user_session import UserSession
+from .otp import EmailOTP
 from .visit import (
     PaymentMethod,
     PaymentStatus,

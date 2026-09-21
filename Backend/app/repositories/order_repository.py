@@ -55,7 +55,7 @@ class OrderRepository:
             .where(
                 Order.table_id == table_id,
                 Order.business_id == business_id,
-                Order.status != OrderStatus.CANCELLED,
+                Order.status.in_([OrderStatus.OPEN, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.SERVED]),
             )
             .order_by(Order.created_at.desc())
         )
