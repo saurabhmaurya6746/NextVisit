@@ -48,11 +48,12 @@ from app.api.v1.salon.revenue.router import router as salon_revenue_router
 from app.api.v1.calendar.router import router as calendar_router
 from sqlalchemy.orm import Session
 from app.db.database import engine, get_db
+from app.db.init_db import sync_database_schema
 from app.models.base import Base
 from app.schemas.business import BusinessCreate
 
-# Ensure all database tables exist
-Base.metadata.create_all(bind=engine)
+# Ensure all database tables exist and schema is synchronized
+sync_database_schema(engine)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -292,4 +293,11 @@ def signup_alias(
     db: Session = Depends(get_db),
 ):
     from app.services.auth_service import AuthService
-    return AuthService(db).register(data)
+    return AuthService(db).register(data)
+
+
+@app.get("/api/v1/system/db-schema-status", tags=["System"], summary="Database Schema Sync Status")
+def db_schema_status():
+    from app.db.init_db import sync_database_schema
+    return sync_database_schema(engine)
+
