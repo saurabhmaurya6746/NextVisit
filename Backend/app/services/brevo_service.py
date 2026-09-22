@@ -110,24 +110,7 @@ class BrevoService:
         }
 
         if not self.api_key:
-            logger.warning("Brevo API key is not configured. Checking Resend fallback for recipient=%s", to_email)
-            from app.services.email_service import EmailService
-            if EmailService.is_configured():
-                logger.info("Dispatching verification OTP via Resend fallback | recipient=%s", to_email)
-                ok, err = EmailService.send_resend_email(
-                    to=to_email,
-                    subject=f"{otp} is your NextVisit verification code",
-                    html=html_content,
-                    text=text_content,
-                )
-                if ok:
-                    return True
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=f"Email delivery service fallback failed: {err}",
-                )
-
-            logger.error("Neither BREVO_API_KEY nor RESEND_API_KEY is configured in server environment.")
+            logger.error("Brevo API key is not configured. Cannot send OTP.")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Email delivery service is currently not configured. Please set BREVO_API_KEY in environment variables.",

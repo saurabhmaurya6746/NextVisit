@@ -296,13 +296,4 @@ def signup_alias(
     return AuthService(db).register(data)
 
 
-@app.get("/api/v1/system/db-schema-status", tags=["System"], summary="Database Schema Sync Status")
-def db_schema_status():
-    from app.core.config import settings
-    from app.db.init_db import sync_database_schema
-    result = sync_database_schema(engine)
-    result["brevo_configured"] = bool(settings.BREVO_API_KEY and settings.BREVO_API_KEY.strip())
-    result["resend_configured"] = bool(settings.RESEND_API_KEY and settings.RESEND_API_KEY.strip())
-    return result
-
 

@@ -140,13 +140,6 @@ MIGRATION_STATEMENTS = [
     """,
     "CREATE INDEX IF NOT EXISTS ix_email_otps_email ON email_otps (email);",
 
-    # DATA BACKFILL: Mark existing active users as email_verified
-    """
-    UPDATE users
-    SET email_verified = true, email_verified_at = now()
-    WHERE (is_active = true OR status = 'ACTIVE')
-      AND email_verified = false;
-    """
 ]
 
 
@@ -182,38 +175,17 @@ def sync_database_schema(engine: Engine) -> dict:
                 logger.warning("==> [SchemaSync] Statement warning (%s...): %s", first_line, exc)
                 warnings.append(f"{first_line}: {str(exc)}")
 
-    # 3. Stamp Alembic head so future migrations know the DB schema is at head
-    alembic_stamped = False
-    try:
-        from alembic import command
-        from alembic.config import Config
-
-        base_dir = Path(__file__).resolve().parent.parent.parent
-        alembic_ini = base_dir / "alembic.ini"
-        if alembic_ini.exists():
-            alembic_cfg = Config(str(alembic_ini))
-            alembic_cfg.set_main_option("script_location", str(base_dir / "alembic"))
-            command.stamp(alembic_cfg, "head")
-            alembic_stamped = True
-            logger.info("==> [SchemaSync] Alembic stamped to head successfully.")
-    except Exception as exc:
-        logger.warning("==> [SchemaSync] Alembic stamp skipped or warning: %s", exc)
-        warnings.append(f"Alembic stamp: {str(exc)}")
-
-    # 4. Verify columns on users table
+    # 3. Verify columns on users table
     insp = inspect(engine)
     user_cols = [c["name"] for c in insp.get_columns("users")]
     logger.info(
-        "==> [SchemaSync] Complete! 'users' table has %d columns: %s",
+        "==> [SchemaSync] Complete! 'users' table has %d columns.",
         len(user_cols),
-        user_cols,
     )
 
     return {
         "status": "success",
         "executed_statements": executed_count,
-        "alembic_stamped": alembic_stamped,
         "users_columns_count": len(user_cols),
-        "users_columns": user_cols,
         "warnings": warnings,
     }
