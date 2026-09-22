@@ -1,7 +1,7 @@
 import logging
 import os
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
@@ -46,8 +46,10 @@ from app.api.v1.salon.service_categories.router import router as salon_service_c
 from app.api.v1.salon.invoices.router import router as salon_invoices_router
 from app.api.v1.salon.revenue.router import router as salon_revenue_router
 from app.api.v1.calendar.router import router as calendar_router
-from app.db.database import engine
+from sqlalchemy.orm import Session
+from app.db.database import engine, get_db
 from app.models.base import Base
+from app.schemas.business import BusinessCreate
 
 # Ensure all database tables exist
 Base.metadata.create_all(bind=engine)
@@ -282,3 +284,12 @@ def root():
         "status": "Running",
         "database": version
     }
+
+
+@app.post("/signup", tags=["Authentication"], summary="Register/signup alias")
+def signup_alias(
+    data: BusinessCreate,
+    db: Session = Depends(get_db),
+):
+    from app.services.auth_service import AuthService
+    return AuthService(db).register(data)

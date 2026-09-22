@@ -1,4 +1,8 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+ROOT_DIR = BACKEND_DIR.parent
 
 class Settings(BaseSettings):
     DATABASE_URL: str
@@ -14,11 +18,18 @@ class Settings(BaseSettings):
     RESEND_FROM_EMAIL: str = "NextVisit <onboarding@resend.dev>"
     NEXTVISIT_ADMIN_EMAIL: str = "saurabhmauryajnp28@gmail.com"
     FRONTEND_URL: str = "http://localhost:5173"
+    ENVIRONMENT: str = "development"
+    DEBUG: bool = True
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=[
+            str(BACKEND_DIR / ".env"),
+            str(ROOT_DIR / ".env"),
+            ".env",
+        ],
         env_file_encoding="utf-8",
         extra="ignore"
     )
 
 settings = Settings()
+

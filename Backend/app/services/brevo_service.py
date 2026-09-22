@@ -141,12 +141,21 @@ class BrevoService:
                     response.status_code,
                     response.text,
                 )
+                error_msg = ""
+                try:
+                    err_json = response.json()
+                    error_msg = err_json.get("message", "")
+                except Exception:
+                    error_msg = response.text[:200]
+
                 if response.status_code == 401:
                     detail = "Brevo API authentication failed ('Key not found'). Please ensure your BREVO_API_KEY in .env is an API v3 Key (starts with 'xkeysib-'), not an SMTP key (starts with 'xsmtpsib-')."
                 elif response.status_code == 400 and "sender" in response.text.lower():
                     detail = "Brevo sender email is not verified. Please verify your sender in the Brevo dashboard."
+                elif error_msg:
+                    detail = f"Email delivery failed ({response.status_code}): {error_msg}"
                 else:
-                    detail = "Failed to send verification code. Please check your email or try again later."
+                    detail = f"Failed to send verification code (Brevo status {response.status_code}). Please try again later."
 
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
@@ -160,5 +169,13 @@ class BrevoService:
             logger.error("Network error while connecting to Brevo API: %s", str(e))
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Unable to reach email delivery service. Please try again later.",
+                detail=f"Unable to reach email delivery service: {str(e)}",
             ) from e
+
+        except Exception as e:
+            logger.exception("Unexpected error while sending email via Brevo: %s", str(e))
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Email delivery service failed: {str(e)}",
+            ) from e
+

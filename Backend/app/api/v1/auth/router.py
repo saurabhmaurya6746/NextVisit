@@ -53,6 +53,21 @@ def register(
 
 
 @router.post(
+    "/signup",
+    summary="Register a new business and owner account (alias for /register)",
+)
+def signup(
+    data: BusinessCreate,
+    db: Session = Depends(get_db),
+):
+    """
+    Signup endpoint alias for /register.
+    """
+    return AuthService(db).register(data)
+
+
+
+@router.post(
     "/verify-otp",
     response_model=VerifyOtpResponse,
     summary="Verify registration email using 6-digit OTP",

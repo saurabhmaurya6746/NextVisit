@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -424,6 +424,23 @@ class AuthService:
                 detail="A record with the provided details already exists.",
             ) from exc
 
+        except SQLAlchemyError as exc:
+            self.db.rollback()
+            logger.exception(
+                "Registration failed due to database error | email=%s: %s",
+                clean_email,
+                str(exc),
+            )
+            detail = (
+                f"Database error during registration: {str(exc)}"
+                if getattr(settings, "DEBUG", True) or getattr(settings, "ENVIRONMENT", "development") == "development"
+                else "Registration failed due to a database error. Please try again."
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=detail,
+            ) from exc
+
         except Exception as exc:
             self.db.rollback()
             logger.exception(
@@ -431,10 +448,16 @@ class AuthService:
                 clean_email,
                 str(exc),
             )
+            detail = (
+                f"Registration failed: {str(exc)}"
+                if getattr(settings, "DEBUG", True) or getattr(settings, "ENVIRONMENT", "development") == "development"
+                else "Registration failed due to an internal error. Please try again."
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Registration failed due to an internal error. Please try again.",
+                detail=detail,
             ) from exc
+
 
     # ------------------------------------------------------------------
     # Verify OTP
@@ -666,43 +689,62 @@ class AuthService:
                     detail=f"Please wait {cooldown_remaining} seconds before requesting a new code.",
                 )
 
-        # Invalidate any previous unused OTPs
-        self.db.query(EmailOTP).filter(
-            EmailOTP.email == clean_email,
-            EmailOTP.is_used == False,
-        ).update({"is_used": True})
+        try:
+            # Invalidate any previous unused OTPs
+            self.db.query(EmailOTP).filter(
+                EmailOTP.email == clean_email,
+                EmailOTP.is_used == False,
+            ).update({"is_used": True})
 
-        # Generate new OTP
-        otp = generate_otp()
-        hashed = hash_otp(clean_email, otp)
-        expires_at = now + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
+            # Generate new OTP
+            otp = generate_otp()
+            hashed = hash_otp(clean_email, otp)
+            expires_at = now + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
 
-        new_record = EmailOTP(
-            email=clean_email,
-            hashed_otp=hashed,
-            expires_at=expires_at,
-            attempts=0,
-            is_used=False,
-        )
-        self.db.add(new_record)
+            new_record = EmailOTP(
+                email=clean_email,
+                hashed_otp=hashed,
+                expires_at=expires_at,
+                attempts=0,
+                is_used=False,
+            )
+            self.db.add(new_record)
 
-        # Sync on user entity as well
-        user.verification_code_hash = hashed
-        user.verification_code_expires_at = expires_at
-        user.verification_attempts = 0
-        user.verification_last_sent_at = now
+            # Sync on user entity as well
+            user.verification_code_hash = hashed
+            user.verification_code_expires_at = expires_at
+            user.verification_attempts = 0
+            user.verification_last_sent_at = now
 
-        # Send via Brevo before commit
-        brevo = BrevoService()
-        brevo.send_otp_email(to_email=clean_email, otp=otp, to_name=user.name)
+            # Send via Brevo before commit
+            brevo = BrevoService()
+            brevo.send_otp_email(to_email=clean_email, otp=otp, to_name=user.name)
 
-        self.db.commit()
-        logger.info("Resend OTP dispatched successfully | email=%s", clean_email)
+            self.db.commit()
+            logger.info("Resend OTP dispatched successfully | email=%s", clean_email)
 
-        return {
-            "success": True,
-            "message": "A new verification code has been sent to your email."
-        }
+            return {
+                "success": True,
+                "message": "A new verification code has been sent to your email."
+            }
+
+        except HTTPException:
+            self.db.rollback()
+            raise
+
+        except Exception as exc:
+            self.db.rollback()
+            logger.exception("Resend OTP failed unexpectedly | email=%s: %s", clean_email, str(exc))
+            detail = (
+                f"Failed to resend code: {str(exc)}"
+                if getattr(settings, "DEBUG", True) or getattr(settings, "ENVIRONMENT", "development") == "development"
+                else "Failed to resend verification code. Please try again later."
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=detail,
+            ) from exc
+
 
     def resend_verification(self, email: str) -> dict:
         """Alias for resend_otp to support both frontend and API route patterns."""
