@@ -14,6 +14,7 @@ class CustomerInlineCreate(BaseModel):
 
 
 class OrderItemCreate(BaseModel):
+    id: UUID | None = None
     menu_item_id: UUID | None = None
     service_id: UUID | None = None
     item_name: str = Field(..., min_length=1, max_length=150)
@@ -53,6 +54,10 @@ class OrderItemResponse(BaseModel):
 
 
 class OrderCreate(BaseModel):
+    id: UUID | None = None
+    device_id: UUID | None = None
+    order_number: str | None = Field(default=None, max_length=50)
+    client_order_id: UUID | None = None
     table_id: UUID
     customer_id: UUID | None = None
     customer_details: CustomerInlineCreate | None = None
@@ -63,6 +68,35 @@ class OrderCreate(BaseModel):
     tax_amount: float = Field(0.0, ge=0.0)
     discount_amount: float = Field(0.0, ge=0.0)
     items: list[OrderItemCreate] = []
+
+
+class DirectSaleItemCreate(BaseModel):
+    id: UUID | None = None
+    menu_item_id: UUID | None = None
+    service_id: UUID | None = None
+    item_name: str = Field(..., min_length=1, max_length=150)
+    unit_price: float = Field(..., ge=0.0)
+    quantity: int = Field(1, ge=1)
+    tax_rate: float = Field(0.0, ge=0.0, le=100.0)
+    discount: float = Field(0.0, ge=0.0)
+    notes: str | None = Field(default=None, max_length=255)
+
+
+class DirectSaleCreate(BaseModel):
+    id: UUID | None = None
+    device_id: UUID | None = None
+    order_number: str | None = Field(default=None, max_length=50)
+    client_order_id: UUID | None = None
+    table_id: UUID
+    customer_phone: str = Field(..., min_length=1, max_length=20)
+    customer_name: str | None = Field(default=None, max_length=150)
+    payment_method: str = Field(default="CASH", max_length=30)
+    discount_amount: float = Field(default=0.0, ge=0.0)
+    tax_amount: float = Field(default=0.0, ge=0.0)
+    notes: str | None = Field(default=None, max_length=1000)
+    order_source: OrderSource = OrderSource.POS
+    client_created_at: datetime | None = None
+    items: list[DirectSaleItemCreate] = []
 
 
 class OrderUpdate(BaseModel):
@@ -84,6 +118,8 @@ class OrderResponse(BaseModel):
     id: UUID
     business_id: UUID
     table_id: UUID
+    device_id: UUID | None = None
+    client_order_id: UUID | None = None
     customer_id: UUID | None = None
     customer: CustomerResponse | None = None
     order_number: str

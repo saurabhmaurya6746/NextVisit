@@ -229,15 +229,36 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
       });
       // ─────────────────────────────────────────────────────────────────
 
-      toast.success(`Order ${res.order_number} created successfully!`);
+      toast.success(`Order ${res.order_number} ${res.sync_status === "PENDING" ? "saved on this device · pending sync" : "created successfully"}.`);
       close();
     },
-    onError: (err: Error) => {
-      toast.error(err.message || "Failed to place order.");
+    onError: (err: unknown) => {
+      console.error("[POS ORDER] Order creation failed:", err);
+      let message = "Unable to place order.";
+      if (typeof err === "string" && err.trim().length > 0) {
+        message = err;
+      } else if (err instanceof Error && err.message && err.message.trim().length > 0) {
+        message = err.message;
+      } else if (typeof err === "object" && err !== null) {
+        if ("detail" in err && typeof (err as any).detail === "string" && (err as any).detail.trim().length > 0) {
+          message = (err as any).detail;
+        } else if ("message" in err && typeof (err as any).message === "string" && (err as any).message.trim().length > 0) {
+          message = (err as any).message;
+        }
+      }
+      toast.error(message);
     },
   });
 
+  const isOfflineMode = useMemo(() => {
+    const navOffline = typeof navigator !== "undefined" && !navigator.onLine;
+    const catStale = menuCategories.some((c) => Boolean(c.is_stale));
+    const areaStale = diningAreas.some((a) => Boolean(a.is_stale));
+    return navOffline || catStale || areaStale;
+  }, [menuCategories, diningAreas]);
+
   function handlePlaceOrder() {
+    if (placeOrderMut.isPending) return;
     if (!selectedTableId) {
       toast.error("Please select a table.");
       return;
@@ -290,53 +311,73 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
       order_source: "POS",
       notes: orderNotes.trim() || null,
       items: itemsPayload,
+      offline_mode: isOfflineMode,
     });
   }
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
-      <DialogContent className="max-w-4xl w-[95vw] sm:w-full h-[90dvh] max-h-[90dvh] sm:h-auto sm:max-h-[85vh] rounded-2xl flex flex-col p-3 sm:p-6 overflow-hidden gap-0">
-        <DialogHeader className="shrink-0 pb-2 border-b border-border/40">
-          <DialogTitle className="font-display flex items-center gap-2 text-base sm:text-lg">
-            <ShoppingBag className="h-5 w-5 text-primary shrink-0" />
-            <span>New staff order</span>
+      <DialogContent
+        closeButtonClassName="top-[calc(var(--safe-area-top,env(safe-area-inset-top,0px))+0.65rem)] right-3.5 sm:top-4 sm:right-4 h-8 w-8 sm:h-9 sm:w-9"
+        className="fixed inset-0 top-0 left-0 right-0 bottom-0 translate-x-0 translate-y-0 w-full max-w-none h-[100dvh] max-h-[100dvh] flex flex-col pt-[calc(var(--safe-area-top,env(safe-area-inset-top,0px))+0.75rem)] px-3 pb-0 border-0 rounded-none overflow-hidden gap-0 sm:border sm:rounded-2xl sm:inset-auto sm:left-[50%] sm:top-[50%] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-full sm:max-w-4xl sm:h-auto sm:max-h-[85vh] sm:p-6 sm:pt-6 sm:pb-6"
+      >
+        <DialogHeader className="shrink-0 pb-2.5 border-b border-border/40 pr-10 sm:pr-8 text-left">
+          <DialogTitle className="font-display flex items-center gap-1.5 sm:gap-2 text-base sm:text-lg">
+            {step === 1 && !presetTable && !presetTableId && (
+              <button
+                type="button"
+                onClick={() => setStep(0)}
+                className="p-1 -ml-1 text-muted-foreground hover:text-foreground rounded-lg transition-colors cursor-pointer"
+                aria-label="Back to table selection"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+            )}
+            <ShoppingBag className="h-4 w-4 sm:h-5 sm:w-5 text-primary shrink-0" />
+            <span className="truncate">New staff order</span>
             {selectedTableName && (
-              <span className="ml-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+              <span className="ml-1 rounded-full bg-primary/10 px-2 sm:px-2.5 py-0.5 text-[11px] sm:text-xs font-semibold text-primary truncate max-w-[120px] sm:max-w-[160px]">
                 {selectedTableName}
               </span>
             )}
           </DialogTitle>
-          <p className="pt-0.5 text-xs text-muted-foreground">
+          <p className="pt-0.5 text-[11px] sm:text-xs text-muted-foreground line-clamp-1">
             {step === 0 ? "Step 1 of 2 · Select a table" : `Step 2 of 2 · Add items & place order for ${selectedTableName}`}
           </p>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 overflow-hidden flex flex-col pt-2 h-full">
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col pt-2">
           <AnimatePresence mode="wait">
             {/* STEP 0: SELECT TABLE */}
             {step === 0 && (
-              <motion.div key="s0" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex-1 min-h-0 overflow-y-auto">
+              <motion.div
+                key="s0"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="flex-1 min-h-0 overflow-y-auto pb-[calc(var(--safe-area-bottom,env(safe-area-inset-bottom,0px))+1rem)] sm:pb-4"
+              >
                 <p className="mb-3 text-xs sm:text-sm text-muted-foreground">
                   Tap a table to start a staff temporary order. Customer details are collected at payment.
                 </p>
                 {allTables.length === 0 ? (
                   <p className="py-8 text-center text-sm text-muted-foreground">No tables configured. Please add tables in Table Setup.</p>
                 ) : (
-                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6 pb-4">
+                  <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 pb-4">
                     {allTables.map((t) => (
                       <button
                         key={t.id}
                         onClick={() => pickTable(t.id, t.table_name)}
                         className={cn(
-                          "rounded-xl border px-3 py-3.5 text-sm font-medium transition-all text-left min-h-[44px]",
+                          "rounded-xl border px-3 py-3 text-sm font-medium transition-all text-left min-h-[50px] flex flex-col justify-between active:scale-[0.98]",
                           selectedTableId === t.id
                             ? "gradient-brand text-primary-foreground shadow-elegant"
                             : t.status === "OCCUPIED"
                             ? "bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300"
-                            : "hover:-translate-y-0.5 hover:border-primary"
+                            : "hover:-translate-y-0.5 hover:border-primary active:border-primary"
                         )}
                       >
-                        <div className="font-semibold text-xs sm:text-sm">{t.table_name}</div>
+                        <div className="font-semibold text-xs sm:text-sm truncate">{t.table_name}</div>
                         <div className="text-[10px] opacity-80 mt-0.5">
                           {t.status === "OCCUPIED" ? "Occupied" : `Cap: ${t.capacity}`}
                         </div>
@@ -354,19 +395,19 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className="flex-1 min-h-0 h-full flex flex-col md:grid md:grid-cols-[140px_1fr_260px] gap-2 md:gap-3 overflow-hidden"
+                className="flex-1 min-h-0 flex flex-col md:grid md:grid-cols-[140px_1fr_260px] gap-2 md:gap-3 overflow-hidden"
               >
                 {/* CATEGORIES: MOBILE HORIZONTAL SCROLL CHIPS */}
-                <div className="flex md:hidden items-center gap-1.5 overflow-x-auto pb-2 shrink-0 scrollbar-none snap-x">
+                <div className="flex md:hidden items-center gap-1.5 overflow-x-auto pb-2 shrink-0 scrollbar-none snap-x -mx-3 px-3">
                   {menuCategories.map((c) => (
                     <button
                       key={c.id}
                       onClick={() => setActiveCatId(c.id)}
                       className={cn(
-                        "rounded-full px-3.5 py-1.5 text-xs font-medium whitespace-nowrap transition-all shrink-0 min-h-[36px] flex items-center gap-1.5 snap-start",
+                        "rounded-full px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-all shrink-0 min-h-[36px] flex items-center gap-1.5 snap-start touch-manipulation",
                         c.id === currentCatId
                           ? "gradient-brand text-primary-foreground shadow-sm"
-                          : "bg-muted/70 text-muted-foreground hover:bg-muted"
+                          : "bg-muted/70 text-muted-foreground hover:bg-muted active:bg-muted/90"
                       )}
                     >
                       {c.name}
@@ -393,55 +434,57 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
                 </div>
 
                 {/* MENU ITEMS GRID (PRIMARY VERTICAL SCROLL REGION) */}
-                <div className="flex-1 min-h-0 h-full overflow-y-auto pr-1 text-left scroll-smooth">
+                <div className="flex-1 min-h-0 overflow-y-auto pr-1 text-left scroll-smooth overscroll-contain">
                   {currentCatItems.length === 0 ? (
                     <div className="py-12 text-center text-xs text-muted-foreground flex flex-col items-center justify-center">
                       <p>No available items in this category.</p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-2 pb-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-2 sm:gap-2.5 pb-2">
                       {currentCatItems.map((m) => {
                         const inCartItem = cart.find((i) => i.menu_item_id === m.id);
                         return (
                           <div
                             key={m.id}
                             className={cn(
-                              "group rounded-xl border p-3 text-left transition-all flex flex-col justify-between bg-card",
-                              inCartItem ? "border-primary/50 bg-primary/5" : "hover:border-primary/40"
+                              "group rounded-xl border p-3 sm:p-3.5 text-left transition-all flex flex-col justify-between bg-card touch-manipulation",
+                              inCartItem ? "border-primary/50 bg-primary/5 shadow-xs" : "hover:border-primary/40 active:border-primary/50"
                             )}
                           >
                             <div className="flex items-start justify-between gap-2">
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-1.5">
-                                  <p className="font-medium text-xs sm:text-sm text-foreground line-clamp-1">{m.name}</p>
-                                </div>
+                              <div className="space-y-0.5 sm:space-y-1 min-w-0 flex-1">
+                                <p className="font-semibold text-sm sm:text-sm text-foreground line-clamp-1">{m.name}</p>
                                 {m.description && (
-                                  <p className="text-[11px] text-muted-foreground line-clamp-1">{m.description}</p>
+                                  <p className="text-xs text-muted-foreground line-clamp-1 sm:line-clamp-2">{m.description}</p>
                                 )}
                               </div>
                             </div>
 
-                            <div className="mt-3 flex items-center justify-between pt-1 border-t border-border/40">
-                              <span className="text-xs sm:text-sm font-semibold">{fmt(m.price)}</span>
+                            <div className="mt-2.5 flex items-center justify-between pt-2 border-t border-border/40">
+                              <span className="text-sm font-bold text-foreground">{fmt(m.price)}</span>
 
                               {inCartItem ? (
-                                <div className="flex items-center gap-1 bg-background rounded-lg border px-1 py-0.5">
+                                <div className="flex items-center gap-1 bg-background rounded-lg border px-1 py-0.5 shadow-2xs">
                                   <Button
                                     size="icon"
                                     variant="ghost"
-                                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                    className="h-8 w-8 sm:h-7 sm:w-7 md:h-6 md:w-6 text-muted-foreground hover:text-foreground active:scale-95 touch-manipulation"
                                     onClick={() => bumpQty(m.id, -1)}
+                                    aria-label={`Decrease ${m.name}`}
                                   >
-                                    <Minus className="h-3 w-3" />
+                                    <Minus className="h-4 w-4 sm:h-3.5 sm:w-3.5 md:h-3 md:w-3" />
                                   </Button>
-                                  <span className="w-5 text-center text-xs font-semibold">{inCartItem.quantity}</span>
+                                  <span className="min-w-[1.5rem] text-center text-xs sm:text-xs font-bold text-foreground">
+                                    {inCartItem.quantity}
+                                  </span>
                                   <Button
                                     size="icon"
                                     variant="ghost"
-                                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                    className="h-8 w-8 sm:h-7 sm:w-7 md:h-6 md:w-6 text-muted-foreground hover:text-foreground active:scale-95 touch-manipulation"
                                     onClick={() => bumpQty(m.id, +1)}
+                                    aria-label={`Increase ${m.name}`}
                                   >
-                                    <Plus className="h-3 w-3" />
+                                    <Plus className="h-4 w-4 sm:h-3.5 sm:w-3.5 md:h-3 md:w-3" />
                                   </Button>
                                 </div>
                               ) : (
@@ -449,7 +492,7 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
                                   size="sm"
                                   variant="outline"
                                   onClick={() => addToCart(m)}
-                                  className="h-7 text-xs rounded-lg px-2.5 hover:bg-primary hover:text-primary-foreground font-medium"
+                                  className="h-8 sm:h-7 text-xs font-semibold rounded-lg px-3 hover:bg-primary hover:text-primary-foreground active:scale-95 transition-all touch-manipulation"
                                 >
                                   <Plus className="mr-1 h-3.5 w-3.5" /> Add
                                 </Button>
@@ -556,23 +599,23 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
                 </div>
 
                 {/* MOBILE STICKY CART FOOTER (ACCESSIBLE AT ALL TIMES) */}
-                <div className="shrink-0 md:hidden border-t pt-2 bg-card space-y-2">
+                <div className="shrink-0 md:hidden border-t bg-card/95 backdrop-blur-sm pt-2 pb-[calc(var(--safe-area-bottom,env(safe-area-inset-bottom,0px))+0.75rem)] px-3 -mx-3 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] space-y-2">
                   {mobileCartExpanded && cart.length > 0 && (
-                    <div className="space-y-2 max-h-[160px] overflow-y-auto p-2 bg-muted/30 rounded-xl border mb-2">
-                      <div className="flex items-center justify-between border-b pb-1">
+                    <div className="space-y-2 max-h-[160px] overflow-y-auto p-2.5 bg-muted/30 rounded-xl border mb-2">
+                      <div className="flex items-center justify-between border-b pb-1.5">
                         <span className="text-xs font-semibold">Cart Items ({totalItemsCount})</span>
-                        <span className="text-xs text-muted-foreground">{selectedTableName}</span>
+                        <span className="text-xs font-medium text-muted-foreground">{selectedTableName}</span>
                       </div>
                       {cart.map((i) => (
                         <div key={i.menu_item_id} className="flex items-center justify-between text-xs py-1">
-                          <span className="font-medium truncate max-w-[140px]">{i.item_name}</span>
+                          <span className="font-medium truncate max-w-[130px]">{i.item_name}</span>
                           <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1">
-                              <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => bumpQty(i.menu_item_id, -1)}>
+                            <div className="flex items-center gap-1 bg-background rounded-md border px-1 py-0.5">
+                              <Button size="icon" variant="ghost" className="h-6 w-6 touch-manipulation" onClick={() => bumpQty(i.menu_item_id, -1)}>
                                 <Minus className="h-3 w-3" />
                               </Button>
-                              <span className="w-4 text-center font-semibold">{i.quantity}</span>
-                              <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => bumpQty(i.menu_item_id, +1)}>
+                              <span className="w-5 text-center font-bold">{i.quantity}</span>
+                              <Button size="icon" variant="ghost" className="h-6 w-6 touch-manipulation" onClick={() => bumpQty(i.menu_item_id, +1)}>
                                 <Plus className="h-3 w-3" />
                               </Button>
                             </div>
@@ -582,10 +625,10 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
                       ))}
                       <div className="pt-1">
                         <Input
-                          placeholder="Kitchen notes"
+                          placeholder="Kitchen notes (e.g. less spicy)..."
                           value={orderNotes}
                           onChange={(e) => setOrderNotes(e.target.value)}
-                          className="text-xs h-7 rounded-lg"
+                          className="text-xs h-8 rounded-lg"
                         />
                       </div>
                     </div>
@@ -596,29 +639,34 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
                       type="button"
                       onClick={() => setMobileCartExpanded(!mobileCartExpanded)}
                       disabled={cart.length === 0}
-                      className="flex items-center gap-2 text-left flex-1 px-1 disabled:opacity-50"
+                      className="flex items-center gap-1.5 text-left flex-1 min-w-0 px-1 py-0.5 disabled:opacity-50 touch-manipulation cursor-pointer"
+                      aria-label="Toggle cart breakdown"
                     >
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-1.5 text-xs font-semibold">
-                          <span>Cart · {selectedTableName}</span>
+                      <div className="space-y-0.5 min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground truncate">
+                          <span className="truncate">{cart.length === 0 ? "Cart is empty" : `Cart · ${selectedTableName}`}</span>
                           {totalItemsCount > 0 && (
-                            <span className="rounded-full bg-primary/20 text-primary px-1.5 py-0.2 text-[10px]">
+                            <span className="rounded-full bg-primary/20 text-primary px-1.5 py-0.2 text-[10px] font-bold shrink-0">
                               {totalItemsCount}
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          Total: <strong className="text-foreground">{fmt(total)}</strong>
+                        <p className="text-sm font-bold text-foreground tracking-tight truncate">
+                          {fmt(total)}
                         </p>
                       </div>
                       {cart.length > 0 && (
-                        mobileCartExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground ml-auto" /> : <ChevronUp className="h-4 w-4 text-muted-foreground ml-auto" />
+                        mobileCartExpanded ? (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                        ) : (
+                          <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
+                        )
                       )}
                     </button>
 
                     <Button
-                      size="sm"
-                      className="rounded-full gradient-brand text-primary-foreground px-4 h-10 font-semibold shadow-md shrink-0 text-xs"
+                      size="default"
+                      className="rounded-xl gradient-brand text-primary-foreground px-4 h-10 font-semibold shadow-md shrink-0 text-xs sm:text-sm active:scale-[0.98] transition-transform min-w-[110px]"
                       disabled={cart.length === 0 || placeOrderMut.isPending}
                       onClick={handlePlaceOrder}
                     >
@@ -626,7 +674,7 @@ export function NewOrderDialog({ open, onOpenChange, presetTable, presetTableId 
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <>
-                          <Check className="mr-1 h-4 w-4" /> Place Order ({fmt(total)})
+                          <Check className="mr-1.5 h-4 w-4 shrink-0" /> Place Order
                         </>
                       )}
                     </Button>

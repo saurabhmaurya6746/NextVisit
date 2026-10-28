@@ -13,10 +13,13 @@ class OrderRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create(self, order: Order) -> Order:
+    def create(self, order: Order, auto_commit: bool = True) -> Order:
         self.db.add(order)
-        self.db.commit()
-        self.db.refresh(order)
+        if auto_commit:
+            self.db.commit()
+            self.db.refresh(order)
+        else:
+            self.db.flush()
         return order
 
     def get_by_id(self, order_id: uuid.UUID, business_id: uuid.UUID | None = None) -> Order | None:
@@ -28,6 +31,69 @@ class OrderRepository:
         if business_id:
             stmt = stmt.where(Order.business_id == business_id)
         return self.db.scalar(stmt)
+
+    def get_by_client_order_id(
+        self,
+        business_id: uuid.UUID,
+        client_order_id: uuid.UUID,
+        device_id: uuid.UUID | None = None,
+    ) -> Order | None:
+        stmt = (
+            select(Order)
+            .options(joinedload(Order.items), joinedload(Order.customer).joinedload(Customer.loyalty))
+            .where(
+                Order.business_id == business_id,
+                Order.client_order_id == client_order_id,
+            )
+        )
+        if device_id:
+            stmt = stmt.where(Order.device_id == device_id)
+        return self.db.scalar(stmt)
+
+    def resolve_order(
+        self,
+        business_id: uuid.UUID,
+        order_id_or_client_id: uuid.UUID,
+        device_id: uuid.UUID | None = None,
+    ) -> Order | None:
+        """
+        Resolves an Order within business_id boundary using:
+        1. client_order_id scoped to business_id and device_id
+        2. client_order_id scoped to business_id
+        3. server Order.id scoped to business_id
+        """
+        if device_id:
+            order = self.get_by_client_order_id(business_id, order_id_or_client_id, device_id=device_id)
+            if order:
+                return order
+
+        order = self.get_by_client_order_id(business_id, order_id_or_client_id)
+        if order:
+            if device_id and order.device_id and order.device_id != device_id:
+                logger.warning(
+                    "Order %s matches client_order_id %s but device %s contradicts %s",
+                    order.id,
+                    order_id_or_client_id,
+                    order.device_id,
+                    device_id,
+                )
+                return None
+            return order
+
+        order = self.get_by_id(order_id_or_client_id, business_id=business_id)
+        if order:
+            if device_id and order.device_id and order.device_id != device_id:
+                logger.warning(
+                    "Order %s matches id %s but device %s contradicts %s",
+                    order.id,
+                    order_id_or_client_id,
+                    order.device_id,
+                    device_id,
+                )
+                return None
+            return order
+
+        return None
 
     def get_by_visit_token(self, visit_token: str, business_id: uuid.UUID | None = None) -> Order | None:
         stmt = (
@@ -41,6 +107,17 @@ class OrderRepository:
         if business_id:
             stmt = stmt.where(Order.business_id == business_id)
         stmt = stmt.order_by(Order.created_at.desc())
+        return self.db.scalar(stmt)
+
+    def get_by_order_number(self, business_id: uuid.UUID, order_number: str) -> Order | None:
+        stmt = (
+            select(Order)
+            .options(joinedload(Order.items), joinedload(Order.customer).joinedload(Customer.loyalty))
+            .where(
+                Order.business_id == business_id,
+                Order.order_number == order_number,
+            )
+        )
         return self.db.scalar(stmt)
 
     def list_by_business(
@@ -205,9 +282,12 @@ class OrderRepository:
         stmt = select(func.count(Order.id)).where(Order.business_id == business_id)
         return self.db.scalar(stmt) or 0
 
-    def update(self, order: Order) -> Order:
-        self.db.commit()
-        self.db.refresh(order)
+    def update(self, order: Order, auto_commit: bool = True) -> Order:
+        if auto_commit:
+            self.db.commit()
+            self.db.refresh(order)
+        else:
+            self.db.flush()
         return order
 
     def delete(self, order: Order) -> None:

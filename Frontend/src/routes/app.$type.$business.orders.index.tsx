@@ -23,7 +23,7 @@ import { useQuery } from "@tanstack/react-query";
 import { listOrdersApi, getTablesMapApi, type BackendOrder } from "@/lib/orders-api";
 import { useProfile, useAuthenticatedBusiness } from "@/lib/business-profile";
 import { useAppScope, slugify } from "@/lib/app-nav";
-import { getSession } from "@/lib/auth";
+import { getSession, getWebBaseUrl } from "@/lib/auth";
 import { toast } from "sonner";
 import { fmt } from "@/lib/currency";
 
@@ -216,51 +216,55 @@ export default function OrdersPage() {
 
         {(["POS", "QR"] as const).map((t) => (
           <TabsContent key={t} value={t} className="mt-0">
-            <div className="mb-4 flex items-center gap-1.5 overflow-x-auto pb-1.5 no-scrollbar max-w-full">
-              {(["all", "OPEN", "PREPARING", "READY", "SERVED", "CANCELLED"] as const).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => handleFilterChange(s)}
-                  className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-xs transition-all cursor-pointer font-medium ${
-                    filter === s
-                      ? "gradient-brand text-primary-foreground border-transparent shadow-2xs"
-                      : "hover:border-primary bg-background text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {s === "all" ? "All Statuses" : s}
-                </button>
-              ))}
-              <span className="mx-1 h-5 w-px bg-border shrink-0" />
-              {(["today", "yesterday", "week", "month", "all", "custom"] as const).map((d) => (
-                <button
-                  key={d}
-                  onClick={() => handleDateFilterChange(d)}
-                  className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-xs capitalize transition-all cursor-pointer font-medium ${
-                    dateFilter === d
-                      ? "gradient-brand text-primary-foreground border-transparent shadow-2xs"
-                      : "hover:border-primary bg-background text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {d === "week" ? "This week" : d === "month" ? "This month" : d}
-                </button>
-              ))}
-              {dateFilter === "custom" && (
-                <div className="ml-1 flex items-center gap-1 shrink-0">
-                  <input
-                    type="date"
-                    value={customFrom}
-                    onChange={(e) => { setCustomFrom(e.target.value); setPage(1); }}
-                    className="rounded-full border bg-background px-2 py-0.5 text-xs"
-                  />
-                  <span className="text-xs text-muted-foreground">→</span>
-                  <input
-                    type="date"
-                    value={customTo}
-                    onChange={(e) => { setCustomTo(e.target.value); setPage(1); }}
-                    className="rounded-full border bg-background px-2 py-0.5 text-xs"
-                  />
-                </div>
-              )}
+            <div className="relative mb-4">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-2 pt-0.5 px-0.5 no-scrollbar max-w-full scroll-smooth overscroll-x-contain snap-x pr-12 sm:pr-0">
+                {(["all", "OPEN", "PREPARING", "READY", "SERVED", "CANCELLED"] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => handleFilterChange(s)}
+                    className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 sm:py-1 text-xs transition-all cursor-pointer font-medium snap-start min-h-[32px] sm:min-h-0 ${
+                      filter === s
+                        ? "gradient-brand text-primary-foreground border-transparent shadow-2xs"
+                        : "hover:border-primary bg-background text-muted-foreground hover:text-foreground active:bg-muted"
+                    }`}
+                  >
+                    {s === "all" ? "All Statuses" : s}
+                  </button>
+                ))}
+                <span className="mx-1 h-5 w-px bg-border shrink-0" />
+                {(["today", "yesterday", "week", "month", "all", "custom"] as const).map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => handleDateFilterChange(d)}
+                    className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 sm:py-1 text-xs capitalize transition-all cursor-pointer font-medium snap-start min-h-[32px] sm:min-h-0 ${
+                      dateFilter === d
+                        ? "gradient-brand text-primary-foreground border-transparent shadow-2xs"
+                        : "hover:border-primary bg-background text-muted-foreground hover:text-foreground active:bg-muted"
+                    }`}
+                  >
+                    {d === "week" ? "This week" : d === "month" ? "This month" : d}
+                  </button>
+                ))}
+                {dateFilter === "custom" && (
+                  <div className="ml-1 flex items-center gap-1 shrink-0 snap-start">
+                    <input
+                      type="date"
+                      value={customFrom}
+                      onChange={(e) => { setCustomFrom(e.target.value); setPage(1); }}
+                      className="rounded-full border bg-background px-2 py-1 sm:py-0.5 text-xs min-h-[32px] sm:min-h-0"
+                    />
+                    <span className="text-xs text-muted-foreground">→</span>
+                    <input
+                      type="date"
+                      value={customTo}
+                      onChange={(e) => { setCustomTo(e.target.value); setPage(1); }}
+                      className="rounded-full border bg-background px-2 py-1 sm:py-0.5 text-xs min-h-[32px] sm:min-h-0"
+                    />
+                  </div>
+                )}
+              </div>
+              {/* Subtle right fade cue for horizontal scroll affordance on mobile */}
+              <div className="pointer-events-none absolute right-0 top-0 bottom-2 w-8 bg-gradient-to-l from-background to-transparent sm:hidden" />
             </div>
 
             {isLoading ? (
@@ -541,7 +545,7 @@ export default function OrdersPage() {
             {allTablesList.map((t) => {
               const slug = t.toLowerCase().replace(/\s+/g, "-");
               const path = `/restaurant/qr/${bizSlug}/${encodeURIComponent(slug)}`;
-              const url = typeof window !== "undefined" ? `${window.location.origin}${path}` : path;
+              const url = `${getWebBaseUrl()}${path}`;
               return (
                 <div key={t} className="flex items-center justify-between rounded-xl border p-2">
                   <div className="min-w-0">

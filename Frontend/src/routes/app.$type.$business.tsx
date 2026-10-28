@@ -14,6 +14,11 @@ import { getSession, useSession, hasModulePermission } from "@/lib/auth";
 import { useWizardState, WIZARD_OPEN_EVENT } from "@/lib/wizard-store";
 
 import { SubscriptionUpgradeModal } from "@/components/subscription-upgrade-modal";
+import { DesktopDeviceSetupDialog } from "@/components/desktop-device-setup-dialog";
+import { isDesktopApp } from "@/lib/desktop";
+import { refreshMasterDataCache } from "@/lib/master-data-cache";
+import { getStoredDeviceBinding } from "@/lib/devices-api";
+import { syncWorker } from "@/lib/sync/sync-worker";
 
 let appLoaderShown = false;
 
@@ -112,6 +117,40 @@ export function AppLayout() {
     return () => window.removeEventListener(WIZARD_OPEN_EVENT, on);
   }, []);
 
+  const [deviceSetupOpen, setDeviceSetupOpen] = useState(false);
+
+  // On desktop, detect unconfigured terminal, business mismatch, or seed master data cache and durable sync engine
+  useEffect(() => {
+    if (isDesktopApp() && session?.clientId && session?.token && typeof window !== "undefined") {
+      // Initialize durable sync worker and recover in-flight transactions
+      syncWorker.initialize(session.clientId).catch((err) => {
+        console.warn("[SYNC WORKER] Startup initialization error:", err);
+      });
+
+      const binding = getStoredDeviceBinding(session.clientId);
+
+      if (!binding.isConfigured || binding.isMismatch) {
+        // Unconfigured terminal or business mismatch: prompt setup dialog
+        setDeviceSetupOpen(true);
+      } else if (binding.deviceId && navigator.onLine) {
+        // Configured terminal: perform background refresh
+        refreshMasterDataCache(session.clientId, binding.deviceId)
+          .then((res) => {
+            if (res.source === "network" && res.persistedToDesktop) {
+              console.info("[DESKTOP CACHE] Master data refreshed and cached to SQLite on startup");
+            } else if (res.error && res.error.includes("403")) {
+              // Server rejected device credentials (revoked or inactive): prompt setup dialog
+              console.warn("[DESKTOP CACHE] Terminal credentials rejected or revoked by server:", res.error);
+              setDeviceSetupOpen(true);
+            }
+          })
+          .catch((err) => {
+            console.warn("[DESKTOP CACHE] Startup master data sync error:", err);
+          });
+      }
+    }
+  }, [session?.clientId, session?.token]);
+
   const businessName = authBiz.name;
   const country = authBiz.country;
   const logoUrl = authBiz.logoUrl;
@@ -159,6 +198,10 @@ export function AppLayout() {
           onOpenChange={setAiUpgradeModalOpen}
           title={aiModalTitle}
           description={aiModalDesc}
+        />
+        <DesktopDeviceSetupDialog
+          open={deviceSetupOpen}
+          onOpenChange={setDeviceSetupOpen}
         />
       </SidebarProvider>
     </>

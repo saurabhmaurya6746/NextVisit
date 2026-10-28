@@ -1,4 +1,6 @@
-import { apiFetch } from "./auth";
+import { apiFetch, getSession } from "./auth";
+import { isDesktopApp, isNetworkOrTransientError } from "./desktop";
+import { getMasterDataFromDesktopCache } from "./master-data-cache";
 
 export interface BusinessProfile {
   id: string;
@@ -89,6 +91,7 @@ export interface BusinessSettings {
 
   created_at: string;
   updated_at: string;
+  is_stale?: boolean;
 }
 
 export type BusinessSettingsUpdatePayload = Partial<BusinessSettings>;
@@ -134,20 +137,86 @@ export interface RestaurantSetupSettings {
   tax_percentage: number;
   invoice_prefix: string;
   is_saved: boolean;
+  is_stale?: boolean;
 }
 
 /**
  * 1. Fetch business settings (GET /api/v1/business-settings)
  */
 export async function getBusinessSettingsApi(): Promise<BusinessSettings> {
-  const res = await apiFetch("/api/v1/business-settings");
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    const err = new Error(errData.detail || `HTTP ${res.status}`);
-    (err as any).status = res.status;
-    throw err;
+  try {
+    const res = await apiFetch("/api/v1/business-settings");
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const err = new Error(errData.detail || `HTTP ${res.status}`);
+      (err as any).status = res.status;
+      throw err;
+    }
+    return await res.json();
+  } catch (netErr: unknown) {
+    if (isDesktopApp() && isNetworkOrTransientError(netErr)) {
+      const session = getSession();
+      if (session?.clientId && session?.token) {
+        try {
+          const cached = await getMasterDataFromDesktopCache(session.clientId);
+          if (cached && cached.business_settings) {
+            const raw = cached.business_settings as Record<string, any>;
+            return {
+              id: raw.id || "cached-settings",
+              business_id: session.clientId,
+              currency: raw.currency || "INR",
+              timezone: raw.timezone || "Asia/Kolkata",
+              language: raw.language || "en",
+              enable_gst: raw.enable_gst !== undefined ? Boolean(raw.enable_gst) : true,
+              tax_percentage: typeof raw.tax_percentage === "number" ? raw.tax_percentage : 5,
+              invoice_prefix: raw.invoice_prefix || "INV-",
+              receipt_paper_size: raw.receipt_paper_size || "80mm",
+              payment_upi_id: raw.payment_upi_id || null,
+              payment_payee_name: raw.payment_payee_name || null,
+              payment_qr_image: raw.payment_qr_image || null,
+              logo: raw.logo || null,
+              cover_image: raw.cover_image || null,
+              default_discount: typeof raw.default_discount === "number" ? raw.default_discount : 0,
+              service_charge: typeof raw.service_charge === "number" ? raw.service_charge : 0,
+              round_off_bill: Boolean(raw.round_off_bill),
+              price_includes_gst: Boolean(raw.price_includes_gst),
+              default_country_code: raw.default_country_code || "+91",
+              enable_whatsapp_campaigns: Boolean(raw.enable_whatsapp_campaigns),
+              enable_welcome_messages: Boolean(raw.enable_welcome_messages),
+              review_booster_enabled: Boolean(raw.review_booster_enabled),
+              recovery_enabled: Boolean(raw.recovery_enabled),
+              show_gst_on_invoice: raw.show_gst_on_invoice !== undefined ? Boolean(raw.show_gst_on_invoice) : true,
+              show_qr_on_invoice: raw.show_qr_on_invoice !== undefined ? Boolean(raw.show_qr_on_invoice) : true,
+              auto_print_invoice: Boolean(raw.auto_print_invoice),
+              notify_orders: Boolean(raw.notify_orders),
+              notify_qr_orders: Boolean(raw.notify_qr_orders),
+              notify_campaigns: Boolean(raw.notify_campaigns),
+              notify_reviews: Boolean(raw.notify_reviews),
+              notify_email: Boolean(raw.notify_email),
+              review_booster_ai_enabled: Boolean(raw.review_booster_ai_enabled),
+              ai_default_tone: raw.ai_default_tone || "friendly",
+              ai_max_monthly_requests: typeof raw.ai_max_monthly_requests === "number" ? raw.ai_max_monthly_requests : 100,
+              enable_qr_ordering: raw.enable_qr_ordering !== undefined ? Boolean(raw.enable_qr_ordering) : true,
+              enable_staff_ordering: raw.enable_staff_ordering !== undefined ? Boolean(raw.enable_staff_ordering) : true,
+              enable_parcel: raw.enable_parcel !== undefined ? Boolean(raw.enable_parcel) : true,
+              enable_takeaway: raw.enable_takeaway !== undefined ? Boolean(raw.enable_takeaway) : true,
+              enable_dine_in: raw.enable_dine_in !== undefined ? Boolean(raw.enable_dine_in) : true,
+              pos_auto_complete_order: Boolean(raw.pos_auto_complete_order),
+              pos_auto_free_table: Boolean(raw.pos_auto_free_table),
+              pos_default_payment_method: raw.pos_default_payment_method || "CASH",
+              allow_guest_checkout: raw.allow_guest_checkout !== undefined ? Boolean(raw.allow_guest_checkout) : true,
+              created_at: cached.cached_at,
+              updated_at: cached.cached_at,
+              is_stale: true,
+            };
+          }
+        } catch {
+          // Fall through to rethrow original error
+        }
+      }
+    }
+    throw netErr;
   }
-  return await res.json();
 }
 
 /**
@@ -215,14 +284,54 @@ export async function updateBusinessProfileApi(
  * 5. Fetch Restaurant Setup Business Settings (GET /api/v1/setup/business-settings)
  */
 export async function getRestaurantSetupSettingsApi(): Promise<RestaurantSetupSettings> {
-  const res = await apiFetch("/api/v1/setup/business-settings");
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    const err = new Error(errData.detail || `HTTP ${res.status}`);
-    (err as any).status = res.status;
-    throw err;
+  try {
+    const res = await apiFetch("/api/v1/setup/business-settings");
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const err = new Error(errData.detail || `HTTP ${res.status}`);
+      (err as any).status = res.status;
+      throw err;
+    }
+    return await res.json();
+  } catch (netErr: unknown) {
+    if (isDesktopApp() && isNetworkOrTransientError(netErr)) {
+      const session = getSession();
+      if (session?.clientId && session?.token) {
+        try {
+          const cached = await getMasterDataFromDesktopCache(session.clientId);
+          if (cached && cached.business_settings) {
+            const raw = cached.business_settings as Record<string, any>;
+            return {
+              name: raw.name || session.businessName || "Restaurant",
+              phone: raw.phone || "",
+              email: raw.email || "",
+              address: raw.address || "",
+              city: raw.city || null,
+              state: raw.state || null,
+              country: raw.country || "IN",
+              gst_number: raw.gst_number || null,
+              currency: raw.currency || "INR",
+              timezone: raw.timezone || "Asia/Kolkata",
+              opening_time: raw.opening_time || null,
+              closing_time: raw.closing_time || null,
+              enable_qr_ordering: raw.enable_qr_ordering !== undefined ? Boolean(raw.enable_qr_ordering) : true,
+              enable_staff_ordering: raw.enable_staff_ordering !== undefined ? Boolean(raw.enable_staff_ordering) : true,
+              enable_parcel: raw.enable_parcel !== undefined ? Boolean(raw.enable_parcel) : true,
+              enable_takeaway: raw.enable_takeaway !== undefined ? Boolean(raw.enable_takeaway) : true,
+              allow_guest_checkout: raw.allow_guest_checkout !== undefined ? Boolean(raw.allow_guest_checkout) : true,
+              tax_percentage: typeof raw.tax_percentage === "number" ? raw.tax_percentage : 5,
+              invoice_prefix: raw.invoice_prefix || "INV-",
+              is_saved: true,
+              is_stale: true,
+            };
+          }
+        } catch {
+          // Fall through to rethrow original error
+        }
+      }
+    }
+    throw netErr;
   }
-  return await res.json();
 }
 
 /**

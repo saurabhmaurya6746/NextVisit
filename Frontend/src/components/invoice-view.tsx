@@ -1,13 +1,21 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Printer, Download } from "lucide-react";
+import { Printer, Download, Settings } from "lucide-react";
 import { fmt } from "@/lib/currency";
 import { jsPDF } from "jspdf";
 import { cn } from "@/lib/utils";
+import { dispatchReceiptPrint, getPrinterConfig } from "@/lib/printer/printer-service";
+import { isDesktopApp } from "@/lib/desktop";
+import { getSession } from "@/lib/auth";
+import { PrinterSettingsDialog } from "@/components/printer-settings-dialog";
 
 export interface InvoiceData {
   order_number: string;
   invoice_number?: string;
+  receipt_reference?: string;
+  payment_status?: string;
+  is_offline?: boolean;
+  is_reprint?: boolean;
   created_at: string;
   table_name?: string;
   customer_name?: string;
@@ -115,15 +123,31 @@ export function InvoiceView({
     defaultPaperSize === "58mm" ? "58mm" : defaultPaperSize === "A4" ? "A4" : "80mm"
   );
   const [downloading, setDownloading] = useState(false);
+  const [printerDialogOpen, setPrinterDialogOpen] = useState(false);
+  const [printingThermal, setPrintingThermal] = useState(false);
+
+  const session = getSession();
+  const businessId = session?.clientId || "default";
 
   const invNum = invData.invoice_number || `INV-${invData.order_number.replace("ORD-", "")}`;
   const d = new Date(invData.created_at);
   const dateStr = d.toLocaleDateString("en-GB");
   const timeStr = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-  // Native Browser Print Flow using Isolated Print Root
-  const handlePrint = () => {
-    printInvoiceDom("print-invoice");
+  // Print Flow: Dispatches ESC/POS thermal printer in desktop app, or browser print in web
+  const handlePrint = async () => {
+    if (isDesktopApp()) {
+      setPrintingThermal(true);
+      try {
+        await dispatchReceiptPrint(businessId, invData, {
+          forceReprint: Boolean(invData.is_reprint),
+        });
+      } finally {
+        setPrintingThermal(false);
+      }
+    } else {
+      printInvoiceDom("print-invoice");
+    }
   };
 
   // Dedicated PDF Download Flow with Dynamic Content Height
@@ -182,10 +206,17 @@ export function InvoiceView({
       y += 4;
 
       // Metadata
-      pdf.text("Invoice No:", leftMargin, y);
-      pdf.setFont("helvetica", "bold");
-      pdf.text(invNo, rightMargin, y, { align: "right" });
-      y += 3.5;
+      if (invData.receipt_reference) {
+        pdf.text("Receipt Ref:", leftMargin, y);
+        pdf.setFont("helvetica", "bold");
+        pdf.text(invData.receipt_reference, rightMargin, y, { align: "right" });
+        y += 3.5;
+      } else {
+        pdf.text("Invoice No:", leftMargin, y);
+        pdf.setFont("helvetica", "bold");
+        pdf.text(invNo, rightMargin, y, { align: "right" });
+        y += 3.5;
+      }
 
       pdf.setFont("helvetica", "normal");
       pdf.text("Order No:", leftMargin, y);
@@ -337,8 +368,22 @@ export function InvoiceView({
             <Button size="sm" variant="outline" className="rounded-full gap-1.5 text-xs h-8" onClick={handleDownloadPdf} disabled={downloading}>
               <Download className={cn("h-3.5 w-3.5", downloading && "animate-spin")} /> {downloading ? "Saving…" : "Download PDF"}
             </Button>
-            <Button size="sm" className="rounded-full gap-1.5 text-xs h-8 gradient-brand text-primary-foreground font-semibold" onClick={handlePrint}>
-              <Printer className="h-3.5 w-3.5" /> Print Invoice
+            <Button
+              size="sm"
+              variant="outline"
+              className="rounded-full h-8 w-8 p-0"
+              onClick={() => setPrinterDialogOpen(true)}
+              title="Configure Thermal Printer"
+            >
+              <Settings className="h-3.5 w-3.5 text-muted-foreground" />
+            </Button>
+            <Button
+              size="sm"
+              className="rounded-full gap-1.5 text-xs h-8 gradient-brand text-primary-foreground font-semibold"
+              onClick={handlePrint}
+              disabled={printingThermal}
+            >
+              <Printer className={cn("h-3.5 w-3.5", printingThermal && "animate-spin")} /> {printingThermal ? "Printing…" : "Print Invoice"}
             </Button>
           </div>
         </div>
@@ -356,6 +401,13 @@ export function InvoiceView({
             : "paper-80mm max-w-md p-6 text-sm"
         )}
       >
+        {/* DUPLICATE / REPRINT BANNER */}
+        {invData.is_reprint && (
+          <div className="py-1 my-1 text-center font-bold tracking-widest text-[11px] uppercase text-rose-600 dark:text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-lg">
+            *** DUPLICATE / REPRINT ***
+          </div>
+        )}
+
         {/* Business Header */}
         <div className="text-center space-y-0.5">
           <p className={cn("font-display font-bold tracking-tight text-foreground", paperSize === "58mm" ? "text-base" : "text-xl")}>
@@ -370,10 +422,22 @@ export function InvoiceView({
 
         {/* Invoice Metadata */}
         <div className="my-3 border-y py-2 text-xs space-y-1">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Invoice No:</span>
-            <span className="font-mono font-semibold">{invNum}</span>
-          </div>
+          {invData.receipt_reference ? (
+            <div className="flex justify-between text-amber-800 dark:text-amber-300">
+              <span className="font-medium">Receipt Ref (POS):</span>
+              <span className="font-mono font-bold">{invData.receipt_reference}</span>
+            </div>
+          ) : (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Invoice No:</span>
+              <span className="font-mono font-semibold">{invNum}</span>
+            </div>
+          )}
+          {invData.is_offline && (
+            <div className="py-0.5 text-center text-[10px] text-amber-700 dark:text-amber-300 bg-amber-500/10 rounded">
+              Local POS Receipt · Tax Invoice Pending Cloud Sync
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-muted-foreground">Order No:</span>
             <span className="font-mono font-medium">{invData.order_number}</span>
@@ -538,6 +602,11 @@ export function InvoiceView({
           <p className="text-[10.5px]">We look forward to serving you again.</p>
         </div>
       </div>
+
+      <PrinterSettingsDialog
+        open={printerDialogOpen}
+        onOpenChange={setPrinterDialogOpen}
+      />
     </div>
   );
 }

@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useProfile, useAuthenticatedBusiness } from "@/lib/business-profile";
 import { useAppScope, slugify } from "@/lib/app-nav";
-import { getSession } from "@/lib/auth";
+import { getSession, getWebBaseUrl } from "@/lib/auth";
 import { getTablesMapApi } from "@/lib/orders-api";
 import { NewOrderDialog } from "@/components/new-order-dialog";
 import { OrderDetailSheet } from "@/components/order-detail-sheet";
@@ -45,6 +45,8 @@ const STATUS_COLORS: Record<string, string> = {
   OCCUPIED: "bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300",
   SERVED: "bg-indigo-500/15 border-indigo-500/50 text-indigo-700 dark:text-indigo-300",
   COMPLETED: "bg-neutral-900/90 border-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 dark:border-neutral-100",
+  OFFLINE: "bg-muted/40 border-dashed border-border text-muted-foreground",
+  UNKNOWN: "bg-muted/40 border-dashed border-border text-muted-foreground",
 };
 
 interface QrModalTable {
@@ -94,7 +96,7 @@ export function TablesPageView() {
 
   const handleOpenQrModal = (table: any) => {
     const relPath = `/restaurant/qr/${bizSlug}/${table.id}`;
-    const fullUrl = `${window.location.origin}${relPath}`;
+    const fullUrl = `${getWebBaseUrl()}${relPath}`;
     setSelectedQrTable({
       tableName: table.table_name,
       url: fullUrl,
@@ -215,11 +217,19 @@ export function TablesPageView() {
         {/* Main Floor Plan Grid */}
         {!isLoading && !isError && (
           <div className="space-y-8">
+            {diningAreas.some((a: any) => a.is_stale) && (
+              <div className="flex items-center gap-2 p-3 text-xs bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 rounded-lg">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>
+                  <strong>Offline Mode:</strong> Displaying cached dining areas and table layouts. Live table occupancy, active orders, and new order creation are unavailable while offline.
+                </span>
+              </div>
+            )}
             {diningAreas.map((area: any) => (
               <div key={area.id} className="space-y-3">
                 <div className="flex items-center justify-between border-b pb-2">
                   <h3 className="font-display font-semibold text-base text-foreground flex items-center gap-2">
-                    {area.area_name}
+                    {area.name || area.area_name}
                     <Badge variant="secondary" className="text-xs font-normal">
                       {area.tables?.length || 0} Tables
                     </Badge>
@@ -229,7 +239,8 @@ export function TablesPageView() {
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {area.tables.map((table: any) => {
                     const statusKey = table.status || "EMPTY";
-                    const isOccupied = statusKey !== "EMPTY";
+                    const isOffline = statusKey === "OFFLINE" || statusKey === "UNKNOWN";
+                    const isOccupied = !isOffline && statusKey !== "EMPTY";
 
                     return (
                       <Card
@@ -251,9 +262,12 @@ export function TablesPageView() {
                           </div>
                           <Badge
                             variant="outline"
-                            className="bg-background/80 font-bold text-[10px] uppercase tracking-wider backdrop-blur-sm"
+                            className={cn(
+                              "bg-background/80 font-bold text-[10px] uppercase tracking-wider backdrop-blur-sm",
+                              isOffline && "border-amber-500/50 text-amber-700 dark:text-amber-400"
+                            )}
                           >
-                            {statusKey === "EMPTY" ? "AVAILABLE" : statusKey}
+                            {isOffline ? "OFFLINE (LAYOUT ONLY)" : (statusKey === "EMPTY" ? "AVAILABLE" : statusKey)}
                           </Badge>
                         </div>
 
@@ -273,7 +287,13 @@ export function TablesPageView() {
                           </div>
                         )}
 
-                        {!isOccupied && (
+                        {isOffline && (
+                          <div className="my-4 text-center py-2 px-1 text-xs text-muted-foreground/90 border border-dashed border-border rounded-lg bg-muted/20">
+                            Live occupancy unavailable (Offline)
+                          </div>
+                        )}
+
+                        {!isOccupied && !isOffline && (
                           <div className="my-4 text-center py-2 text-xs text-muted-foreground/80 border border-dashed border-current/20 rounded-lg">
                             Ready for new guests
                           </div>
@@ -300,10 +320,21 @@ export function TablesPageView() {
                             </Tooltip>
                           </TooltipProvider>
 
-                          {/* Primary Action Button */}
-                          {isOccupied ? (
+                          {/* Primary Action Button - Touch friendly h-10 */}
+                          {isOffline ? (
                             <Button
-                              className="flex-1 font-medium shadow-sm h-9 text-xs"
+                              className="flex-1 font-medium h-10 text-xs bg-amber-500/15 hover:bg-amber-500/25 text-amber-900 dark:text-amber-200 border-amber-500/40"
+                              variant="outline"
+                              onClick={() => {
+                                setPresetTableId(table.id);
+                                setPresetTableName(table.table_name);
+                              }}
+                            >
+                              + Offline Order
+                            </Button>
+                          ) : isOccupied ? (
+                            <Button
+                              className="flex-1 font-medium shadow-sm h-10 text-xs"
                               variant="default"
                               onClick={() => setOpenOrderId(table.current_order_id)}
                             >
@@ -311,7 +342,7 @@ export function TablesPageView() {
                             </Button>
                           ) : (
                             <Button
-                              className="flex-1 font-medium h-9 text-xs"
+                              className="flex-1 font-medium h-10 text-xs"
                               variant="secondary"
                               onClick={() => {
                                 setPresetTableId(table.id);

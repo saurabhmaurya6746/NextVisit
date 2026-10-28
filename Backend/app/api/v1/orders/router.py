@@ -1,8 +1,9 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_current_user, get_optional_user
+from app.core.dependencies import get_current_user
 from app.db.database import get_db
 from app.models.order import OrderStatus
 from app.models.user import User
@@ -23,6 +24,44 @@ from app.services.order_service import OrderService
 from app.services.revenue_service import RevenueService
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
+_bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def get_authenticated_user_or_none(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """
+    Returns the authenticated User if a valid Bearer JWT is provided.
+    Returns None for unauthenticated callers (never falls back to another business's user).
+    If a visit token (starting with 'vt_') is passed in Authorization Bearer, returns None
+    so the endpoint can validate it as a visit token.
+    """
+    if credentials is None:
+        return None
+    token = credentials.credentials
+    if token.startswith("vt_"):
+        return None
+    try:
+        return get_current_user(credentials, db)
+    except HTTPException:
+        return None
+
+
+def _extract_visit_token(
+    visit_token: str | None = None,
+    x_visit_token: str | None = None,
+    credentials: HTTPAuthorizationCredentials | None = None,
+) -> str | None:
+    if x_visit_token and x_visit_token.strip():
+        return x_visit_token.strip()
+    if visit_token and visit_token.strip():
+        return visit_token.strip()
+    if credentials and credentials.credentials:
+        cred = credentials.credentials.strip()
+        if cred.startswith("vt_"):
+            return cred
+    return None
 
 
 @router.get(
@@ -59,7 +98,7 @@ def get_revenue_analytics(
 def auto_detect_customer(
     phone: str = Query(...),
     order_amount: float = Query(default=0.0),
-    current_user: User = Depends(get_optional_user),
+    current_user: User | None = Depends(get_authenticated_user_or_none),
     db: Session = Depends(get_db),
 ):
     return OrderService(db).auto_detect_customer(current_user, phone, order_amount)
@@ -112,7 +151,7 @@ def list_orders(
 @router.post("", response_model=OrderResponse, status_code=status.HTTP_201_CREATED, summary="Create temporary order")
 def create_order(
     data: OrderCreate,
-    current_user: User = Depends(get_optional_user),
+    current_user: User | None = Depends(get_authenticated_user_or_none),
     db: Session = Depends(get_db),
 ):
     return OrderService(db).create_order(current_user, data)
@@ -121,10 +160,14 @@ def create_order(
 @router.get("/{id}", response_model=OrderResponse, summary="Get temporary order details")
 def get_order(
     id: UUID,
-    current_user: User = Depends(get_optional_user),
+    visit_token: str | None = Query(default=None, description="Visit token for public QR guest ordering"),
+    x_visit_token: str | None = Header(default=None, alias="X-Visit-Token", description="Visit token header for public QR guest ordering"),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    current_user: User | None = Depends(get_authenticated_user_or_none),
     db: Session = Depends(get_db),
 ):
-    return OrderService(db).get_order(current_user, id)
+    token = _extract_visit_token(visit_token, x_visit_token, credentials)
+    return OrderService(db).get_order(current_user, id, visit_token=token)
 
 
 @router.patch("/{id}", response_model=OrderResponse, summary="Update temporary order")
@@ -165,10 +208,14 @@ def list_order_items(
 def add_order_item(
     id: UUID,
     data: OrderItemCreate,
-    current_user: User = Depends(get_optional_user),
+    visit_token: str | None = Query(default=None, description="Visit token for public QR guest ordering"),
+    x_visit_token: str | None = Header(default=None, alias="X-Visit-Token", description="Visit token header for public QR guest ordering"),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    current_user: User | None = Depends(get_authenticated_user_or_none),
     db: Session = Depends(get_db),
 ):
-    return OrderService(db).add_order_item(current_user, id, data)
+    token = _extract_visit_token(visit_token, x_visit_token, credentials)
+    return OrderService(db).add_order_item(current_user, id, data, visit_token=token)
 
 
 @router.put("/{id}/items/{item_id}", response_model=OrderResponse, summary="Update item in order (auto recalculates order)")

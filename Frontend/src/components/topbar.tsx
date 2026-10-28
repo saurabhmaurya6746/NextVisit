@@ -17,12 +17,14 @@ import {
   AlertTriangle,
   Star,
   UserCheck,
+  Printer,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { PrinterSettingsDialog } from "@/components/printer-settings-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Link, useNavigate } from "react-router-dom";
@@ -38,6 +40,7 @@ import {
 import { getSession } from "@/lib/auth";
 import { getShortBusinessName } from "@/lib/utils";
 import { useAppNav } from "@/lib/app-nav";
+import { SyncStatusIndicator } from "@/components/sync-status-indicator";
 
 const ADMIN_NOTIF_TYPES: NotificationType[] = [
   "registration",
@@ -124,6 +127,7 @@ export function Topbar({
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [printerOpen, setPrinterOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
@@ -208,9 +212,27 @@ export function Topbar({
         .toUpperCase() || "NV";
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur-xl">
-      <SidebarTrigger />
-      <div ref={wrapRef} className="relative hidden max-w-md flex-1 md:block">
+    <header className="sticky top-0 z-30 flex flex-col justify-center border-b bg-background/80 px-3 sm:px-4 backdrop-blur-xl pt-[max(env(safe-area-inset-top,0px),2.5rem)] pb-2 sm:py-0 sm:h-16">
+      <div className="flex w-full items-center gap-2 sm:gap-3">
+        <SidebarTrigger />
+
+        {/* Mobile Business Chip */}
+        <div className="flex sm:hidden items-center gap-1.5 rounded-full border bg-card px-2 py-0.5 max-w-[170px] min-w-0 shrink shadow-xs">
+          <Avatar className="h-5 w-5 shrink-0">
+            {logoUrl ? (
+              <img src={logoUrl} alt={displayName} className="h-full w-full object-cover rounded-full" />
+            ) : (
+              <AvatarFallback className="bg-gradient-brand text-[9px] text-primary-foreground font-semibold">
+                {computedInitials}
+              </AvatarFallback>
+            )}
+          </Avatar>
+          <p className="text-[11px] font-semibold truncate text-foreground leading-tight">
+            {getShortBusinessName(displayName)}
+          </p>
+        </div>
+
+        <div ref={wrapRef} className="relative hidden max-w-md flex-1 md:block">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={q}
@@ -265,12 +287,12 @@ export function Topbar({
           </div>
         )}
       </div>
-      <div className="ml-auto flex items-center gap-1.5">
+      <div className="ml-auto flex items-center gap-1 sm:gap-1.5">
         <div ref={notifRef} className="relative">
           <Button
             variant="ghost"
             size="icon"
-            className="relative rounded-full cursor-pointer"
+            className="relative rounded-full cursor-pointer h-9 w-9 text-muted-foreground hover:text-foreground"
             aria-label="Notifications"
             onClick={() => {
               setNotifOpen((v) => !v);
@@ -285,7 +307,7 @@ export function Topbar({
             )}
           </Button>
           {notifOpen && (
-            <div className="fixed left-3 right-3 top-[68px] sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 rounded-2xl border bg-popover shadow-elegant animate-in fade-in-0 zoom-in-95 z-50 overflow-hidden">
+            <div className="fixed left-3 right-3 top-[calc(max(env(safe-area-inset-top,0px),2.5rem)+72px)] sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 rounded-2xl border bg-popover shadow-elegant animate-in fade-in-0 zoom-in-95 z-50 overflow-hidden">
               <div className="flex items-center justify-between px-3.5 py-2.5 border-b bg-muted/30">
                 <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">NOTIFICATIONS</p>
                 {displayNotifications.length > 0 && (
@@ -350,8 +372,21 @@ export function Topbar({
             </div>
           )}
         </div>
+        <div className="hidden sm:block">
+          <SyncStatusIndicator />
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative rounded-full cursor-pointer h-9 w-9 text-muted-foreground hover:text-foreground"
+          aria-label="Receipt & Thermal Printer Setup"
+          title="Receipt & Thermal Printer Setup"
+          onClick={() => setPrinterOpen(true)}
+        >
+          <Printer className="h-4 w-4" />
+        </Button>
         <ThemeToggle />
-        <div className="ml-1 flex items-center gap-1.5 sm:gap-2 rounded-full border bg-card px-2 py-1 pr-2.5 sm:pr-3 max-w-[130px] xs:max-w-[170px] sm:max-w-none shrink-0 shadow-xs">
+        <div className="hidden sm:flex ml-1 items-center gap-1.5 sm:gap-2 rounded-full border bg-card px-2 py-1 pr-2.5 sm:pr-3 shrink-0 shadow-xs">
           <Avatar className="h-6 w-6 sm:h-7 sm:w-7 shrink-0">
             {logoUrl ? (
               <img src={logoUrl} alt={displayName} className="h-full w-full object-cover rounded-full" />
@@ -360,14 +395,25 @@ export function Topbar({
             )}
           </Avatar>
           <div className="text-left leading-tight min-w-0 flex-1">
-            {/* Shortened business name on mobile */}
-            <p className="text-[11px] font-semibold sm:hidden truncate text-foreground">{getShortBusinessName(displayName)}</p>
-            {/* Full business name & subtitle on desktop */}
-            <p className="hidden sm:block text-xs font-semibold truncate text-foreground">{displayName}</p>
-            <p className="hidden sm:block text-[10px] text-muted-foreground truncate">{displaySubtitle}</p>
+            <p className="text-xs font-semibold truncate text-foreground">{displayName}</p>
+            <p className="text-[10px] text-muted-foreground truncate">{displaySubtitle}</p>
           </div>
         </div>
       </div>
+      </div>
+
+      {/* Mobile Row 2: Operational status & business metadata */}
+      <div className="mt-1.5 flex w-full items-center justify-between gap-2 border-t border-border/30 pt-1.5 sm:hidden">
+        <SyncStatusIndicator />
+        <span className="text-[11px] text-muted-foreground truncate font-medium max-w-[50%] text-right">
+          {displaySubtitle}
+        </span>
+      </div>
+
+      <PrinterSettingsDialog
+        open={printerOpen}
+        onOpenChange={setPrinterOpen}
+      />
     </header>
   );
 }

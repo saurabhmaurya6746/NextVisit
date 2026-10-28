@@ -13,6 +13,7 @@ export interface BackendMenuCategory {
   items: BackendMenuItem[];
   created_at: string;
   updated_at: string;
+  is_stale?: boolean;
 }
 
 export interface BackendMenuItem {
@@ -28,6 +29,7 @@ export interface BackendMenuItem {
   display_order: number;
   created_at: string;
   updated_at: string;
+  is_stale?: boolean;
 }
 
 export interface MenuCategoryCreate {
@@ -88,9 +90,56 @@ async function handleResponse<T>(res: Response): Promise<T> {
 // CATEGORY APIs
 // ---------------------------------------------------------------------------
 
+import { getSession } from "./auth";
+import { isDesktopApp, isNetworkOrTransientError } from "./desktop";
+import { getMasterDataFromDesktopCache } from "./master-data-cache";
+
 export async function listMenuCategoriesApi(): Promise<BackendMenuCategory[]> {
-  const res = await apiFetch("/api/v1/menu/categories");
-  return handleResponse<BackendMenuCategory[]>(res);
+  try {
+    const res = await apiFetch("/api/v1/menu/categories");
+    return await handleResponse<BackendMenuCategory[]>(res);
+  } catch (netErr) {
+    if (isDesktopApp() && isNetworkOrTransientError(netErr)) {
+      const session = getSession();
+      const bizId = session?.clientId;
+      if (bizId && session?.token) {
+        try {
+          const cached = await getMasterDataFromDesktopCache(bizId);
+          if (cached && cached.menu_categories && cached.menu_categories.length > 0) {
+            console.info("[DESKTOP CACHE] Serving cached menu categories (offline fallback, is_stale=true)");
+            return cached.menu_categories.map((c) => ({
+              id: c.id,
+              business_id: c.business_id,
+              name: c.name,
+              display_order: c.display_order,
+              is_active: c.is_active,
+              created_at: c.created_at || "",
+              updated_at: c.updated_at || "",
+              is_stale: true,
+              items: (c.items || []).map((it) => ({
+                id: it.id,
+                category_id: it.category_id,
+                business_id: it.business_id,
+                name: it.name,
+                description: it.description,
+                price: it.price,
+                gst_percentage: it.gst_percentage,
+                is_veg: it.is_veg,
+                is_available: it.is_available,
+                display_order: it.display_order,
+                created_at: it.created_at || "",
+                updated_at: it.updated_at || "",
+                is_stale: true,
+              })),
+            }));
+          }
+        } catch (cacheErr) {
+          console.warn("[DESKTOP CACHE] Error reading cached menu categories:", cacheErr);
+        }
+      }
+    }
+    throw netErr;
+  }
 }
 
 export async function createMenuCategoryApi(payload: MenuCategoryCreate): Promise<BackendMenuCategory> {

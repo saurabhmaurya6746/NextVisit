@@ -1,5 +1,6 @@
 import { apiFetch } from "./auth";
 import type { BackendMenuItem } from "./menu-api";
+import { syncWorker } from "./sync/sync-worker";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -114,6 +115,7 @@ export interface BackendOrder {
   items: BackendOrderItem[];
   created_at: string;
   updated_at: string;
+  sync_status?: string;
 }
 
 export interface CustomerInlineCreate {
@@ -146,6 +148,8 @@ export interface OrderCreatePayload {
   tax_amount?: number;
   discount_amount?: number;
   items: OrderItemCreatePayload[];
+  offline_mode?: boolean;
+  client_order_id?: string;
 }
 
 export interface TableMapItem {
@@ -154,12 +158,13 @@ export interface TableMapItem {
   capacity: number;
   display_order: number;
   is_active: boolean;
-  status: string; // "OCCUPIED" | "EMPTY" | etc.
+  status: string; // "OCCUPIED" | "EMPTY" | "OFFLINE" | etc.
   current_order_id: string | null;
   pending_amount: number;
   item_count: number;
   order_source: OrderSource | null;
   last_updated: string | null;
+  is_stale?: boolean;
 }
 
 export interface DiningAreaMapResponse {
@@ -169,6 +174,7 @@ export interface DiningAreaMapResponse {
   color: string | null;
   is_active: boolean;
   tables: TableMapItem[];
+  is_stale?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -195,9 +201,55 @@ async function handleResponse<T>(res: Response): Promise<T> {
 // TABLE MAP API
 // ---------------------------------------------------------------------------
 
+import { getSession } from "./auth";
+import { isDesktopApp, isNetworkOrTransientError } from "./desktop";
+import { getMasterDataFromDesktopCache } from "./master-data-cache";
+import { getStoredDeviceBinding } from "./devices-api";
+import { invoke } from "@tauri-apps/api/core";
+
 export async function getTablesMapApi(): Promise<DiningAreaMapResponse[]> {
-  const res = await apiFetch("/api/v1/tables/map");
-  return handleResponse<DiningAreaMapResponse[]>(res);
+  try {
+    const res = await apiFetch("/api/v1/tables/map");
+    return await handleResponse<DiningAreaMapResponse[]>(res);
+  } catch (netErr) {
+    if (isDesktopApp() && isNetworkOrTransientError(netErr)) {
+      const session = getSession();
+      const bizId = session?.clientId;
+      if (bizId && session?.token) {
+        try {
+          const cached = await getMasterDataFromDesktopCache(bizId);
+          if (cached && cached.dining_areas && cached.dining_areas.length > 0) {
+            console.info("[DESKTOP CACHE] Serving cached dining area table layout (offline fallback, status=OFFLINE, is_stale=true)");
+            return cached.dining_areas.map((area) => ({
+              id: area.id,
+              name: area.name,
+              display_order: area.display_order,
+              color: area.color || null,
+              is_active: area.is_active,
+              is_stale: true,
+              tables: (area.tables || []).map((t) => ({
+                id: t.id,
+                table_name: t.table_name,
+                capacity: t.capacity,
+                display_order: t.display_order,
+                is_active: t.is_active,
+                status: "OFFLINE", // Explicit offline status: table layout cached, live occupancy unknown
+                current_order_id: null,
+                pending_amount: 0,
+                item_count: 0,
+                order_source: null,
+                last_updated: t.updated_at || null,
+                is_stale: true,
+              })),
+            }));
+          }
+        } catch (cacheErr) {
+          console.warn("[DESKTOP CACHE] Error reading cached dining area map:", cacheErr);
+        }
+      }
+    }
+    throw netErr;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -295,6 +347,27 @@ export async function listOrdersApi(params?: {
   start_date?: string;
   end_date?: string;
 }): Promise<PaginatedOrdersResponse> {
+  const session = getSession();
+  const desktop = isDesktopApp();
+  const offline = typeof navigator !== "undefined" && !navigator.onLine;
+
+  if (desktop && offline && session?.clientId) {
+    try {
+      const localOrders = await invoke<BackendOrder[]>("order_list_local", {
+        businessId: session.clientId,
+      });
+      return {
+        items: localOrders,
+        total: localOrders.length,
+        page: 1,
+        page_size: localOrders.length || 20,
+        pages: 1,
+      };
+    } catch (e) {
+      console.warn("[DESKTOP OFFLINE] Failed to list local orders:", e);
+    }
+  }
+
   const q = new URLSearchParams();
   if (params?.page) q.set("page", String(params.page));
   if (params?.page_size) q.set("page_size", String(params.page_size));
@@ -307,21 +380,129 @@ export async function listOrdersApi(params?: {
   if (params?.start_date) q.set("start_date", params.start_date);
   if (params?.end_date) q.set("end_date", params.end_date);
 
-  const res = await apiFetch(`/api/v1/orders${q.toString() ? `?${q}` : ""}`);
-  return handleResponse<PaginatedOrdersResponse>(res);
+  try {
+    const res = await apiFetch(`/api/v1/orders${q.toString() ? `?${q}` : ""}`);
+    return await handleResponse<PaginatedOrdersResponse>(res);
+  } catch (netErr) {
+    if (desktop && isNetworkOrTransientError(netErr) && session?.clientId) {
+      try {
+        console.info("[DESKTOP OFFLINE] Network unavailable, falling back to local SQLite orders list");
+        const localOrders = await invoke<BackendOrder[]>("order_list_local", {
+          businessId: session.clientId,
+        });
+        return {
+          items: localOrders,
+          total: localOrders.length,
+          page: 1,
+          page_size: localOrders.length || 20,
+          pages: 1,
+        };
+      } catch (locErr) {
+        console.warn("[DESKTOP OFFLINE] Error querying local SQLite orders:", locErr);
+      }
+    }
+    throw netErr;
+  }
 }
 
-export async function getOrderByIdApi(orderId: string): Promise<BackendOrder> {
-  const res = await apiFetch(`/api/v1/orders/${orderId}`);
-  return handleResponse<BackendOrder>(res);
+export async function getOrderByIdApi(orderId: string, visitToken?: string | null): Promise<BackendOrder> {
+  const session = getSession();
+  const desktop = isDesktopApp();
+  const offline = typeof navigator !== "undefined" && !navigator.onLine;
+
+  if (desktop && offline && session?.clientId) {
+    try {
+      const local = await invoke<BackendOrder>("order_get_local", {
+        businessId: session.clientId,
+        orderId,
+      });
+      return local;
+    } catch (locErr) {
+      console.warn("[DESKTOP OFFLINE] Could not find order in local SQLite:", locErr);
+    }
+  }
+
+  try {
+    const headers: Record<string, string> = {};
+    if (visitToken) {
+      headers["X-Visit-Token"] = visitToken;
+    }
+    const res = await apiFetch(`/api/v1/orders/${orderId}`, { headers });
+    return await handleResponse<BackendOrder>(res);
+  } catch (netErr) {
+    if (desktop && isNetworkOrTransientError(netErr) && session?.clientId) {
+      try {
+        console.info("[DESKTOP OFFLINE] Network error reading order, falling back to local SQLite order query");
+        const local = await invoke<BackendOrder>("order_get_local", {
+          businessId: session.clientId,
+          orderId,
+        });
+        return local;
+      } catch (locErr) {
+        // Fall through to throw netErr if local also does not have it
+      }
+    }
+    throw netErr;
+  }
 }
 
 export async function createOrderApi(payload: OrderCreatePayload): Promise<BackendOrder> {
-  const res = await apiFetch("/api/v1/orders", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-  return handleResponse<BackendOrder>(res);
+  const session = getSession();
+  const desktop = isDesktopApp();
+  const offline = (typeof navigator !== "undefined" && !navigator.onLine) || Boolean(payload.offline_mode);
+  const clientOrderId = payload.client_order_id || crypto.randomUUID();
+
+  async function createLocally(): Promise<BackendOrder> {
+    if (!session?.clientId) throw new Error("Sign in to the correct business before creating an offline order.");
+    if (payload.customer_details) throw new Error("New customer registration needs an internet connection. Select Guest or use a cached customer.");
+    const binding = getStoredDeviceBinding(session.clientId);
+    if (!binding.deviceId || !binding.devicePrefix || binding.isMismatch) {
+      throw new Error("This device is not registered to the active business. Connect online and register this POS device first.");
+    }
+    const created = await invoke<BackendOrder>("order_create_local", {
+      input: {
+        businessId: session.clientId,
+        deviceId: binding.deviceId,
+        devicePrefix: binding.devicePrefix,
+        tableId: payload.table_id,
+        customerId: payload.customer_id || null,
+        notes: payload.notes || null,
+        clientOrderId: clientOrderId,
+        items: payload.items.map((item) => ({
+          menuItemId: item.menu_item_id || null,
+          itemName: item.item_name,
+          unitPrice: item.unit_price,
+          quantity: item.quantity,
+          taxRate: item.tax_rate || 0,
+          discount: item.discount || 0,
+          notes: item.notes || null,
+        })),
+      },
+    });
+    if (typeof navigator !== "undefined" && navigator.onLine) {
+      syncWorker.triggerFlush();
+    }
+    return created;
+  }
+
+  if (desktop && offline) {
+    return await createLocally();
+  }
+
+  const { offline_mode: _, ...onlinePayload } = payload;
+  try {
+    const res = await apiFetch("/api/v1/orders", {
+      method: "POST",
+      body: JSON.stringify({ ...onlinePayload, client_order_id: clientOrderId }),
+    });
+    return await handleResponse<BackendOrder>(res);
+  } catch (netErr: any) {
+    if (desktop && isNetworkOrTransientError(netErr)) {
+      console.warn("[ORDERS] Transport failure on order creation; falling back to local SQLite outbox with stable client_order_id:", clientOrderId, netErr);
+      return await createLocally();
+    }
+    throw netErr;
+  }
 }
 
 export async function updateOrderApi(
@@ -351,10 +532,16 @@ export async function deleteOrderApi(orderId: string): Promise<void> {
 
 export async function addOrderItemApi(
   orderId: string,
-  itemPayload: OrderItemCreatePayload
+  itemPayload: OrderItemCreatePayload,
+  visitToken?: string | null
 ): Promise<BackendOrder> {
+  const headers: Record<string, string> = {};
+  if (visitToken) {
+    headers["X-Visit-Token"] = visitToken;
+  }
   const res = await apiFetch(`/api/v1/orders/${orderId}/items`, {
     method: "POST",
+    headers,
     body: JSON.stringify(itemPayload),
   });
   return handleResponse<BackendOrder>(res);
@@ -426,19 +613,23 @@ export interface OrderSettlePayload {
   birth_date?: string;
   anniversary_date?: string;
   gender?: string;
-  payment_method: "CASH" | "UPI" | "CARD";
+  payment_method: "CASH" | "UPI" | "CARD" | "SPLIT";
   discount_amount?: number;
+  reference_note?: string;
+  offline_mode?: boolean;
 }
 
 export interface OrderSettleResult {
   order_id: string;
   order_number: string;
+  receipt_reference?: string;
   business_id: string;
   table_id: string;
-  customer_id: string;
+  customer_id?: string | null;
   customer_name: string;
   customer_phone: string;
   payment_method: string;
+  payment_status?: string;
   total_amount: number;
   earned_points: number;
   new_loyalty_balance: number;
@@ -446,17 +637,78 @@ export interface OrderSettleResult {
   visit_id: string;
   whatsapp_receipt_sent: boolean;
   whatsapp_receipt_text: string;
+  is_offline?: boolean;
+  recorded_at?: string;
 }
 
 export async function settleOrderApi(
   orderId: string,
   payload: OrderSettlePayload
 ): Promise<OrderSettleResult> {
-  const res = await apiFetch(`/api/v1/orders/${orderId}/settle`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-  return handleResponse<OrderSettleResult>(res);
+  const session = getSession();
+  const desktop = isDesktopApp();
+  const offline = (typeof navigator !== "undefined" && !navigator.onLine) || Boolean(payload.offline_mode);
+
+  if (desktop && offline) {
+    if (!session?.clientId) {
+      throw new Error("Sign in to the correct business before settling an offline order.");
+    }
+    const binding = getStoredDeviceBinding(session.clientId);
+    if (!binding.deviceId || !binding.devicePrefix || binding.isMismatch) {
+      throw new Error("This desktop is not registered to the active business. Connect online and register this POS device first.");
+    }
+    const settled = await invoke<OrderSettleResult>("order_settle_local", {
+      input: {
+        businessId: session.clientId,
+        deviceId: binding.deviceId,
+        devicePrefix: binding.devicePrefix,
+        orderId,
+        phone: payload.phone,
+        customerName: payload.customer_name || null,
+        paymentMethod: payload.payment_method,
+        discountAmount: payload.discount_amount || null,
+        referenceNote: payload.reference_note || null,
+      },
+    });
+    if (typeof navigator !== "undefined" && navigator.onLine) {
+      syncWorker.triggerFlush();
+    }
+    return settled;
+  }
+
+  try {
+    const { offline_mode: _, reference_note: _ref, ...onlinePayload } = payload as any;
+    const res = await apiFetch(`/api/v1/orders/${orderId}/settle`, {
+      method: "POST",
+      body: JSON.stringify(onlinePayload),
+    });
+    return await handleResponse<OrderSettleResult>(res);
+  } catch (netErr) {
+    if (desktop && isNetworkOrTransientError(netErr) && session?.clientId) {
+      const binding = getStoredDeviceBinding(session.clientId);
+      if (binding.deviceId && binding.devicePrefix && !binding.isMismatch) {
+        console.info("[DESKTOP OFFLINE] Network unavailable, falling back to local SQLite order settlement");
+        const fallbackSettled = await invoke<OrderSettleResult>("order_settle_local", {
+          input: {
+            businessId: session.clientId,
+            deviceId: binding.deviceId,
+            devicePrefix: binding.devicePrefix,
+            orderId,
+            phone: payload.phone,
+            customerName: payload.customer_name || null,
+            paymentMethod: payload.payment_method,
+            discountAmount: payload.discount_amount || null,
+            referenceNote: payload.reference_note || null,
+          },
+        });
+        if (typeof navigator !== "undefined" && navigator.onLine) {
+          syncWorker.triggerFlush();
+        }
+        return fallbackSettled;
+      }
+    }
+    throw netErr;
+  }
 }
 
 export async function getRevenueAnalyticsApi(params?: {

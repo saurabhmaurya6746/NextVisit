@@ -177,9 +177,9 @@ export function QrOrderView({ table, business }: { table: string; business?: str
       : createdOrderId;
 
   const { data: activeOrder } = useQuery({
-    queryKey: ["order", activeOrderId],
-    queryFn: () => getOrderByIdApi(activeOrderId!),
-    enabled: !!activeOrderId,
+    queryKey: ["order", activeOrderId, storedVisitToken],
+    queryFn: () => getOrderByIdApi(activeOrderId!, storedVisitToken),
+    enabled: !!activeOrderId && !!storedVisitToken,
     refetchInterval: 10000,
   });
 
@@ -415,9 +415,10 @@ export function QrOrderView({ table, business }: { table: string; business?: str
   const appendItemsMut = useMutation({
     mutationFn: async (itemsPayload: OrderItemCreatePayload[]) => {
       if (!activeOrderId) throw new Error("Active order not found.");
+      if (!storedVisitToken) throw new Error("Visit session token not found. Please rescan the table QR code.");
       let latestOrder: BackendOrder | null = null;
       for (const item of itemsPayload) {
-        latestOrder = await addOrderItemApi(activeOrderId, item);
+        latestOrder = await addOrderItemApi(activeOrderId, item, storedVisitToken);
       }
       return latestOrder!;
     },

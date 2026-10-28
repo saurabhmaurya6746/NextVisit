@@ -59,8 +59,10 @@ import { listMenuCategoriesApi } from "@/lib/menu-api";
 import { getBusinessSettingsApi, getRestaurantSetupSettingsApi } from "@/lib/business-settings-api";
 import { useProfile, useAuthenticatedBusiness } from "@/lib/business-profile";
 import { getSession, API_BASE_URL } from "@/lib/auth";
+import { isDesktopApp } from "@/lib/desktop";
 import { openWhatsApp } from "@/lib/celebration-utils";
 import { InvoiceView, printInvoiceDom, type InvoiceData } from "@/components/invoice-view";
+import { dispatchReceiptPrint, getPrinterConfig, isOrderAlreadyPrinted } from "@/lib/printer/printer-service";
 import { fmt } from "@/lib/currency";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
@@ -94,7 +96,10 @@ export function OrderDetailSheet({ orderId, open, onOpenChange }: Props) {
   const [phoneInput, setPhoneInput] = useState("");
   const [autoDetectResult, setAutoDetectResult] = useState<CustomerAutoDetectResult | null>(null);
   const [detecting, setDetecting] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "UPI">("UPI");
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "UPI" | "CARD">("UPI");
+  const [referenceNote, setReferenceNote] = useState("");
+  const isDesktop = isDesktopApp();
+  const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
   const [qrImageLoaded, setQrImageLoaded] = useState(false);
   const [qrImageError, setQrImageError] = useState(false);
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
@@ -1120,9 +1125,56 @@ const handleDownloadInvoice = async () => {
       setReleaseCountdown(30);
       setTableFreed(false);
       setSettleResult(res);
-      toast.success(`Payment Successful! Order #${res.order_number} completed.`, {
-        description: `Awarded +${res.earned_points} loyalty pts. Table auto-releasing in 30s.`,
-      });
+      if (res.is_offline) {
+        toast.success(`Payment Recorded Offline! Order #${res.order_number}`, {
+          description: `Receipt Ref: ${res.receipt_reference || res.order_number} (${res.payment_status || "RECORDED_OFFLINE"}). Table auto-releasing in 30s.`,
+        });
+      } else {
+        toast.success(`Payment Successful! Order #${res.order_number} completed.`, {
+          description: `Awarded +${res.earned_points} loyalty pts. Table auto-releasing in 30s.`,
+        });
+      }
+
+      // Phase 9: Automatic Thermal Receipt Print on Settlement (if enabled)
+      const businessId = session?.clientId || "default";
+      const printerCfg = getPrinterConfig(businessId);
+      if (printerCfg.auto_print_on_settle && order) {
+        const autoInvPayload: InvoiceData = {
+          order_number: res.order_number || order.order_number,
+          invoice_number: res.invoice_number || (res.is_offline ? "INV-(Pending Sync)" : `INV-${order.order_number.replace("ORD-", "")}`),
+          receipt_reference: res.receipt_reference || (order.order_number ? `REC-${order.order_number}` : undefined),
+          payment_status: res.payment_status || (res.is_offline ? "RECORDED_OFFLINE" : undefined),
+          is_offline: Boolean(res.is_offline),
+          created_at: order.created_at,
+          table_name: tableName,
+          customer_name: res.customer_name || custName || order.customer?.name || "Guest Customer",
+          customer_phone: order.customer?.phone || phoneInput || "",
+          payment_method: (res.payment_method || paymentMethod || "CASH").toUpperCase(),
+          items: order.items,
+          subtotal: order.subtotal,
+          tax_amount: order.tax_amount,
+          tax_rate: gstPercentage,
+          gst_percentage: gstPercentage,
+          coupon_code: activeCouponCode || undefined,
+          discount_amount: order.discount_amount || (order as any)?.coupon_discount || res.discount_amount || discountAmount || 0,
+          total_amount: res.total_amount || order.total_amount,
+          business: {
+            restaurant_name: setupSettings?.name || (profile as any)?.businessName || "NextVisit",
+            address: setupSettings?.address || undefined,
+            phone: setupSettings?.phone || undefined,
+            email: setupSettings?.email || undefined,
+            gst_number: setupSettings?.gst_number || undefined,
+          },
+          loyalty: {
+            current_points: res.new_loyalty_balance,
+            earned_points: res.earned_points,
+            remaining_until_next_reward: res.remaining_until_next_reward,
+          },
+        };
+        dispatchReceiptPrint(businessId, autoInvPayload, { forceReprint: false, skipBrowserFallback: true }).catch((err) => {
+          console.warn("[PRINTER] Auto-print on settlement failed:", err);
+        });
+      }
     },
     onError: (err: Error) => toast.error(err.message || "Failed to settle payment."),
   });
@@ -1168,6 +1220,11 @@ const handleDownloadInvoice = async () => {
       return;
     }
 
+    if (isOffline && (paymentMethod === "UPI" || paymentMethod === "CARD") && !referenceNote.trim()) {
+      toast.error(`Please enter the manual transaction/EDC reference note for offline ${paymentMethod} payment.`);
+      return;
+    }
+
     // Resolve exact Coupon Code string, Discount Amount, and Description
     const activeCode = appliedCoupon?.coupon?.code || (appliedCoupon?.valid ? couponCode.trim().toUpperCase() : undefined);
     const rewardVal = appliedCoupon?.coupon?.reward_value;
@@ -1184,6 +1241,7 @@ const handleDownloadInvoice = async () => {
       discount_amount: discountAmount > 0 ? Math.round(discountAmount) : undefined,
       discount_description: discountAmount > 0 ? rewardDesc : undefined,
       discount: discountAmount > 0 ? Math.round(discountAmount) : undefined,
+      reference_note: referenceNote.trim() || undefined,
     });
   };
 
@@ -1730,7 +1788,43 @@ const handleDownloadInvoice = async () => {
                       className="rounded-xl text-xs gap-1.5 h-9 hover:bg-primary/5 hover:text-primary"
                       onClick={() => {
                         setShowInvoiceModal(true);
-                        setTimeout(() => printInvoiceDom("print-invoice"), 300);
+                        if (isDesktopApp() && order) {
+                          const curBizId = session?.clientId || "default";
+                          const invPayload: InvoiceData = {
+                            order_number: order.order_number,
+                            invoice_number: order.invoice_number || (settleResult?.is_offline ? "INV-(Pending Sync)" : `INV-${order.order_number.replace("ORD-", "")}`),
+                            receipt_reference: settleResult?.receipt_reference || (order.order_number ? `REC-${order.order_number}` : undefined),
+                            payment_status: settleResult?.payment_status || (settleResult?.is_offline ? "RECORDED_OFFLINE" : undefined),
+                            is_offline: Boolean(settleResult?.is_offline),
+                            created_at: order.created_at,
+                            table_name: tableName,
+                            customer_name: settleResult.customer_name || custName || order.customer?.name || "Guest Customer",
+                            customer_phone: order.customer?.phone || phoneInput || "",
+                            payment_method: (settleResult.payment_method || paymentMethod || "CASH").toUpperCase(),
+                            items: order.items,
+                            subtotal: order.subtotal,
+                            tax_amount: order.tax_amount,
+                            tax_rate: gstPercentage,
+                            gst_percentage: gstPercentage,
+                            discount_amount: order.discount_amount || (order as any)?.coupon_discount || settleResult?.discount_amount || discountAmount || 0,
+                            total_amount: settleResult.total_amount || order.total_amount,
+                            business: {
+                              restaurant_name: setupSettings?.name || (profile as any)?.businessName || "NextVisit",
+                              address: setupSettings?.address || undefined,
+                              phone: setupSettings?.phone || undefined,
+                              email: setupSettings?.email || undefined,
+                              gst_number: setupSettings?.gst_number || undefined,
+                            },
+                            loyalty: {
+                              current_points: settleResult.new_loyalty_balance,
+                              earned_points: settleResult.earned_points,
+                              remaining_until_next_reward: settleResult.remaining_until_next_reward,
+                            },
+                          };
+                          dispatchReceiptPrint(curBizId, invPayload, { forceReprint: false });
+                        } else {
+                          setTimeout(() => printInvoiceDom("print-invoice"), 300);
+                        }
                       }}
                     >
                       <Printer className="h-3.5 w-3.5 text-primary" /> Print
@@ -2109,7 +2203,7 @@ const handleDownloadInvoice = async () => {
                   {/* PAYMENT METHOD SELECTION */}
                   <div>
                     <Label className="text-xs font-semibold mb-2 block">Payment Method</Label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                       <button
                         type="button"
                         onClick={() => setPaymentMethod("UPI")}
@@ -2135,8 +2229,41 @@ const handleDownloadInvoice = async () => {
                         <Banknote className="h-4 w-4 mb-1" />
                         <span>Cash</span>
                       </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod("CARD")}
+                        className={`flex flex-col items-center justify-center p-2.5 rounded-xl border transition-all text-xs font-medium ${
+                          paymentMethod === "CARD"
+                            ? "border-primary bg-primary/10 text-primary shadow-sm"
+                            : "hover:bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        <CreditCard className="h-4 w-4 mb-1" />
+                        <span>Card (EDC)</span>
+                      </button>
                     </div>
                   </div>
+
+                  {/* OFFLINE REFERENCE NOTE FOR UPI / CARD */}
+                  {(paymentMethod === "CARD" || (isOffline && paymentMethod === "UPI")) && (
+                    <div className="space-y-1.5 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300">
+                      <Label className="text-xs font-semibold">
+                        {isOffline ? "EDC / Transaction Reference Note (Required Offline)" : "EDC Machine Reference Note"}
+                      </Label>
+                      <Input
+                        placeholder="e.g., EDC Slip #1234 or UTR 987654"
+                        value={referenceNote}
+                        onChange={(e) => setReferenceNote(e.target.value)}
+                        className="h-8 text-xs bg-background text-foreground"
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        {isOffline
+                          ? "* Payment gateway verification is unavailable offline. Enter the EDC authorization slip number or transaction reference."
+                          : "Optional note for physical card terminal authorization or manual reference."}
+                      </p>
+                    </div>
+                  )}
 
                   {/* STORE PAYMENT QR PREVIEW IF UPI */}
                   {paymentMethod === "UPI" && (() => {
@@ -2144,6 +2271,20 @@ const handleDownloadInvoice = async () => {
                     const payeeName = (bizSettings?.payment_payee_name || (bizSettings as any)?.payment_payee_name || "").trim();
                     const payableTotal = Number(finalOrderTotal ?? 0);
                     const formattedPayable = payableTotal.toFixed(2);
+
+                    if (isOffline) {
+                      return (
+                        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-center space-y-1.5">
+                          <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">Offline UPI Collection</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            UPI ID: <span className="font-mono font-bold text-foreground">{upiId || "Counter Physical QR"}</span> · Amount: <span className="font-mono font-bold text-foreground">₹{formattedPayable}</span>
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            Scan physical counter QR / pay via UPI app, then enter the UTR in the reference note above.
+                          </p>
+                        </div>
+                      );
+                    }
 
                     if (isBizSettingsLoading) {
                       return (
@@ -2259,6 +2400,7 @@ const handleDownloadInvoice = async () => {
                   const upiId = (bizSettings?.payment_upi_id || "").trim();
                   const payeeName = (bizSettings?.payment_payee_name || (bizSettings as any)?.payment_payee_name || "").trim();
                   const isUpiIncompleteOrLoading =
+                    !isOffline &&
                     paymentMethod === "UPI" &&
                     (isBizSettingsLoading ||
                       !upiId ||
@@ -2267,10 +2409,15 @@ const handleDownloadInvoice = async () => {
                       qrImageError ||
                       isBizSettingsError);
 
+                  const isOfflineRefMissing =
+                    isOffline &&
+                    (paymentMethod === "UPI" || paymentMethod === "CARD") &&
+                    !referenceNote.trim();
+
                   return (
                     <Button
                       onClick={handleSettleSubmit}
-                      disabled={settleMut.isPending || !phoneInput.trim() || isUpiIncompleteOrLoading}
+                      disabled={settleMut.isPending || !phoneInput.trim() || isUpiIncompleteOrLoading || isOfflineRefMissing}
                       className="rounded-full gradient-brand text-primary-foreground text-xs px-6"
                     >
                       {settleMut.isPending ? (
@@ -2295,7 +2442,9 @@ const handleDownloadInvoice = async () => {
       <Dialog open={showInvoiceModal} onOpenChange={setShowInvoiceModal}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto rounded-2xl p-6">
           <DialogHeader>
-            <DialogTitle className="font-display text-base">Tax Invoice</DialogTitle>
+            <DialogTitle className="font-display text-base">
+              {settleResult?.is_offline ? "POS Receipt (Offline)" : "Tax Invoice"}
+            </DialogTitle>
           </DialogHeader>
 
           {order && (
@@ -2303,7 +2452,10 @@ const handleDownloadInvoice = async () => {
               defaultPaperSize={bizSettings?.receipt_paper_size || "80mm"}
               data={{
                 order_number: order.order_number,
-                invoice_number: order.invoice_number || `INV-${order.order_number.replace("ORD-", "")}`,
+                invoice_number: order.invoice_number || (settleResult?.is_offline ? "INV-(Pending Sync)" : `INV-${order.order_number.replace("ORD-", "")}`),
+                receipt_reference: settleResult?.receipt_reference || (order.order_number ? `REC-${order.order_number}` : undefined),
+                payment_status: settleResult?.payment_status || (settleResult?.is_offline ? "RECORDED_OFFLINE" : undefined),
+                is_offline: Boolean(settleResult?.is_offline),
                 created_at: order.created_at,
                 table_name: tableName,
                 // ✅ 1. Accurate Customer Name Priority
@@ -2354,6 +2506,7 @@ const handleDownloadInvoice = async () => {
                       remaining_until_next_reward: settleResult.remaining_until_next_reward,
                     }
                   : null,
+                is_reprint: isOrderAlreadyPrinted(order.order_number) || Boolean(order.status === "SERVED" && !settleResult),
               }}
             />
           )}

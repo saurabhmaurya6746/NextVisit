@@ -1,3 +1,4 @@
+import { getWebBaseUrl } from "@/lib/auth";
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -428,7 +429,7 @@ function LoyaltyStep({ loyalty, setLoyalty }: { loyalty: LoyaltySettings; setLoy
 
 // ---------------- Step 5: QR ----------------
 function QrStep({ tableNames, businessSlug }: { tableNames: string[]; businessSlug: string }) {
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const origin = getWebBaseUrl();
   function urlFor(t: string) { return `${origin}/restaurant/qr/${businessSlug}/${encodeURIComponent(t)}`; }
   function printAll() {
     const w = window.open("", "_blank"); if (!w) return;

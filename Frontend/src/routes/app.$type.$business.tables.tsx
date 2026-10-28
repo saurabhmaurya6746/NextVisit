@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useProfile, useAuthenticatedBusiness } from "@/lib/business-profile";
 import { useAppScope, slugify } from "@/lib/app-nav";
-import { getSession } from "@/lib/auth";
+import { getSession, getWebBaseUrl } from "@/lib/auth";
 import { getTablesMapApi } from "@/lib/orders-api";
 import { NewOrderDialog } from "@/components/new-order-dialog";
 import { OrderDetailSheet } from "@/components/order-detail-sheet";
@@ -48,6 +48,7 @@ const STATUS_COLORS: Record<string, string> = {
   OCCUPIED: "bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300",
   SERVED: "bg-indigo-500/15 border-indigo-500/50 text-indigo-700 dark:text-indigo-300",
   COMPLETED: "bg-neutral-900/90 border-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 dark:border-neutral-100",
+  OFFLINE: "bg-amber-500/10 border-amber-500/40 text-amber-800 dark:text-amber-300",
 };
 
 interface QrModalTable {
@@ -225,6 +226,14 @@ export default function TablesPage() {
       {/* Grouped Dining Areas Grid */}
       {!isLoading && !isError && (
         <div className="space-y-6">
+          {diningAreas.some((a) => a.is_stale) && (
+            <div className="flex items-center gap-2 p-3 text-xs bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 rounded-lg">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>
+                <strong>Offline Mode:</strong> Displaying cached dining areas and table layouts. Live table occupancy, active orders, and new order creation are unavailable while offline.
+              </span>
+            </div>
+          )}
           {diningAreas.map((area) => (
             <div key={area.id} className="space-y-2">
               <div className="flex items-center gap-2">
@@ -236,25 +245,38 @@ export default function TablesPage() {
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                 {area.tables.map((t) => {
-                  const isOccupied = (t.status === "OCCUPIED" || t.status === "RELEASING_SOON") || !!t.current_order_id;
-                  const colorClass = STATUS_COLORS[t.status] || STATUS_COLORS.EMPTY;
+                  const statusKey = t.status || "EMPTY";
+                  const isOffline = statusKey === "OFFLINE" || statusKey === "UNKNOWN" || !!t.is_stale || !!area.is_stale;
+                  const isOccupied = !isOffline && ((t.status === "OCCUPIED" || t.status === "RELEASING_SOON") || !!t.current_order_id);
+                  const colorClass = isOffline
+                    ? STATUS_COLORS.OFFLINE
+                    : (STATUS_COLORS[t.status] || STATUS_COLORS.EMPTY);
 
                   const inner = (
                     <div
                       className={cn(
                         "rounded-2xl border-2 p-4 transition-all hover:-translate-y-0.5 hover:shadow-glow",
-                        colorClass
+                        colorClass,
+                        isOffline && "cursor-not-allowed opacity-90 hover:translate-y-0 hover:shadow-none"
                       )}
                     >
                       <div className="flex items-center justify-between">
                         <p className="font-display text-lg font-semibold">{t.table_name}</p>
-                        <Badge variant="outline" className="rounded-full bg-background/70 text-[10px]">
-                          {isOccupied ? "Occupied" : "Empty"}
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "rounded-full bg-background/70 text-[10px]",
+                            isOffline && "border-amber-500/50 text-amber-700 dark:text-amber-400 font-semibold"
+                          )}
+                        >
+                          {isOffline ? "OFFLINE (LAYOUT ONLY)" : isOccupied ? "Occupied" : "Empty"}
                         </Badge>
                       </div>
 
                       <div className="mt-3 text-xs opacity-90">
-                        {isOccupied ? (
+                        {isOffline ? (
+                          <p className="text-muted-foreground font-medium">Live occupancy unavailable (Offline)</p>
+                        ) : isOccupied ? (
                           <>
                             <p>
                               {t.item_count} items · {fmt(t.pending_amount)}
@@ -279,8 +301,13 @@ export default function TablesPage() {
                     <button
                       key={t.id}
                       type="button"
-                      className="text-left"
+                      disabled={isOffline}
+                      className={cn("text-left", isOffline && "cursor-not-allowed")}
                       onClick={() => {
+                        if (isOffline) {
+                          toast.error("Table mutations and order creation require a live connection.");
+                          return;
+                        }
                         if (isOccupied) {
                           if (t.current_order_id) {
                             setOpenOrderId(t.current_order_id);
@@ -341,7 +368,7 @@ export default function TablesPage() {
                       {area.tables.map((t) => {
                         // Use the table UUID directly in the QR URL — guarantees exact backend lookup
                         const path = `/restaurant/qr/${bizSlug}/${t.id}`;
-                        const url = typeof window !== "undefined" ? `${window.location.origin}${path}` : path;
+                        const url = `${getWebBaseUrl()}${path}`;
                         return (
                           <div
                             key={t.id}

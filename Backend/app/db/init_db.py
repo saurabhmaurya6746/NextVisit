@@ -140,7 +140,88 @@ MIGRATION_STATEMENTS = [
     """,
     "CREATE INDEX IF NOT EXISTS ix_email_otps_email ON email_otps (email);",
 
+    # CLIENT_DEVICES table creation if missing
+    """
+    CREATE TABLE IF NOT EXISTS client_devices (
+        id UUID PRIMARY KEY,
+        business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+        device_name VARCHAR(100) NOT NULL,
+        device_type VARCHAR(50) NOT NULL DEFAULT 'DESKTOP_WINDOWS',
+        device_prefix VARCHAR(10) NOT NULL,
+        device_identifier VARCHAR(100),
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        last_sync_at TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        CONSTRAINT uq_client_devices_biz_prefix UNIQUE (business_id, device_prefix)
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_client_devices_business_id ON client_devices (business_id);",
+
+    # SYNC_TRANSACTIONS table creation if missing
+    """
+    CREATE TABLE IF NOT EXISTS sync_transactions (
+        id UUID PRIMARY KEY,
+        business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+        device_id UUID REFERENCES client_devices(id) ON DELETE SET NULL,
+        client_tx_id UUID NOT NULL,
+        operation_type VARCHAR(50) NOT NULL,
+        payload_hash VARCHAR(64) NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'COMMITTED',
+        status_code INTEGER NOT NULL DEFAULT 200,
+        response_payload JSONB,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        CONSTRAINT uq_sync_tx_biz_client_tx UNIQUE (business_id, client_tx_id)
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_sync_transactions_business_id ON sync_transactions (business_id);",
+    "CREATE INDEX IF NOT EXISTS ix_sync_transactions_client_tx_id ON sync_transactions (client_tx_id);",
+
+    # ORDERS table sync additions
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS device_id UUID REFERENCES client_devices(id) ON DELETE SET NULL;",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_order_id UUID;",
+    "CREATE INDEX IF NOT EXISTS ix_orders_device_id ON orders (device_id);",
+    "CREATE INDEX IF NOT EXISTS ix_orders_client_order_id ON orders (client_order_id);",
+
+    # LAN_PAIRING_SESSIONS table creation if missing
+    """
+    CREATE TABLE IF NOT EXISTS lan_pairing_sessions (
+        id UUID PRIMARY KEY,
+        business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+        created_by_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        pairing_code VARCHAR(16) NOT NULL,
+        expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        is_claimed BOOLEAN NOT NULL DEFAULT false,
+        claimed_by_device_id UUID REFERENCES client_devices(id) ON DELETE SET NULL,
+        claimed_at TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_lan_pairing_sessions_biz ON lan_pairing_sessions (business_id);",
+    "CREATE INDEX IF NOT EXISTS ix_lan_pairing_sessions_code ON lan_pairing_sessions (pairing_code);",
+
+    # LAN_DEVICE_PAIRINGS table creation if missing
+    """
+    CREATE TABLE IF NOT EXISTS lan_device_pairings (
+        id UUID PRIMARY KEY,
+        business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+        device_id UUID NOT NULL REFERENCES client_devices(id) ON DELETE CASCADE,
+        lan_token_hash VARCHAR(64) NOT NULL,
+        token_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        is_revoked BOOLEAN NOT NULL DEFAULT false,
+        last_seen_at TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        CONSTRAINT uq_lan_device_pairing_biz_device UNIQUE (business_id, device_id)
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_lan_device_pairings_biz ON lan_device_pairings (business_id);",
+    "CREATE INDEX IF NOT EXISTS ix_lan_device_pairings_device ON lan_device_pairings (device_id);",
+    "CREATE INDEX IF NOT EXISTS ix_lan_device_pairings_token_hash ON lan_device_pairings (lan_token_hash);",
 ]
+
 
 
 def sync_database_schema(engine: Engine) -> dict:

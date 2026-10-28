@@ -123,7 +123,17 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <Outlet />
-        <Toaster position="top-right" richColors closeButton />
+        <Toaster
+          position="top-right"
+          richColors
+          closeButton
+          duration={4000}
+          mobileOffset={{
+            top: "calc(var(--safe-area-top, env(safe-area-inset-top, 0px)) + 64px)",
+            left: "12px",
+            right: "12px",
+          }}
+        />
       </ThemeProvider>
     </QueryClientProvider>
   );

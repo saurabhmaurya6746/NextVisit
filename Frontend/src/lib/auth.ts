@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { slugify } from "./app-nav";
+import { isDesktopApp, isMobileDevice } from "./desktop";
 
 export type Role = "admin" | "business";
-export type UserRole = "SUPERADMIN" | "OWNER" | "STAFF" | "MANAGER";
+export type UserRole = "SUPERADMIN" | "OWNER" | "ADMIN" | "STAFF" | "MANAGER";
 
 export type Session = {
   role: Role;
@@ -22,24 +23,67 @@ const KEY_SESSION = "growthos:session";
 const KEY_TOKEN = "growthos:token";
 const EVT = "growthos:session-changed";
 
-function getApiBaseUrl(): string {
+export function getApiBaseUrl(): string {
   const envUrl = import.meta.env.VITE_API_BASE_URL;
   if (typeof window !== "undefined") {
-    const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-    if (isLocalhost) {
-      return envUrl || "http://localhost:8000";
-    }
-    // On remote/production domains (e.g. *.onrender.com), strictly disallow localhost/127.0.0.1 URLs
-    // to prevent Android/Chrome Private Network Access (Local Network) permission dialogs
-    if (envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1")) {
+    const hostname = window.location.hostname;
+    const isDesktop = isDesktopApp();
+    const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
+    const isTauri =
+      isDesktop ||
+      hostname === "tauri.localhost" ||
+      hostname.endsWith(".localhost") ||
+      window.location.protocol === "tauri:";
+
+    // If an explicit API base URL was passed at build time (or in env), honor it:
+    if (envUrl) {
+      // On remote/production web domains (*.onrender.com), disallow localhost/127.0.0.1 URLs
+      // to avoid mixed content and Private Network Access errors in browsers
+      if (!isLocalhost && !isTauri && (envUrl.includes("localhost") || envUrl.includes("127.0.0.1"))) {
+        return "https://nextvisit-backend.onrender.com";
+      }
       return envUrl;
     }
+
+    // In local web development (localhost/127.0.0.1) or Windows desktop app without explicit envUrl:
+    if (isLocalhost || (isTauri && !isMobileDevice())) {
+      return "http://localhost:8000";
+    }
+
+    // Mobile apps and hosted web default to the hosted production API:
     return "https://nextvisit-backend.onrender.com";
   }
   return envUrl || "https://nextvisit-backend.onrender.com";
 }
 
 export const API_BASE_URL = getApiBaseUrl();
+
+/**
+ * Returns the public web base URL for customer-facing deep links and QR codes.
+ * Ensures QR codes generated from inside the desktop/mobile Tauri app point to
+ * the hosted web app (https://nextvisit-frontend.onrender.com) rather than tauri.localhost.
+ */
+export function getWebBaseUrl(): string {
+  const envWebUrl = import.meta.env.VITE_FRONTEND_URL || import.meta.env.VITE_WEB_URL;
+  if (envWebUrl) {
+    return envWebUrl.replace(/\/+$/, "");
+  }
+  if (typeof window !== "undefined") {
+    const isDesktop = isDesktopApp();
+    const hostname = window.location.hostname;
+    const isTauriEnv =
+      isDesktop ||
+      hostname === "tauri.localhost" ||
+      hostname.endsWith(".localhost") ||
+      window.location.protocol === "tauri:";
+
+    if (isTauriEnv) {
+      return "https://nextvisit-frontend.onrender.com";
+    }
+    return window.location.origin;
+  }
+  return "https://nextvisit-frontend.onrender.com";
+}
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -366,4 +410,4 @@ export async function resetPasswordApi(payload: {
 
 export const verifyOtpApi = verifyEmailApi;
 export const resendOtpApi = resendVerificationApi;
-
+
