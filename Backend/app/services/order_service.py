@@ -12,7 +12,7 @@ from app.models.user import User
 from app.repositories.customer_repository import CustomerRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.restaurant_table_repository import RestaurantTableRepository
-from app.schemas.order import OrderCreate, OrderItemCreate, OrderItemUpdate, OrderUpdate
+from app.schemas.order import DirectSaleCreate, OrderCreate, OrderItemCreate, OrderItemUpdate, OrderUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +67,16 @@ class OrderService:
             end_date=end_date,
         )
 
-    def get_order(self, current_user: User | None, order_id: uuid.UUID) -> Order:
+    def get_order(
+        self,
+        current_user: User | None,
+        order_id: uuid.UUID,
+        visit_token: str | None = None,
+    ) -> Order:
         order = self.order_repo.get_by_id(order_id)
+        if not order and current_user:
+            # Fallback: support looking up by client_order_id within user's business
+            order = self.order_repo.get_by_client_order_id(current_user.business_id, order_id)
         if not order:
             logger.warning("Order not found in DB: order_id=%s", order_id)
             raise HTTPException(
@@ -76,16 +84,38 @@ class OrderService:
                 detail=f"Order '{order_id}' not found.",
             )
 
+        if current_user:
+            if order.business_id != current_user.business_id:
+                logger.warning("Access denied to order %s: belongs to business %s, caller is %s", order_id, order.business_id, current_user.business_id)
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: order belongs to another business.",
+                )
+            return order
+
+        clean_token = visit_token.strip() if (visit_token and visit_token.strip()) else None
+        if not clean_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required: provide valid user credentials or visit token.",
+            )
+
+        if not order.visit_token or order.visit_token.strip() != clean_token:
+            logger.warning("Invalid visit token for order %s: token mismatch or order expired", order_id)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid or expired visit token for this order.",
+            )
+
         logger.info(
-            "Order retrieved: visit_token=%s, order_id=%s, table_id=%s, business_id=%s",
-            order.visit_token,
+            "Order retrieved via visit token: order_id=%s, table_id=%s, business_id=%s",
             order.id,
             order.table_id,
             order.business_id,
         )
         return order
 
-    def _recalculate_order(self, order: Order) -> Order:
+    def _recalculate_order(self, order: Order, auto_commit: bool = True) -> Order:
         """Automatically recalculate order subtotal, tax_amount, and total_amount."""
         from datetime import datetime, timezone
         from app.models.business_settings import BusinessSettings
@@ -110,9 +140,9 @@ class OrderService:
         order.total_amount = max(0.0, round(order.subtotal + order.tax_amount - order.discount_amount, 2))
         order.last_activity_at = datetime.now(timezone.utc)
 
-        return self.order_repo.update(order)
+        return self.order_repo.update(order, auto_commit=auto_commit)
 
-    def create_order(self, current_user: User, data: OrderCreate) -> Order:
+    def create_order(self, current_user: User, data: OrderCreate, auto_commit: bool = True) -> Order:
         # Table Resolution & Business Isolation: Lookup table by ID
         stmt = select(RestaurantTable).where(RestaurantTable.id == data.table_id)
         table = self.db.scalar(stmt)
@@ -120,6 +150,11 @@ class OrderService:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Restaurant table '{data.table_id}' not found or inactive.",
+            )
+        if current_user and table.business_id != current_user.business_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: restaurant table belongs to another business.",
             )
         target_business_id = table.business_id
 
@@ -168,17 +203,171 @@ class OrderService:
                     detail="Guest checkout is disabled for this restaurant. A valid customer phone number is required to place an order.",
                 )
 
-        # Generate atomic per-business 6-digit sequential order number with row locking
+        # Generate or use client-provided order number
         import re
         from app.models.business_settings import BusinessSettings
 
-        b_stmt = select(BusinessSettings).where(BusinessSettings.business_id == target_business_id).with_for_update()
-        biz_settings = self.db.scalar(b_stmt)
+        if getattr(data, "order_number", None) and str(data.order_number).strip():
+            order_number = str(data.order_number).strip()
+            incoming_client_order_id = getattr(data, "client_order_id", None) or getattr(data, "id", None)
+            incoming_device_id = getattr(data, "device_id", None)
 
-        if biz_settings:
-            seq = getattr(biz_settings, "next_order_number", 1) or 1
-            if seq == 1:
-                # Scan existing orders for this business to find highest historical numeric sequence
+            # 1. First check client_order_id idempotency within business:
+            # If an order with this client_order_id already exists (even if reconciled to a new order_number),
+            # return it immediately and safely.
+            if incoming_client_order_id:
+                existing_by_client = self.order_repo.get_by_client_order_id(target_business_id, incoming_client_order_id)
+                if existing_by_client:
+                    if existing_by_client.device_id and incoming_device_id and str(existing_by_client.device_id) != str(incoming_device_id):
+                        logger.warning(
+                            "Conflict: client_order_id %s belongs to device %s, contradictory to incoming device %s",
+                            incoming_client_order_id,
+                            existing_by_client.device_id,
+                            incoming_device_id,
+                        )
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=f"Order exists with client_order_id '{incoming_client_order_id}' under a contradictory device.",
+                        )
+                    logger.info(
+                        "Order %s with verified client_order_id %s already exists for business %s. Returning existing order idempotently.",
+                        existing_by_client.order_number,
+                        incoming_client_order_id,
+                        target_business_id,
+                    )
+                    return existing_by_client
+
+            # 2. Check if order_number collides with any existing order for this business
+            existing_ord = self.order_repo.get_by_order_number(target_business_id, order_number)
+            if existing_ord:
+                # Reject contradictory device IDs
+                if existing_ord.device_id and incoming_device_id and str(existing_ord.device_id) != str(incoming_device_id):
+                    logger.warning(
+                        "Conflict: order_number %s belongs to device %s, contradictory to incoming device %s",
+                        order_number,
+                        existing_ord.device_id,
+                        incoming_device_id,
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=f"Order number '{order_number}' already exists for this business under a contradictory device.",
+                    )
+
+                # Verified same offline order: client_order_id matches and device_id is not contradictory
+                if incoming_client_order_id and existing_ord.client_order_id and str(existing_ord.client_order_id) == str(incoming_client_order_id):
+                    logger.info(
+                        "Order %s with verified client_order_id %s already exists for business %s. Returning existing order idempotently.",
+                        order_number,
+                        incoming_client_order_id,
+                        target_business_id,
+                    )
+                    return existing_ord
+
+                # Safe reconciliation for offline sequence restart collisions:
+                # If existing_ord is CANCELLED (historical order) and incoming order has verified client_order_id:
+                # DO NOT mutate existing_ord! Historical order, its order_number, and audit trail are strictly immutable.
+                # Instead, safely reconcile the INCOMING offline order to the next available sequence slot for this device prefix.
+                if existing_ord.status == OrderStatus.CANCELLED and incoming_client_order_id:
+                    device_prefix = None
+                    if incoming_device_id:
+                        from app.models.client_device import ClientDevice
+                        dev = self.db.get(ClientDevice, incoming_device_id)
+                        if dev:
+                            device_prefix = dev.device_prefix
+                    if not device_prefix:
+                        match = re.match(r"^ORD-([A-Z0-9]+)-\d+$", order_number)
+                        if match:
+                            device_prefix = match.group(1)
+
+                    reconciled_num = None
+                    if device_prefix:
+                        prefix_pattern = f"ORD-{device_prefix}-"
+                        orders_stmt = select(Order.order_number).where(
+                            Order.business_id == target_business_id,
+                            Order.order_number.like(f"{prefix_pattern}%"),
+                        )
+                        existing_nums = self.db.scalars(orders_stmt).all()
+                        max_seq = 0
+                        for num_str in existing_nums:
+                            suffix = (num_str or "")[len(prefix_pattern):]
+                            if suffix.isdigit():
+                                max_seq = max(max_seq, int(suffix))
+                        cand_seq = max_seq + 1
+                        while True:
+                            cand_num = f"ORD-{device_prefix}-{cand_seq:06d}"
+                            if not self.order_repo.get_by_order_number(target_business_id, cand_num):
+                                reconciled_num = cand_num
+                                break
+                            cand_seq += 1
+
+                    if not reconciled_num:
+                        cand_seq = 1
+                        while True:
+                            cand_num = f"{order_number}-RECON-{cand_seq}"
+                            if not self.order_repo.get_by_order_number(target_business_id, cand_num):
+                                reconciled_num = cand_num
+                                break
+                            cand_seq += 1
+
+                    logger.info(
+                        "Order number collision: %s is held by immutable cancelled order %s. Reconciling incoming offline order %s to safe sequence %s.",
+                        order_number,
+                        existing_ord.id,
+                        incoming_client_order_id,
+                        reconciled_num,
+                    )
+                    order_number = reconciled_num
+                else:
+                    # Require a verified client_order_id match within the business and reject contradictory device IDs.
+                    # Do NOT claim idempotent success or attach IDs based on order_number alone.
+                    if not incoming_client_order_id or not existing_ord.client_order_id:
+                        logger.warning(
+                            "Conflict: order_number %s already exists for business %s but lacks verified client_order_id identity (existing=%s, incoming=%s)",
+                            order_number,
+                            target_business_id,
+                            existing_ord.client_order_id,
+                            incoming_client_order_id,
+                        )
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=f"Order number '{order_number}' already exists for this business without verified client order identity. Manual reconciliation required.",
+                        )
+
+                    logger.warning(
+                        "Conflict: order_number %s has mismatched client_order_id (existing=%s, incoming=%s)",
+                        order_number,
+                        existing_ord.client_order_id,
+                        incoming_client_order_id,
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=f"Order number '{order_number}' already exists for this business with a different client order ID.",
+                    )
+        else:
+            # Generate atomic per-business 6-digit sequential order number with row locking
+            b_stmt = select(BusinessSettings).where(BusinessSettings.business_id == target_business_id).with_for_update()
+            biz_settings = self.db.scalar(b_stmt)
+
+            if biz_settings:
+                seq = getattr(biz_settings, "next_order_number", 1) or 1
+                if seq == 1:
+                    # Scan existing orders for this business to find highest historical numeric sequence
+                    orders_stmt = select(Order.order_number).where(Order.business_id == target_business_id)
+                    existing_numbers = self.db.scalars(orders_stmt).all()
+                    max_existing = 0
+                    for num in existing_numbers:
+                        match = re.search(r'\d+', num or "")
+                        if match:
+                            try:
+                                max_existing = max(max_existing, int(match.group(0)))
+                            except ValueError:
+                                pass
+                    if max_existing >= seq:
+                        seq = max_existing + 1
+
+                order_number = f"ORD-{seq:06d}"
+                biz_settings.next_order_number = seq + 1
+            else:
                 orders_stmt = select(Order.order_number).where(Order.business_id == target_business_id)
                 existing_numbers = self.db.scalars(orders_stmt).all()
                 max_existing = 0
@@ -189,23 +378,7 @@ class OrderService:
                             max_existing = max(max_existing, int(match.group(0)))
                         except ValueError:
                             pass
-                if max_existing >= seq:
-                    seq = max_existing + 1
-
-            order_number = f"ORD-{seq:06d}"
-            biz_settings.next_order_number = seq + 1
-        else:
-            orders_stmt = select(Order.order_number).where(Order.business_id == target_business_id)
-            existing_numbers = self.db.scalars(orders_stmt).all()
-            max_existing = 0
-            for num in existing_numbers:
-                match = re.search(r'\d+', num or "")
-                if match:
-                    try:
-                        max_existing = max(max_existing, int(match.group(0)))
-                    except ValueError:
-                        pass
-            order_number = f"ORD-{(max_existing + 1):06d}"
+                order_number = f"ORD-{(max_existing + 1):06d}"
 
         # Deduplicate and merge items
         merged_items_map = {}
@@ -222,6 +395,7 @@ class OrderService:
                     existing["notes"] = (existing["notes"] + "; " if existing["notes"] else "") + item_data.notes.strip()
             else:
                 merged_items_map[key] = {
+                    "id": getattr(item_data, "id", None),
                     "menu_item_id": item_data.menu_item_id,
                     "service_id": item_data.service_id,
                     "item_name": item_data.item_name.strip(),
@@ -237,41 +411,49 @@ class OrderService:
             item_base = (item_dict["unit_price"] * item_dict["quantity"]) - item_dict["discount"]
             item_subtotal = max(0.0, round(item_base, 2))
 
-            order_items.append(
-                OrderItem(
-                    menu_item_id=item_dict["menu_item_id"],
-                    service_id=item_dict["service_id"],
-                    item_name=item_dict["item_name"],
-                    unit_price=item_dict["unit_price"],
-                    quantity=item_dict["quantity"],
-                    tax_rate=item_dict["tax_rate"],
-                    discount=item_dict["discount"],
-                    subtotal=item_subtotal,
-                    notes=item_dict["notes"],
-                )
-            )
+            item_kwargs = {
+                "menu_item_id": item_dict["menu_item_id"],
+                "service_id": item_dict["service_id"],
+                "item_name": item_dict["item_name"],
+                "unit_price": item_dict["unit_price"],
+                "quantity": item_dict["quantity"],
+                "tax_rate": item_dict["tax_rate"],
+                "discount": item_dict["discount"],
+                "subtotal": item_subtotal,
+                "notes": item_dict["notes"],
+            }
+            if item_dict.get("id"):
+                item_kwargs["id"] = item_dict["id"]
+
+            order_items.append(OrderItem(**item_kwargs))
 
         visit_token = f"vt_{uuid.uuid4().hex}"
 
-        order = Order(
-            business_id=target_business_id,
-            table_id=data.table_id,
-            customer_id=customer_id,
-            order_number=order_number,
-            order_source=data.order_source,
-            status=data.status,
-            subtotal=0.0,
-            tax_amount=data.tax_amount,
-            discount_amount=data.discount_amount,
-            total_amount=0.0,
-            notes=data.notes,
-            visit_token=visit_token,
-            created_by=current_user.id if current_user else None,
-            items=order_items,
-        )
+        order_kwargs = {
+            "business_id": target_business_id,
+            "table_id": data.table_id,
+            "customer_id": customer_id,
+            "order_number": order_number,
+            "order_source": data.order_source,
+            "status": data.status,
+            "subtotal": 0.0,
+            "tax_amount": data.tax_amount,
+            "discount_amount": data.discount_amount,
+            "total_amount": 0.0,
+            "notes": data.notes,
+            "visit_token": visit_token,
+            "created_by": current_user.id if current_user else None,
+            "device_id": getattr(data, "device_id", None),
+            "client_order_id": getattr(data, "client_order_id", None) or getattr(data, "id", None),
+            "items": order_items,
+        }
+        if getattr(data, "id", None):
+            order_kwargs["id"] = data.id
 
-        created = self.order_repo.create(order)
-        self._recalculate_order(created)
+        order = Order(**order_kwargs)
+
+        created = self.order_repo.create(order, auto_commit=auto_commit)
+        self._recalculate_order(created, auto_commit=auto_commit)
         logger.info(
             "Temporary order created: order_number=%s, table=%s, customer=%s, total=%f",
             created.order_number,
@@ -357,8 +539,14 @@ class OrderService:
         order = self.get_order(current_user, order_id)
         return order.items
 
-    def add_order_item(self, current_user: User, order_id: uuid.UUID, data: OrderItemCreate) -> Order:
-        order = self.get_order(current_user, order_id)
+    def add_order_item(
+        self,
+        current_user: User | None,
+        order_id: uuid.UUID,
+        data: OrderItemCreate,
+        visit_token: str | None = None,
+    ) -> Order:
+        order = self.get_order(current_user, order_id, visit_token=visit_token)
 
         # Check if an order item with the same menu_item_id or service_id or item_name already exists!
         existing_item = None
@@ -405,7 +593,7 @@ class OrderService:
             )
             self.order_repo.add_item(new_item)
 
-        order = self.get_order(current_user, order_id)
+        order = self.get_order(current_user, order_id, visit_token=visit_token)
         return self._recalculate_order(order)
 
     def update_order_item(
@@ -447,9 +635,18 @@ class OrderService:
     # -------------------------------------------------------------------------
 
     def auto_detect_customer(
-        self, current_user: User, phone: str, order_amount: float = 0.0
+        self, current_user: User | None, phone: str, order_amount: float = 0.0
     ) -> dict:
         clean_phone = phone.strip()
+        if not current_user:
+            return {
+                "exists": False,
+                "customer_id": None,
+                "name": None,
+                "phone": clean_phone,
+                "loyalty": None,
+            }
+
         customer = self.customer_repo.get_by_phone(current_user.business_id, clean_phone)
 
         if not customer:
@@ -496,7 +693,7 @@ class OrderService:
             },
         }
 
-    def settle_order(self, current_user: User, order_id: uuid.UUID, data: any) -> dict:
+    def settle_order(self, current_user: User, order_id: uuid.UUID, data: any, auto_commit: bool = True) -> dict:
         import math
         from datetime import datetime, timezone
         from app.models.loyalty import CustomerLoyalty
@@ -612,7 +809,8 @@ class OrderService:
         remaining_until_next = max(0, reward_target - (customer_loyalty.current_points % reward_target))
 
         # 4. Save Changes to DB
-        self.db.commit()
+        if auto_commit:
+            self.db.commit()
 
         # 5. Build WhatsApp Receipt Summary
         receipt_text = (
@@ -649,4 +847,225 @@ class OrderService:
             "visit_id": created_visit.id,
             "whatsapp_receipt_sent": True,
             "whatsapp_receipt_text": receipt_text,
+        }
+
+    def create_and_settle_order(self, current_user: User, data: DirectSaleCreate, auto_commit: bool = True) -> dict:
+        """
+        Atomically creates and settles an offline sale in a single database transaction.
+        Creates: Order (SERVED), OrderItems, Customer (if new), Visit (COMPLETED/PAID),
+        and updates Customer Loyalty points. Full rollback on any failure.
+        """
+        import re
+        from datetime import datetime, timezone
+        from app.models.business_settings import BusinessSettings
+        from app.models.customer import Customer
+        from app.models.loyalty import CustomerLoyalty
+        from app.models.order import Order, OrderItem, OrderStatus
+        from app.models.restaurant_table import RestaurantTable
+        from app.models.visit import PaymentStatus, Visit, VisitStatus, VisitService as VisitServiceModel
+        from app.repositories.loyalty_repository import LoyaltyRepository
+        from app.repositories.visit_repository import VisitRepository
+
+        # 1. Resolve table
+        stmt = select(RestaurantTable).where(RestaurantTable.id == data.table_id)
+        table = self.db.scalar(stmt)
+        if not table or not table.is_active or table.business_id != current_user.business_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Restaurant table '{data.table_id}' not found or inactive for this business.",
+            )
+        target_business_id = current_user.business_id
+
+        # 2. Resolve customer
+        clean_phone = data.customer_phone.strip()
+        customer = self.customer_repo.get_by_phone(target_business_id, clean_phone)
+        if not customer:
+            cust_name = data.customer_name.strip() if data.customer_name else f"Customer {clean_phone[-4:]}"
+            new_cust = Customer(
+                business_id=target_business_id,
+                name=cust_name,
+                phone=clean_phone,
+            )
+            customer = self.customer_repo.create(new_cust)
+        elif data.customer_name and data.customer_name.strip():
+            customer.name = data.customer_name.strip()
+            self.customer_repo.update(customer)
+
+        # 3. Determine order number
+        if getattr(data, "order_number", None) and str(data.order_number).strip():
+            order_number = str(data.order_number).strip()
+            existing_ord = self.order_repo.get_by_order_number(target_business_id, order_number)
+            if existing_ord:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Order number '{order_number}' already exists for this business.",
+                )
+        else:
+            b_stmt = select(BusinessSettings).where(BusinessSettings.business_id == target_business_id).with_for_update()
+            biz_settings = self.db.scalar(b_stmt)
+            if biz_settings:
+                seq = getattr(biz_settings, "next_order_number", 1) or 1
+                if seq == 1:
+                    orders_stmt = select(Order.order_number).where(Order.business_id == target_business_id)
+                    existing_numbers = self.db.scalars(orders_stmt).all()
+                    max_existing = 0
+                    for num in existing_numbers:
+                        match = re.search(r'\d+', num or "")
+                        if match:
+                            try:
+                                max_existing = max(max_existing, int(match.group(0)))
+                            except ValueError:
+                                pass
+                    if max_existing >= seq:
+                        seq = max_existing + 1
+                order_number = f"ORD-{seq:06d}"
+                biz_settings.next_order_number = seq + 1
+            else:
+                orders_stmt = select(Order.order_number).where(Order.business_id == target_business_id)
+                existing_numbers = self.db.scalars(orders_stmt).all()
+                max_existing = 0
+                for num in existing_numbers:
+                    match = re.search(r'\d+', num or "")
+                    if match:
+                        try:
+                            max_existing = max(max_existing, int(match.group(0)))
+                        except ValueError:
+                            pass
+                order_number = f"ORD-{(max_existing + 1):06d}"
+
+        # 4. Deduplicate and merge items
+        order_items = []
+        total_subtotal = 0.0
+        for item_data in data.items:
+            item_base = (item_data.unit_price * item_data.quantity) - item_data.discount
+            item_subtotal = max(0.0, round(item_base, 2))
+            total_subtotal += item_subtotal
+
+            item_kwargs = {
+                "menu_item_id": item_data.menu_item_id,
+                "service_id": item_data.service_id,
+                "item_name": item_data.item_name.strip(),
+                "unit_price": item_data.unit_price,
+                "quantity": item_data.quantity,
+                "tax_rate": item_data.tax_rate,
+                "discount": item_data.discount,
+                "subtotal": item_subtotal,
+                "notes": item_data.notes,
+            }
+            if getattr(item_data, "id", None):
+                item_kwargs["id"] = item_data.id
+
+            order_items.append(OrderItem(**item_kwargs))
+
+        now_ts = data.client_created_at or datetime.now(timezone.utc)
+        subtotal_val = round(total_subtotal, 2)
+        total_amount_val = max(0.0, round(subtotal_val + data.tax_amount - data.discount_amount, 2))
+
+        # 5. Create Order with status SERVED
+        order_kwargs = {
+            "business_id": target_business_id,
+            "table_id": data.table_id,
+            "customer_id": customer.id,
+            "order_number": order_number,
+            "order_source": data.order_source,
+            "status": OrderStatus.SERVED,
+            "subtotal": subtotal_val,
+            "tax_amount": data.tax_amount,
+            "discount_amount": data.discount_amount,
+            "total_amount": total_amount_val,
+            "notes": data.notes,
+            "visit_token": None,
+            "created_by": current_user.id,
+            "device_id": data.device_id,
+            "client_order_id": data.client_order_id or data.id,
+            "last_activity_at": now_ts,
+            "items": order_items,
+        }
+        if data.id:
+            order_kwargs["id"] = data.id
+
+        order = Order(**order_kwargs)
+        self.db.add(order)
+        self.db.flush()
+
+        # 6. Create completed Visit record
+        visit = Visit(
+            business_id=target_business_id,
+            customer_id=customer.id,
+            staff_id=current_user.id,
+            status=VisitStatus.COMPLETED,
+            notes=order.notes,
+            subtotal=order.subtotal,
+            discount=order.discount_amount,
+            total_amount=order.total_amount,
+            payment_method=data.payment_method,
+            payment_status=PaymentStatus.PAID,
+            started_at=now_ts,
+            completed_at=now_ts,
+        )
+
+        for item in order.items:
+            if item.service_id:
+                vs = VisitServiceModel(
+                    service_id=item.service_id,
+                    quantity=item.quantity,
+                    unit_price=item.unit_price,
+                    total_price=item.subtotal,
+                )
+                visit.services.append(vs)
+
+        self.db.add(visit)
+        self.db.flush()
+
+        # 7. Update Customer stats & Loyalty
+        customer.visit_count = (customer.visit_count or 0) + 1
+        customer.total_spent = (customer.total_spent or 0.0) + order.total_amount
+        if not customer.first_visit_at:
+            customer.first_visit_at = now_ts
+        customer.last_visit_at = now_ts
+        self.customer_repo.update(customer)
+
+        earned_points = 0
+        from app.services.loyalty_service import LoyaltyService
+        loyalty_service = LoyaltyService(self.db)
+        loyalty_settings = loyalty_service.get_settings(current_user)
+        customer_loyalty = loyalty_service.get_customer_loyalty(current_user, customer.id)
+
+        if loyalty_settings and loyalty_settings.is_active and loyalty_settings.amount_required > 0:
+            earned_points = int(round((order.total_amount / loyalty_settings.amount_required) * loyalty_settings.points_per_amount))
+
+        customer_loyalty.current_points += earned_points
+        customer_loyalty.lifetime_points += earned_points
+        self.db.flush()
+
+        reward_target = 100
+        remaining_until_next = max(0, reward_target - (customer_loyalty.current_points % reward_target))
+
+        # 8. Commit atomic transaction
+        if auto_commit:
+            self.db.commit()
+
+        logger.info(
+            "Direct offline sale atomic created and settled: order_number=%s, customer=%s, total=%f, earned_points=%d",
+            order.order_number,
+            customer.name,
+            order.total_amount,
+            earned_points,
+        )
+
+        return {
+            "order_id": order.id,
+            "order_number": order.order_number,
+            "business_id": order.business_id,
+            "table_id": order.table_id,
+            "customer_id": customer.id,
+            "customer_name": customer.name,
+            "customer_phone": customer.phone,
+            "payment_method": data.payment_method,
+            "total_amount": order.total_amount,
+            "earned_points": earned_points,
+            "new_loyalty_balance": customer_loyalty.current_points,
+            "remaining_until_next_reward": remaining_until_next,
+            "visit_id": visit.id,
+            "whatsapp_receipt_sent": False,
         }

@@ -46,6 +46,9 @@ from app.api.v1.salon.service_categories.router import router as salon_service_c
 from app.api.v1.salon.invoices.router import router as salon_invoices_router
 from app.api.v1.salon.revenue.router import router as salon_revenue_router
 from app.api.v1.calendar.router import router as calendar_router
+from app.api.v1.devices.router import router as devices_router
+from app.api.v1.sync.router import router as sync_router
+from app.api.v1.lan.router import router as lan_router
 from sqlalchemy.orm import Session
 from app.db.database import engine, get_db
 from app.db.init_db import sync_database_schema
@@ -273,6 +276,21 @@ app.include_router(
     prefix="/api/v1",
 )
 
+app.include_router(
+    devices_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    sync_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    lan_router,
+    prefix="/api/v1",
+)
+
 
 @app.get("/")
 def root():
@@ -296,4 +314,4 @@ def signup_alias(
     return AuthService(db).register(data)
 
 
-
+

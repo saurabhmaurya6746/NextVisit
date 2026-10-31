@@ -75,10 +75,24 @@ class Order(BaseModel):
         nullable=True,
     )
 
+    device_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("client_devices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    client_order_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        index=True,
+    )
+
     business = relationship("Business")
     table = relationship("RestaurantTable", backref="orders")
     customer = relationship("Customer")
     creator = relationship("User")
+    device = relationship("ClientDevice")
 
     items = relationship(
         "OrderItem",

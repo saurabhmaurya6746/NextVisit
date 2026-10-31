@@ -44,3 +44,6 @@ from .visit import (
     VisitService,
     VisitStatus,
 )
+from .client_device import ClientDevice, DeviceType
+from .sync_transaction import SyncTransaction, SyncTransactionStatus
+from .lan_pairing import LanDevicePairing, LanPairingSession

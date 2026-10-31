@@ -182,3 +182,8 @@ class Business(BaseModel):
         cascade="all, delete-orphan",
         order_by="SalonServiceArea.display_order",
     )
+    client_devices = relationship(
+        "ClientDevice",
+        back_populates="business",
+        cascade="all, delete-orphan",
+    )
